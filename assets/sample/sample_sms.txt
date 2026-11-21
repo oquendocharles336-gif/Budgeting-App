@@ -1,0 +1,9 @@
+Sample bank SMS alerts for testing Settings > SMS patterns > Test it.
+(These are made-up examples; real banks word their messages differently.)
+
+Your BDO Credit Card ending 1234 was used for PHP 1,250.00 at JOLLIBEE SM NORTH on 11/20/26. Not you? Call us.
+PHP 899.00 was charged to your card xxxx5678 at SHOPEE PH on 2026-11-19.
+Your card **4321 purchase of P75.50 at 7-ELEVEN KATIPUNAN, Nov 20.
+You have paid PHP 350.00 to MERALCO via GCash. Ref No. 1234567890 11-20-2026
+You have received PHP 1,000.00 from JUAN DELA CRUZ. Ref No. 99887766.
+Your OTP is 123456. Do not share.   <- skipped on purpose

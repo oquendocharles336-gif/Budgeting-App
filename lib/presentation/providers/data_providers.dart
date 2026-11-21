@@ -1,0 +1,258 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../core/dates.dart';
+import '../../data/models/budget.dart';
+import '../../data/models/category.dart';
+import '../../data/models/debt.dart';
+import '../../data/models/payment_card.dart';
+import '../../data/models/sms_pattern.dart';
+import '../../data/models/transaction_entry.dart';
+import '../../domain/analytics/spending_analytics.dart';
+import '../../domain/budget/budget_calculator.dart';
+import 'core_providers.dart';
+
+// Every provider below watches dataRevisionProvider, so a single bump()
+// after a write refreshes everything on screen.
+
+final cardsProvider = FutureProvider<List<PaymentCard>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(cardRepositoryProvider).all();
+});
+
+/// Includes archived cards, keyed by id (for labelling old transactions).
+final cardMapProvider = FutureProvider<Map<int, PaymentCard>>((ref) async {
+  ref.watch(dataRevisionProvider);
+  final cards = await ref.watch(cardRepositoryProvider).all(includeArchived: true);
+  return {for (final c in cards) c.id!: c};
+});
+
+final categoriesProvider = FutureProvider<List<Category>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(categoryRepositoryProvider).all();
+});
+
+final categoryMapProvider = FutureProvider<Map<int, Category>>((ref) async {
+  final list = await ref.watch(categoriesProvider.future);
+  return {for (final c in list) c.id!: c};
+});
+
+final rulesProvider = FutureProvider<List<CategoryRule>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(ruleRepositoryProvider).all();
+});
+
+final smsPatternsProvider = FutureProvider<List<SmsPattern>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(smsPatternRepositoryProvider).all();
+});
+
+// -----------------------------------------------------------------------------
+// Transactions list with filters
+// -----------------------------------------------------------------------------
+
+class TransactionFilterController extends Notifier<TransactionFilter> {
+  @override
+  TransactionFilter build() => const TransactionFilter();
+
+  void set(TransactionFilter f) => state = f;
+  void clear() => state = const TransactionFilter();
+}
+
+final transactionFilterProvider =
+    NotifierProvider<TransactionFilterController, TransactionFilter>(TransactionFilterController.new);
+
+final filteredTransactionsProvider = FutureProvider<List<TransactionEntry>>((ref) {
+  ref.watch(dataRevisionProvider);
+  final filter = ref.watch(transactionFilterProvider);
+  return ref.watch(transactionRepositoryProvider).query(filter, limit: 1000);
+});
+
+final recentTransactionsProvider = FutureProvider<List<TransactionEntry>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(transactionRepositoryProvider).recent(limit: 6);
+});
+
+final cardTransactionsProvider = FutureProvider.family<List<TransactionEntry>, int>((ref, cardId) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(transactionRepositoryProvider).query(TransactionFilter(cardId: cardId), limit: 500);
+});
+
+// -----------------------------------------------------------------------------
+// Debts
+// -----------------------------------------------------------------------------
+
+final debtsProvider = FutureProvider<List<DebtStatus>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(debtRepositoryProvider).allStatuses();
+});
+
+final debtPaymentsProvider = FutureProvider.family<List<DebtPayment>, int>((ref, debtId) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(debtRepositoryProvider).payments(debtId);
+});
+
+// -----------------------------------------------------------------------------
+// Month selection shared by Budget and Analytics
+// -----------------------------------------------------------------------------
+
+class SelectedMonth extends Notifier<DateTime> {
+  @override
+  DateTime build() => Dates.monthStart(DateTime.now());
+
+  void set(DateTime month) => state = Dates.monthStart(month);
+  void previous() => state = Dates.previousMonth(state);
+  void next() => state = Dates.nextMonth(state);
+}
+
+final selectedMonthProvider = NotifierProvider<SelectedMonth, DateTime>(SelectedMonth.new);
+
+// -----------------------------------------------------------------------------
+// Budget summary for one month ("YYYY-MM")
+// -----------------------------------------------------------------------------
+
+class CategoryBudgetRow {
+  const CategoryBudgetRow({required this.category, required this.progress});
+  final Category category;
+  final BudgetProgress progress;
+}
+
+class MonthSummary {
+  const MonthSummary({
+    required this.month,
+    required this.transactions,
+    required this.overall,
+    required this.categoryRows,
+    required this.income,
+  });
+
+  final DateTime month;
+  final List<TransactionEntry> transactions;
+  final BudgetProgress overall;
+
+  /// Categories with a budget or with spending, budgets first.
+  final List<CategoryBudgetRow> categoryRows;
+  final int income;
+}
+
+final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, monthKey) async {
+  ref.watch(dataRevisionProvider);
+  final month = Dates.parseMonthKey(monthKey);
+  final now = DateTime.now();
+  final budgetRepo = ref.watch(budgetRepositoryProvider);
+
+  // Only roll budgets forward into the current or future months, not
+  // into old months the user is just browsing.
+  final List<Budget> budgets = month.isBefore(Dates.monthStart(now))
+      ? await budgetRepo.forMonth(monthKey)
+      : await budgetRepo.ensureMonth(monthKey);
+  final txs = await ref.watch(transactionRepositoryProvider).between(month, Dates.monthEnd(month));
+  final categories = await ref.watch(categoriesProvider.future);
+
+  final overallBudget = budgets.where((b) => b.isOverall).fold<int>(0, (a, b) => a + b.amount);
+  final byCat = {for (final b in budgets.where((b) => !b.isOverall)) b.categoryId!: b.amount};
+
+  final rows = <CategoryBudgetRow>[
+    for (final c in categories)
+      CategoryBudgetRow(
+        category: c,
+        progress: BudgetProgress(
+          budget: byCat[c.id] ?? 0,
+          spent: BudgetCalculator.spent(txs, categoryId: c.id),
+        ),
+      ),
+  ]
+    ..removeWhere((r) => !r.progress.hasBudget && r.progress.spent == 0)
+    ..sort((a, b) {
+      if (a.progress.hasBudget != b.progress.hasBudget) return a.progress.hasBudget ? -1 : 1;
+      return b.progress.spent.compareTo(a.progress.spent);
+    });
+
+  return MonthSummary(
+    month: month,
+    transactions: txs,
+    overall: BudgetProgress(budget: overallBudget, spent: BudgetCalculator.spent(txs)),
+    categoryRows: rows,
+    income: txs.where((t) => !t.isExpense).fold<int>(0, (a, t) => a + t.amount),
+  );
+});
+
+class BudgetHistoryItem {
+  const BudgetHistoryItem({required this.month, required this.progress});
+  final DateTime month;
+  final BudgetProgress progress;
+}
+
+/// Past months that had an overall budget, newest first.
+final budgetHistoryProvider = FutureProvider<List<BudgetHistoryItem>>((ref) async {
+  ref.watch(dataRevisionProvider);
+  final history = await ref.watch(budgetRepositoryProvider).overallHistory();
+  final txRepo = ref.watch(transactionRepositoryProvider);
+  final items = <BudgetHistoryItem>[];
+  for (final b in history.take(12)) {
+    final m = Dates.parseMonthKey(b.month);
+    final txs = await txRepo.between(m, Dates.monthEnd(m));
+    items.add(BudgetHistoryItem(
+      month: m,
+      progress: BudgetProgress(budget: b.amount, spent: BudgetCalculator.spent(txs)),
+    ));
+  }
+  return items;
+});
+
+// -----------------------------------------------------------------------------
+// Analytics for one month
+// -----------------------------------------------------------------------------
+
+class AnalyticsData {
+  const AnalyticsData({
+    required this.month,
+    required this.daily,
+    required this.byCategory,
+    required this.total,
+    required this.previousMonthTotal,
+    required this.averageDaily,
+    required this.week,
+    required this.weeks,
+    required this.transactionCount,
+  });
+
+  final DateTime month;
+  final List<int> daily;
+  final List<CategoryTotal> byCategory;
+  final int total;
+  final int previousMonthTotal;
+  final int averageDaily;
+
+  /// This week vs last week (always relative to today).
+  final PeriodComparison week;
+  final List<({String label, int total})> weeks;
+  final int transactionCount;
+
+  PeriodComparison get monthComparison => PeriodComparison(current: total, previous: previousMonthTotal);
+}
+
+final analyticsProvider = FutureProvider.family<AnalyticsData, String>((ref, monthKey) async {
+  ref.watch(dataRevisionProvider);
+  final month = Dates.parseMonthKey(monthKey);
+  final now = DateTime.now();
+  final repo = ref.watch(transactionRepositoryProvider);
+
+  final txs = await repo.between(month, Dates.monthEnd(month));
+  final prevMonth = Dates.previousMonth(month);
+  final prevTxs = await repo.between(prevMonth, month);
+  final weekStart = Dates.startOfWeek(now).subtract(const Duration(days: 7));
+  final weekTxs = await repo.between(weekStart, Dates.startOfDay(now).add(const Duration(days: 1)));
+
+  final total = SpendingAnalytics.total(txs);
+  return AnalyticsData(
+    month: month,
+    daily: SpendingAnalytics.dailyTotals(txs, month),
+    byCategory: SpendingAnalytics.byCategory(txs),
+    total: total,
+    previousMonthTotal: SpendingAnalytics.total(prevTxs),
+    averageDaily: BudgetCalculator.averageDaily(spent: total, month: month, now: now),
+    week: SpendingAnalytics.weekOverWeek(weekTxs, now),
+    weeks: SpendingAnalytics.weeksOfMonth(txs, month),
+    transactionCount: txs.where((t) => t.isExpense).length,
+  );
+});
