@@ -16,8 +16,8 @@ import 'inventory_screen.dart' show BusinessSearchField;
 import 'order_form_screen.dart';
 
 BadgeTone statusTone(OrderStatus s) => switch (s) {
-      OrderStatus.complete || OrderStatus.paid => BadgeTone.ok,
-      OrderStatus.delivered => BadgeTone.accent,
+      OrderStatus.paid => BadgeTone.ok,
+      OrderStatus.complete => BadgeTone.accent,
     };
 
 class OrdersScreen extends ConsumerStatefulWidget {

@@ -123,7 +123,7 @@ void main() {
   StockMovement restock(int item, double qty) =>
       StockMovement(itemId: item, change: qty, reason: StockReason.restock, date: now, createdAt: now);
 
-  BusinessOrder order({int? id, int cakes = 2, int waters = 0, OrderStatus status = OrderStatus.delivered}) => BusinessOrder(
+  BusinessOrder order({int? id, int cakes = 2, int waters = 0, OrderStatus status = OrderStatus.complete}) => BusinessOrder(
         id: id,
         buyer: 'Ana',
         orderDate: now,
@@ -182,8 +182,8 @@ void main() {
     test('status changes and payments never change stock again', () async {
       final id = await service.saveOrder(order());
       final before = repo.ledger.length;
-      await service.setStatus(id, OrderStatus.delivered);
-      await service.saveOrder(repo.orders[id]!.copyWith(paidAmount: 100000, status: OrderStatus.complete));
+      await service.setStatus(id, OrderStatus.complete);
+      await service.saveOrder(repo.orders[id]!.copyWith(paidAmount: 100000, status: OrderStatus.paid));
       expect(repo.ledger.length, before);
       expect(repo.stock(eggs), 8);
     });

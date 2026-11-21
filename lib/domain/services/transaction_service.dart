@@ -114,16 +114,16 @@ class TransactionService {
       opKey: opKey,
       afterInsert: toCapital
           ? (txn, transferId) => CapitalRepository.insertInTxn(
-                txn,
-                CapitalEntry(
-                  amount: plan.destinationCredit,
-                  kind: CapitalKind.deposit,
-                  note: notes,
-                  date: date,
-                  transactionId: transferId,
-                  createdAt: now,
-                ),
-              )
+        txn,
+        CapitalEntry(
+          amount: plan.destinationCredit,
+          kind: CapitalKind.deposit,
+          note: notes,
+          date: date,
+          transactionId: transferId,
+          createdAt: now,
+        ),
+      )
           : null,
     );
     if (plan.hasFee) await _alerts.checkMonth(date);
@@ -179,30 +179,36 @@ class TransactionService {
   /// Transactions in the "Loan" category, for the Loans section.
   Future<List<TransactionEntry>> loans() => _repo.loans();
 
-  /// Marks [loan] paid from Cash ([accountId] null) or an e-wallet: a
-  /// payment expense in the loan's category is saved on that account, so
-  /// the money leaves the account and counts in the month's budget, like
-  /// any expense with "Paid with". Returns the payment id (null when the
-  /// loan was already paid).
+  /// Marks [loan] paid, in Cash ([accountId] null) or an e-wallet. The
+  /// money moves the opposite way to the loan itself:
+  ///
+  ///  * a loan you gave (an expense in "Loan": the money already left your
+  ///    account) is paid back to you, so the payment is income INTO the
+  ///    account you pick;
+  ///  * a loan you received (income in "Loan") is paid back by you, so the
+  ///    payment is an expense OUT of that account and counts in the budget.
+  ///
+  /// Returns the payment id (null when the loan was already paid).
   Future<int?> payLoan(
-    TransactionEntry loan, {
-    required LoanPayMethod method,
-    required int? accountId,
-    DateTime? paidAt,
-  }) async {
+      TransactionEntry loan, {
+        required LoanPayMethod method,
+        required int? accountId,
+        DateTime? paidAt,
+      }) async {
     if (loan.id == null) throw ArgumentError('Loan has no id');
     if (method == LoanPayMethod.cash && accountId != null) throw ArgumentError('Cash has no account');
     if (method == LoanPayMethod.ewallet && accountId == null) throw ArgumentError('Pick an e-wallet');
     final now = _clock();
     final date = paidAt ?? now;
+    final repaidToYou = !loan.isIncome;
     final payment = TransactionEntry(
       amount: loan.amount,
-      kind: TransactionKind.expense,
-      description: 'Loan payment: ${loan.description}',
+      kind: repaidToYou ? TransactionKind.income : TransactionKind.expense,
+      description: repaidToYou ? 'Loan repaid: ${loan.description}' : 'Loan payment: ${loan.description}',
       categoryId: loan.categoryId,
       cardId: accountId,
       date: date,
-      notes: 'Paid with ${method.label}',
+      notes: repaidToYou ? 'Received in ${method.label}' : 'Paid with ${method.label}',
       source: TransactionSourceType.manual,
       affectsBalance: true,
       createdAt: now,
@@ -213,8 +219,8 @@ class TransactionService {
     return id;
   }
 
-  /// Marks a loan unpaid: its payment expense is removed and the money goes
-  /// back to the account (and out of the budget).
+  /// Marks a loan unpaid: its payment is removed and the account goes back
+  /// to what it was before.
   Future<void> unpayLoan(int loanId) => _repo.markLoanUnpaid(loanId);
 
   /// The payment expense of a paid loan (for its history line).

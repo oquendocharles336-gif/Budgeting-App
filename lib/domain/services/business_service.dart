@@ -289,13 +289,10 @@ class BusinessService {
     return result;
   }
 
-  /// Once paid in full: delivered orders become Complete, others Paid.
-  static OrderStatus statusAfterFullPayment(OrderStatus s) => switch (s) {
-        OrderStatus.delivered || OrderStatus.complete => OrderStatus.complete,
-        OrderStatus.paid => OrderStatus.paid,
-      };
+  /// Once paid in full, an order is Paid.
+  static OrderStatus statusAfterFullPayment(OrderStatus s) => OrderStatus.paid;
 
-  /// Changes the status (never stock). "Paid" / "Complete" on an order with
+  /// Changes the status (never stock). "Paid" on an order with
   /// a balance needs [recordFullPayment], so the status and money agree.
   /// Setting the same status twice is harmless, so retries are safe.
   Future<void> setStatus(int orderId, OrderStatus status, {bool recordFullPayment = false, String? opKey}) async {

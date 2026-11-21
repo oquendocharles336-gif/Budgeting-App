@@ -337,23 +337,22 @@ enum PaymentMethod {
       PaymentMethod.values.firstWhere((m) => m.dbValue == v, orElse: () => PaymentMethod.cash);
 }
 
+/// Complete = the order is done; the buyer may still owe (shown from the
+/// amounts). Paid = paid in full (the payment is entered with it).
 enum OrderStatus {
   complete('complete', 'Complete'),
-  paid('paid', 'Paid'),
-  delivered('delivered', 'Delivered');
+  paid('paid', 'Paid');
 
   const OrderStatus(this.dbValue, this.label);
   final String dbValue;
   final String label;
 
-  /// Statuses that say the buyer has paid.
-  bool get claimsPaid => this == OrderStatus.complete || this == OrderStatus.paid;
+  /// Only "Paid" says the buyer has paid in full.
+  bool get claimsPaid => this == OrderStatus.paid;
 
-  /// 'delivered_unpaid' (removed in v9; may still be in an old backup)
-  /// reads as Delivered.
-  static OrderStatus fromDb(String? v) => v == 'delivered_unpaid'
-      ? OrderStatus.delivered
-      : OrderStatus.values.firstWhere((s) => s.dbValue == v, orElse: () => OrderStatus.complete);
+  /// 'delivered' and 'delivered_unpaid' (removed; may still be in an old
+  /// backup) read as Complete.
+  static OrderStatus fromDb(String? v) => v == 'paid' ? OrderStatus.paid : OrderStatus.complete;
 }
 
 class OrderItem {

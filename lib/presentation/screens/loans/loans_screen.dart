@@ -109,12 +109,14 @@ class _LoanRow extends ConsumerWidget {
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                  child: Text('How was it paid?', style: Theme.of(ctx).textTheme.titleMedium),
+                  child: Text(tx.isIncome ? 'How did you pay it?' : 'How was it paid back to you?', style: Theme.of(ctx).textTheme.titleMedium),
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                   child: Text(
-                    '${Money.format(tx.amount, symbol: symbol)} is taken from the account you pick and counted in this month\'s budget.',
+                    tx.isIncome
+                        ? '${Money.format(tx.amount, symbol: symbol)} is taken from the account you pick and counted in this month\'s budget.'
+                        : '${Money.format(tx.amount, symbol: symbol)} comes back to you: it is added to the account you pick.',
                     style: TextStyle(color: scheme.onSurfaceVariant),
                   ),
                 ),
@@ -157,9 +159,9 @@ class _LoanRow extends ConsumerWidget {
     final int? available;
     try {
       available = await ref.read(transactionServiceProvider).availableBefore(
-            kind: TransactionKind.expense,
-            accountId: accountId,
-          );
+        kind: TransactionKind.expense,
+        accountId: accountId,
+      );
     } catch (e) {
       debugPrint('Balance check failed: $e');
       return true;
@@ -180,7 +182,8 @@ class _LoanRow extends ConsumerWidget {
   Future<void> _pay(BuildContext context, WidgetRef ref) async {
     final picked = await _pickMethod(context, ref);
     if (picked == null || !context.mounted) return;
-    if (!await _confirmBalance(context, ref, picked.accountId) || !context.mounted) return;
+    // Only paying back a loan you received takes money out of an account.
+    if (tx.isIncome && (!await _confirmBalance(context, ref, picked.accountId) || !context.mounted)) return;
     final messenger = ScaffoldMessenger.of(context);
     final color = snackTextColor(context);
     final service = ref.read(transactionServiceProvider);
@@ -209,11 +212,13 @@ class _LoanRow extends ConsumerWidget {
   }
 
   Future<void> _unpay(BuildContext context, WidgetRef ref, TransactionEntry? payment) async {
+    final where = payment == null || payment.cardId == null ? 'Cash' : 'the e-wallet';
     final ok = await confirm(
       context,
       title: 'Mark as unpaid?',
-      message: 'The payment is removed: the money goes back to '
-          '${payment == null || payment.cardId == null ? 'Cash' : 'the e-wallet'} and out of this month\'s budget.',
+      message: tx.isIncome
+          ? 'The payment is removed: the money goes back to $where and out of this month\'s budget.'
+          : 'The repayment is removed: the money is taken back out of $where.',
       confirmLabel: 'Mark unpaid',
       destructive: false,
     );
@@ -233,16 +238,16 @@ class _LoanRow extends ConsumerWidget {
         action: previous == null
             ? null
             : SnackBarAction(
-                label: 'Undo',
-                onPressed: () async {
-                  try {
-                    await service.payLoan(tx.copyWith(loanPaidAt: () => null), method: previous.method, accountId: previous.accountId);
-                    ref.refreshData();
-                  } catch (e) {
-                    debugPrint('Undo failed: $e');
-                  }
-                },
-              ),
+          label: 'Undo',
+          onPressed: () async {
+            try {
+              await service.payLoan(tx.copyWith(loanPaidAt: () => null), method: previous.method, accountId: previous.accountId);
+              ref.refreshData();
+            } catch (e) {
+              debugPrint('Undo failed: $e');
+            }
+          },
+        ),
       );
     } catch (e) {
       if (context.mounted) showSnack(context, 'Could not update: $e', error: true);
@@ -308,12 +313,12 @@ class _LoanRow extends ConsumerWidget {
                     alignment: Alignment.centerLeft,
                     child: tx.isLoanPaid
                         ? StatusBadge(
-                            label: paidLabel(),
-                            tone: BadgeTone.ok,
-                            icon: tx.loanPaidMethod == LoanPayMethod.ewallet
-                                ? Icons.account_balance_wallet_rounded
-                                : (tx.loanPaidMethod == LoanPayMethod.cash ? Icons.payments_rounded : Icons.check_circle_rounded),
-                          )
+                      label: paidLabel(),
+                      tone: BadgeTone.ok,
+                      icon: tx.loanPaidMethod == LoanPayMethod.ewallet
+                          ? Icons.account_balance_wallet_rounded
+                          : (tx.loanPaidMethod == LoanPayMethod.cash ? Icons.payments_rounded : Icons.check_circle_rounded),
+                    )
                         : const StatusBadge(label: 'Unpaid', tone: BadgeTone.warning, icon: Icons.schedule_rounded),
                   ),
                 ),

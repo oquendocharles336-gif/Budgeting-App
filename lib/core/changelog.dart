@@ -10,6 +10,15 @@ import '../domain/update/app_update.dart';
 /// the last one the user saw.
 const changelog = <ChangelogEntry>[
   ChangelogEntry(
+    version: '1.2.1',
+    build: 4,
+    date: '2026-11-21',
+    notes: [
+      'Loans: when a loan you gave is paid back, the money is now added to Cash or your e-wallet instead of taken out.',
+      'Orders are Complete or Paid. Status comes first, and the payment is entered only when you choose Paid; unpaid amounts still show on each order.',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.2.0',
     build: 3,
     date: '2026-11-21',
@@ -21,7 +30,6 @@ const changelog = <ChangelogEntry>[
       'Import is now in Settings.',
       'Update check now reads the latest release on GitHub.',
       'Pay Later was removed. Unpaid Pay Later items were moved to Debts.',
-      'Orders: "Delivered / Not Paid" is now "Delivered"; unpaid amounts still show on each order.',
     ],
   ),
   ChangelogEntry(

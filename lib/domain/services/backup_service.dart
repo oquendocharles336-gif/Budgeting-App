@@ -175,8 +175,8 @@ class BackupService {
         await DefaultData.ensureIncomeCategories(txn);
         await DefaultData.ensureDebtCategory(txn);
         await DefaultData.ensureV7Categories(txn);
-        // Backups from before v9 can hold the removed "Delivered / Not Paid" status.
-        await txn.execute("UPDATE orders SET status = 'delivered' WHERE status = 'delivered_unpaid'");
+        // Old backups can hold the removed "Delivered" statuses.
+        await txn.execute("UPDATE orders SET status = 'complete' WHERE status IN ('delivered', 'delivered_unpaid')");
       });
     } on BackupException {
       rethrow;

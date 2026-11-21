@@ -35,7 +35,11 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
   late DateTime _date;
   late List<OrderItem> _lines;
   late PaymentMethod _method;
-  OrderStatus? _status;
+  /// Complete (payment hidden) or Paid (payment shown). New orders start Complete.
+  late OrderStatus _status;
+
+  /// The payment part of the form shows only for "Paid".
+  bool get _showPayment => _status == OrderStatus.paid;
   bool _saving = false;
 
   BusinessOrder? get _existing => widget.existing;
@@ -59,7 +63,7 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
     _date = e?.orderDate ?? DateTime.now();
     _lines = [...?e?.items];
     _method = e?.method ?? PaymentMethod.cash;
-    _status = e?.status;
+    _status = e?.status ?? OrderStatus.complete;
   }
 
   @override
@@ -141,18 +145,17 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
     }
     final symbol = ref.read(currencyProvider).symbol;
     String m(int v) => Money.format(v, symbol: symbol);
-    final pay = _locked ? null : _payment;
+    // Complete: whatever was typed in the (hidden) payment field is ignored.
+    final pay = _locked || !_showPayment ? null : _payment;
     final applied = pay?.applied ?? 0;
     final paidAfter = _locked ? _alreadyPaid : (_alreadyPaid + applied).clamp(0, _total).toInt();
     final owesAfter = _total - paidAfter;
-    // If the user didn't pick a status: paid in full = Complete, else Delivered
-    // (what is still owed shows on the order from the amounts).
-    final status = _status ?? (owesAfter <= 0 ? OrderStatus.complete : OrderStatus.delivered);
+    final status = _status;
     if (status.claimsPaid && owesAfter > 0) {
       showSnack(
         context,
         '"${status.label}" means paid in full, but ${m(owesAfter)} is still owed. '
-        'Enter the full amount or pick another status.',
+        'Enter the full amount, or choose Complete if the buyer pays later.',
         error: true,
       );
       return;
@@ -386,63 +389,66 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                   'Paid so far ${m(_alreadyPaid)} · balance ${m(due)}',
                   style: TextStyle(color: scheme.onSurfaceVariant),
                 ),
-              const SectionHeader('Payment'),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final pm in PaymentMethod.values)
-                    ChoiceChip(
-                      label: Text(pm.label),
-                      selected: _method == pm,
-                      onSelected: _locked ? null : (_) => setState(() => _method = pm),
-                    ),
-                ],
-              ),
-              if (_method.qrAsset != null && !_locked) ...[
-                const SizedBox(height: 12),
-                _QrCard(method: _method),
-              ],
-              if (!_locked && due > 0) ...[
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _received,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                  decoration: InputDecoration(
-                    labelText: _method.isCash ? 'Cash received from buyer' : 'Amount received',
-                    prefixText: '$symbol ',
-                    helperText: 'Leave empty if the buyer hasn\'t paid yet.',
-                    suffixIcon: TextButton(
-                      onPressed: () => setState(() => _received.text = Money.toInput(due)),
-                      child: const Text('Exact'),
-                    ),
-                  ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? null : validateAmount(v, allowZero: true),
-                  onChanged: (_) => setState(() {}),
-                ),
-                if (pay != null) ...[
-                  const SizedBox(height: 10),
-                  _ChangeLine(result: pay, cash: _method.isCash),
-                ],
-              ],
               const SectionHeader('Status'),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final s in OrderStatus.values)
-                    ChoiceChip(label: Text(s.label), selected: _status == s, onSelected: (_) => setState(() => _status = s)),
+                  for (final st in OrderStatus.values)
+                    ChoiceChip(label: Text(st.label), selected: _status == st, onSelected: (_) => setState(() => _status = st)),
                 ],
               ),
-              if (_status == null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    'Not chosen: set to Complete when paid in full, otherwise Delivered.',
-                    style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
-                  ),
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  _showPayment
+                      ? 'Enter what the buyer paid below.'
+                      : 'Complete: the order is done. Choose Paid when the buyer pays to enter the payment.',
+                  style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                 ),
+              ),
+              if (_showPayment) ...[
+                const SectionHeader('Payment'),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final pm in PaymentMethod.values)
+                      ChoiceChip(
+                        label: Text(pm.label),
+                        selected: _method == pm,
+                        onSelected: _locked ? null : (_) => setState(() => _method = pm),
+                      ),
+                  ],
+                ),
+                if (_method.qrAsset != null && !_locked) ...[
+                  const SizedBox(height: 12),
+                  _QrCard(method: _method),
+                ],
+                if (!_locked && due > 0) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _received,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                    decoration: InputDecoration(
+                      labelText: _method.isCash ? 'Cash received from buyer' : 'Amount received',
+                      prefixText: '$symbol ',
+                      helperText: 'Paid means paid in full. Tap Exact for the full amount.',
+                      suffixIcon: TextButton(
+                        onPressed: () => setState(() => _received.text = Money.toInput(due)),
+                        child: const Text('Exact'),
+                      ),
+                    ),
+                    validator: (v) => (v == null || v.trim().isEmpty) ? null : validateAmount(v, allowZero: true),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  if (pay != null) ...[
+                    const SizedBox(height: 10),
+                    _ChangeLine(result: pay, cash: _method.isCash),
+                  ],
+                ],
+              ],
               const SizedBox(height: 16),
               TextFormField(
                 controller: _notes,

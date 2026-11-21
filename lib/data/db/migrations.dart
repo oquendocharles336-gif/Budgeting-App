@@ -26,6 +26,7 @@ class Migrations {
     7: _v7PayLaterLoansFeesBusiness,
     8: _v8StockLedgerCapitalWithdrawIdempotency,
     9: _v9RemovePayLaterLoanPaymentMethod,
+    10: _v10OrderStatusCompleteOrPaid,
   };
 
   static int get latestVersion => _steps.keys.reduce((a, b) => a > b ? a : b);
@@ -499,6 +500,15 @@ class Migrations {
     //    still owed is shown from the amounts, not the status). The old value
     //    stays allowed by the CHECK so old backups still restore.
     await db.execute("UPDATE orders SET status = 'delivered' WHERE status = 'delivered_unpaid'");
+  }
+
+  // ---------------------------------------------------------------------------
+  // v10: orders are Complete or Paid ("Delivered" removed)
+  // ---------------------------------------------------------------------------
+  static Future<void> _v10OrderStatusCompleteOrPaid(DatabaseExecutor db) async {
+    // What is still owed shows from the amounts, so nothing is lost. The old
+    // values stay allowed by the CHECK so old backups still restore.
+    await db.execute("UPDATE orders SET status = 'complete' WHERE status IN ('delivered', 'delivered_unpaid')");
   }
 
   static Future<bool> _tableExists(DatabaseExecutor db, String name) async {
