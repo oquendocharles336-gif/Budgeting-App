@@ -120,12 +120,19 @@ class AppPalette {
 class AppPalettes {
   AppPalettes._();
 
-  // Dark mode of the default theme, as specified:
-  // midnight black 60%, electric blue 30%, sunset orange 10%.
-  static const midnightBlack = Color(0xFF0A0D14);
-  static const electricBlue = Color(0xFF1B3A8F);
-  static const electricBlueHigh = Color(0xFF2650C2);
+  // Dark mode of the default theme: a calm midnight-navy background,
+  // graphite cards one step lighter (so cards read as raised, not as a
+  // second loud color), and a warm sunset orange as the only bright color.
+  static const midnightBlack = Color(0xFF0B0F17);
+  static const graphite = Color(0xFF161C27);
+  static const graphiteHigh = Color(0xFF212938);
+
+  /// The palette's id and picker swatch (kept so saved settings still match).
   static const sunsetOrange = Color(0xFFFF6B35);
+
+  /// Sunset orange lifted a little for dark backgrounds: glows without
+  /// vibrating, and takes dark button text (8:1).
+  static const sunsetGlow = Color(0xFFFF8A50);
 
   static final midnight = AppPalette(
     id: 0xFFFF6B35,
@@ -134,13 +141,13 @@ class AppPalettes {
     dark: _finish(
       brightness: Brightness.dark,
       main: midnightBlack,
-      onMain: const Color(0xFFF2F5FB),
-      onMainMuted: const Color(0xFFA8B3C7),
-      second: electricBlue,
-      secondHigh: electricBlueHigh,
-      onSecond: const Color(0xFFF2F6FF),
-      onSecondMuted: const Color(0xFFC9D6F5),
-      accent: sunsetOrange,
+      onMain: const Color(0xFFEEF1F6),
+      onMainMuted: const Color(0xFFA3ACBD),
+      second: graphite,
+      secondHigh: graphiteHigh,
+      onSecond: const Color(0xFFF1F4F9),
+      onSecondMuted: const Color(0xFFB8C0CF),
+      accent: sunsetGlow,
     ),
     light: _finish(
       brightness: Brightness.light,
@@ -177,15 +184,17 @@ class AppPalettes {
         onSecondMuted: hsl(0.25, 0.32),
         accent: seed,
       ),
+      // Dark: low-saturation tints so the accent is the only loud color,
+      // with clear steps between background, cards and raised parts.
       dark: _finish(
         brightness: Brightness.dark,
-        main: hsl(0.30, 0.055),
+        main: hsl(0.22, 0.07),
         onMain: hsl(0.20, 0.95),
         onMainMuted: hsl(0.12, 0.72),
-        second: hsl(0.45, 0.17),
-        secondHigh: hsl(0.45, 0.24),
-        onSecond: hsl(0.45, 0.94),
-        onSecondMuted: hsl(0.25, 0.78),
+        second: hsl(0.24, 0.13),
+        secondHigh: hsl(0.22, 0.18),
+        onSecond: hsl(0.30, 0.94),
+        onSecondMuted: hsl(0.18, 0.78),
         accent: _bright(seed),
       ),
     );
