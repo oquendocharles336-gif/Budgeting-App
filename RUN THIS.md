@@ -14,5 +14,8 @@ flutter run --release
 
 Generate the  apk
 ```bash
+flutter clean
+Remove-Item -Recurse -Force android\.gradle -ErrorAction SilentlyContinue
+flutter pub get
 flutter build apk --release
 ```
