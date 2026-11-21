@@ -5,11 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('Midnight dark is midnight black / electric blue / sunset orange', () {
+  test('Midnight dark is midnight navy / graphite / sunset orange', () {
     final t = AppPalettes.midnight.dark;
     expect(t.main, AppPalettes.midnightBlack);
-    expect(t.second, AppPalettes.electricBlue);
-    expect(t.accent, AppPalettes.sunsetOrange);
+    expect(t.second, AppPalettes.graphite);
+    expect(t.secondHigh, AppPalettes.graphiteHigh);
+    expect(t.accent, AppPalettes.sunsetGlow);
   });
 
   for (final palette in AppPalettes.all) {

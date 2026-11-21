@@ -24,11 +24,10 @@ class UpdateService {
   UpdateService({
     required this._settings,
     required Future<String> Function() fetchFeed,
-    required Future<InstalledVersion> Function() installed,
+    required this._installed,
     bool? configured,
     DateTime Function()? clock,
   })  : _fetch = fetchFeed,
-        _installed = installed,
         _configured = configured ?? AppUpdateConfig.isConfigured,
         _clock = clock ?? DateTime.now;
 

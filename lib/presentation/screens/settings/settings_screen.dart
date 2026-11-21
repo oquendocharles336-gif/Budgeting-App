@@ -74,10 +74,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       final on = await updates.enabled();
       final v = await updates.installed();
-      if (mounted) setState(() {
-        _updatesOn = on;
-        _installedVersion = '${v.version} (${v.build})';
-      });
+      if (mounted) {
+        setState(() {
+          _updatesOn = on;
+          _installedVersion = '${v.version} (${v.build})';
+        });
+      }
     } catch (e) {
       debugPrint('Could not read version: $e');
     }
@@ -330,15 +332,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   subtitle: Text(
                     ref.read(updateServiceProvider).configured
                         ? 'Once a day, the app downloads a small version file to see if a newer version exists. '
-                            'Nothing about you or your data is sent.'
+                        'Nothing about you or your data is sent.'
                         : 'Not set up in this build (no update address).',
                   ),
                   value: _updatesOn && ref.read(updateServiceProvider).configured,
                   onChanged: ref.read(updateServiceProvider).configured
                       ? (on) async {
-                          setState(() => _updatesOn = on);
-                          await ref.read(updateServiceProvider).setEnabled(on);
-                        }
+                    setState(() => _updatesOn = on);
+                    await ref.read(updateServiceProvider).setEnabled(on);
+                  }
                       : null,
                 ),
                 ListTile(
@@ -417,11 +419,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _save(String fileName, String content, String mime) async {
     try {
       final uri = await LockGuard.run(() => FilePicker.saveFile(
-            dialogTitle: 'Save file',
-            fileName: fileName,
-            bytes: Uint8List.fromList(utf8.encode(content)),
-            mimeType: mime,
-          ));
+        dialogTitle: 'Save file',
+        fileName: fileName,
+        bytes: Uint8List.fromList(utf8.encode(content)),
+        mimeType: mime,
+      ));
       if (!mounted) return;
       if (uri != null) showSnack(context, 'Saved $fileName');
     } catch (e) {

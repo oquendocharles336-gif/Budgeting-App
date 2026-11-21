@@ -2,7 +2,7 @@
 ///
 /// Host a small `version.json` (template: docs/version.json) somewhere
 /// public over HTTPS, for example a GitHub repository:
-///   https://raw.githubusercontent.com/<your-name>/<repo>/main/version.json
+///   `https://raw.githubusercontent.com/<your-name>/<repo>/main/version.json`
 ///
 /// Set it here, or at build time without editing code:
 ///   flutter build apk --release --dart-define=PITAKA_UPDATE_URL=https://...

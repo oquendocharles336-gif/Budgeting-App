@@ -19,7 +19,7 @@ class ThemeSettings {
   final ThemeMode mode;
   final Color accent;
 
-  /// Midnight: midnight black / electric blue / sunset orange.
+  /// Midnight: midnight navy / graphite / sunset orange.
   static const defaultAccent = AppPalettes.sunsetOrange;
 
   ThemeSettings copyWith({ThemeMode? mode, Color? accent}) =>
