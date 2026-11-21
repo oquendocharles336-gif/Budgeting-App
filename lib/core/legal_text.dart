@@ -10,6 +10,7 @@ class LegalText {
 
   static const privacySummary = [
     'Everything you enter stays on this phone. There is no account and no cloud server.',
+    'The only internet use is an optional daily check for a newer app version. It sends nothing about you.',
     'We never upload, sell or share your transactions, cards, debts or budgets.',
     'SMS reading is off unless you turn it on. If you do, alerts are read on your phone only to find transactions.',
     'Backups and exports go only where you choose to save them.',
@@ -21,7 +22,7 @@ Privacy Policy
 Effective date: $effectiveDate
 
 1. Summary
-Pitaka is an offline budgeting app. All of your data is stored only on this device in a local database. The app has no online accounts, no analytics, no ads, and no server. The password you create is a local login that encrypts your data on this phone. Your data is never uploaded or sent to us or to anyone else.
+Pitaka is an offline budgeting app. All of your data is stored only on this device in a local database. The app has no online accounts, no analytics, no ads, and no server that receives your data. Its only internet use is the optional update check described below. The password you create is a local login that encrypts your data on this phone. Your data is never uploaded or sent to us or to anyone else.
 
 2. What the app stores
 On this device only: the cards you add (a nickname, the last 4 digits, card type and color), your transactions, categories, keyword rules, debts and payments, Pay Later purchases, budgets, SMS patterns, and app settings. If you use the business side, also: business capital entries, inventory items, products, and orders (including the buyer names you type). The app never asks for or stores full card numbers, CVV codes, bank passwords or PINs to your bank.
@@ -37,6 +38,9 @@ You can add a photo to an inventory item or product, from the camera or your gal
 
 4b. Payment QR codes
 The QR images shown for Maya, MariBank and BDO are pictures you add to the app. The app does not connect to these services, does not process or check payments, and sends nothing to them.
+
+4c. Update check (optional)
+Once a day, if "Check for updates" is on (Settings > App updates), the app downloads one small public file from the developer's update address to see whether a newer version exists and what changed. The request contains no account, device ID, budget data or other personal information; like any web request, the server that hosts the file can see your phone's IP address and the time of the request. Downloading an update opens your browser. You can turn the check off at any time; the app works fully without it.
 
 5. Password and encryption
 Your data is stored in an encrypted database (SQLCipher, AES-256). The key that unlocks it is protected by your password and by a recovery key that is shown to you once. Neither your password nor your recovery key is stored, and nothing is sent anywhere, so we cannot see your data or reset your password. If you lose both your password and your recovery key, your data cannot be recovered by anyone.

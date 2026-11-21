@@ -22,8 +22,27 @@ class SettingsRepository {
   /// Set once every old plain photo has been encrypted.
   static const photosEncrypted = 'photos_encrypted_v1';
 
+  /// "Check for updates" switch ('0' = off; on by default).
+  static const updateCheckEnabled = 'update_check_enabled';
+  static const updateLastCheck = 'update_last_check';
+
+  /// Build number the user chose to skip.
+  static const updateSkippedBuild = 'update_skipped_build';
+
+  /// Last build whose "What's new" was shown.
+  static const whatsNewSeenBuild = 'whats_new_seen_build';
+
   /// Keys that are device-specific and never exported in backups.
-  static const privateKeys = {pinHash, pinSalt, biometricEnabled, photoDraft, photosEncrypted};
+  static const privateKeys = {
+    pinHash,
+    pinSalt,
+    biometricEnabled,
+    photoDraft,
+    photosEncrypted,
+    updateLastCheck,
+    updateSkippedBuild,
+    whatsNewSeenBuild,
+  };
 
   static String budgetAlertKey(String month) => 'budget_alerts_$month';
 

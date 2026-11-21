@@ -92,7 +92,7 @@ Migrations live in `lib/data/db/migrations.dart` as numbered steps. v1 = core sc
 
 ## Security & privacy
 
-- No network code. The release manifest has no `INTERNET` permission. Android auto-backup is off (`allowBackup="false"`).
+- One network request only: the optional update check (`data/sources/release_feed.dart`, HTTPS GET of a public version.json, no user data). That is the only reason for the `INTERNET` permission. Android auto-backup is off (`allowBackup="false"`).
 - PIN: salted SHA-256 in `settings`, never the PIN itself. Biometrics via `local_auth` (OS-handled).
 - The lock screen is drawn above the navigator, so it covers any open screen. It re-locks after 30 s in the background.
 - SMS: read on device through a small Java `MethodChannel` (no third-party SMS plugin). OTP-looking messages are skipped.
@@ -187,3 +187,11 @@ Migration v7 only adds columns and tables (no rebuilds), so existing rows are un
 - Photos: `PhotoCrypto` (AES-256-GCM, header "PKPH"+v1, nonce, tag) with the key in `flutter_secure_storage` (`pitaka_photo_key_v1`). Files end in `.enc`. `PhotoService.read` decrypts into an in-memory LRU cache; nothing plain is written except the picker's working copy, deleted right after. Old plain photos are encrypted once (`PhotoMigrationController`, flag `photos_encrypted_v1`): write the encrypted copy, update the record, then delete the plain file.
 - Lost camera photo: before the camera opens, the form saves a `PhotoDraft` (settings `photo_draft`, `awaitingCamera: true`). On start, `PhotoRecovery` calls `ImagePicker.retrieveLostData()`; a returned file goes through the same encrypt-and-save path and `HomeShell` reopens the form with the draft and photo.
 - Backups: `BackupBundleService` exports every table (incl. capital and stock ledgers, recipes, orders) plus photos (decrypted, base64) into one JSON encrypted with a backup password (`BackupCrypto`: PBKDF2-HMAC-SHA256 600k -> AES-256-GCM). Restore: decrypt, `BackupService.parse` validates, photos are re-encrypted into a staging folder, the database is replaced or merged (`_BackupMerge` re-points every link) in one transaction, and only then are photos moved into place.
+
+## App updates (APK shared directly)
+
+- `core/app_update_config.dart`: the version.json URL (or `--dart-define=PITAKA_UPDATE_URL=...`). Unset = no request is ever made.
+- `ReleaseFeed` downloads it (HTTPS only, 10 s timeout, 64 KB cap, no cookies or ids). `ReleaseInfo.parse` validates every field; a bad file is ignored.
+- `UpdatePolicy`: compare build numbers (pubspec `+N` = Android versionCode); `minSupportedBuild` makes it "required" (no Skip, but the app keeps working). Skipped builds aren't shown again. Automatic check at most once per 24 h, only if Settings > "Check for updates" is on.
+- `core/changelog.dart`: built-in notes. After an update, `HomeShell` shows "What's new" once for every build newer than `whats_new_seen_build`.
+- The download opens in the browser (`url_launcher`). Android only installs it over the current app if it is signed with the same key, so users keep their data and a tampered APK can't replace the app.

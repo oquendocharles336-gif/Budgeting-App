@@ -12,6 +12,7 @@ import '../../../core/money.dart';
 import '../../../data/db/seed_data.dart';
 import '../../../domain/security/password_crypto.dart';
 import '../../../domain/services/app_lock_service.dart';
+import '../../../domain/services/update_service.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../theme/app_theme.dart';
@@ -19,6 +20,7 @@ import '../../widgets/color_picker.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/animated_icons.dart';
 import '../../widgets/password_dialog.dart';
+import '../../widgets/update_sheets.dart';
 import '../../widgets/photo_migration_line.dart';
 import '../auth/recovery_key_screen.dart';
 import '../auth/sign_up_screen.dart';
@@ -55,10 +57,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) await ref.read(sessionProvider).lock();
   }
 
+  /// App updates (hosted version file).
+  bool _updatesOn = true;
+  String? _installedVersion;
+  bool _checking = false;
+
   @override
   void initState() {
     super.initState();
     _loadSecurity();
+    _loadUpdates();
+  }
+
+  Future<void> _loadUpdates() async {
+    final updates = ref.read(updateServiceProvider);
+    try {
+      final on = await updates.enabled();
+      final v = await updates.installed();
+      if (mounted) setState(() {
+        _updatesOn = on;
+        _installedVersion = '${v.version} (${v.build})';
+      });
+    } catch (e) {
+      debugPrint('Could not read version: $e');
+    }
+  }
+
+  Future<void> _checkNow() async {
+    final updates = ref.read(updateServiceProvider);
+    setState(() => _checking = true);
+    try {
+      final check = await updates.checkNow();
+      if (!mounted) return;
+      if (check.urgency == UpdateUrgency.none) {
+        showSnack(context, 'You have the latest version (${check.installed.version}).');
+      } else {
+        await showUpdateSheet(context, check: check, onSkip: updates.skip);
+      }
+    } on FormatException catch (e) {
+      if (mounted) showSnack(context, 'The version file has a problem: ${e.message}', error: true);
+    } catch (e) {
+      if (mounted) showSnack(context, 'Could not check for updates: $e', error: true);
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _showCurrentNotes() async {
+    final entry = await ref.read(updateServiceProvider).currentNotes();
+    if (!mounted) return;
+    if (entry == null) {
+      showSnack(context, 'No notes for this version.');
+      return;
+    }
+    await showWhatsNewSheet(context, [entry]);
   }
 
   Future<void> _loadSecurity() async {
@@ -268,6 +320,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ),
+          const SectionHeader('App updates'),
+          Card(
+            child: Column(
+              children: [
+                SwitchListTile(
+                  secondary: const Icon(Icons.system_update_rounded),
+                  title: const Text('Check for updates'),
+                  subtitle: Text(
+                    ref.read(updateServiceProvider).configured
+                        ? 'Once a day, the app downloads a small version file to see if a newer version exists. '
+                            'Nothing about you or your data is sent.'
+                        : 'Not set up in this build (no update address).',
+                  ),
+                  value: _updatesOn && ref.read(updateServiceProvider).configured,
+                  onChanged: ref.read(updateServiceProvider).configured
+                      ? (on) async {
+                          setState(() => _updatesOn = on);
+                          await ref.read(updateServiceProvider).setEnabled(on);
+                        }
+                      : null,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.refresh_rounded),
+                  title: const Text('Check now'),
+                  subtitle: Text(_installedVersion == null ? 'Installed version' : 'Installed: $_installedVersion'),
+                  trailing: _checking
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
+                      : null,
+                  enabled: !_checking && ref.read(updateServiceProvider).configured,
+                  onTap: _checkNow,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.new_releases_outlined),
+                  title: const Text('What\'s new in this version'),
+                  onTap: _showCurrentNotes,
+                ),
+              ],
+            ),
+          ),
           const SectionHeader('Legal'),
           Card(
             child: Column(
@@ -288,7 +379,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
           Center(
             child: Text(
-              'Pitaka 1.0 · All data stays on this device',
+              'Pitaka ${_installedVersion ?? ''} · All data stays on this device',
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
             ),
           ),

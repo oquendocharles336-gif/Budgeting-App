@@ -1,3 +1,14 @@
+# Update 5: "Update available" and "What's new"
+
+- New packages: `package_info_plus ^10.2.2`, `url_launcher ^6.3.3`. Run `flutter pub get`.
+- **AndroidManifest:** adds the `INTERNET` permission (only used for the optional update check) and a `<queries>` entry so the download link can open in the browser on Android 11+.
+- `pubspec.yaml` version is now `1.1.0+2`; see docs/RELEASING.md for every release.
+- Set your version.json address in `lib/core/app_update_config.dart` (until then no request is made).
+- Privacy policy section 4c added; terms version 5, so users accept the updated policy once.
+- No database migration.
+
+---
+
 # Update 4: optimistic saves everywhere, stock ledger, capital withdrawals, encrypted photos
 
 `flutter analyze` and `flutter test` were **not** run (no Flutter SDK or pub.dev access where this was made). Run first:

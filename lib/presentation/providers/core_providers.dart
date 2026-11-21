@@ -12,7 +12,9 @@ import '../../data/repositories/pay_later_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/sms_pattern_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
+import '../../core/app_update_config.dart';
 import '../../data/sources/photo_store.dart';
+import '../../data/sources/release_feed.dart';
 import '../../data/sources/sms_inbox.dart';
 import '../../domain/import/transaction_import_service.dart';
 import '../../domain/security/photo_crypto.dart';
@@ -27,6 +29,7 @@ import '../../domain/services/notification_service.dart';
 import '../../domain/services/pay_later_service.dart';
 import '../../domain/services/photo_service.dart';
 import '../../domain/services/transaction_service.dart';
+import '../../domain/services/update_service.dart';
 
 // -----------------------------------------------------------------------------
 // Overridden in main() once the database is open.
@@ -162,6 +165,14 @@ final backupBundleServiceProvider = Provider(
 );
 
 final appLockServiceProvider = Provider((ref) => AppLockService());
+
+final updateServiceProvider = Provider(
+  (ref) => UpdateService(
+    settings: ref.watch(settingsRepositoryProvider),
+    fetchFeed: ReleaseFeed(AppUpdateConfig.feedUrl).fetch,
+    installed: readInstalledVersion,
+  ),
+);
 
 // -----------------------------------------------------------------------------
 // Data revision: every query provider watches this. After any write, call

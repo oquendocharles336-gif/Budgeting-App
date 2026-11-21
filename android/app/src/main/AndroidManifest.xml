@@ -7,7 +7,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Fingerprint / face unlock. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
-    <!-- No INTERNET permission in release builds: the app is fully offline. -->
+    <!-- Only for the optional "Check for updates": one HTTPS download of a small
+         public version file (Settings > App updates). No user data is sent. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:label="Pitaka"
@@ -53,6 +55,11 @@
             android:value="2" />
     </application>
     <queries>
+        <!-- Open the update's download link in the browser (Android 11+ package visibility). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>

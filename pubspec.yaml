@@ -2,7 +2,9 @@ name: budgeting_app
 description: "Pitaka - an offline-first personal budget and expense tracker."
 publish_to: 'none'
 
-version: 1.0.0+1
+# Release: bump this (name+build), add a matching entry in lib/core/changelog.dart
+# and update your hosted version.json (see docs/RELEASING.md).
+version: 1.1.0+2
 
 environment:
   sdk: ^3.12.0
@@ -38,6 +40,11 @@ dependencies:
   # app's private documents folder.
   image_picker: ^1.2.4
   path_provider: ^2.1.6
+
+  # App updates: the installed version (to compare) and opening the
+  # download link in the browser.
+  package_info_plus: ^10.2.2
+  url_launcher: ^6.3.3
 
   cupertino_icons: ^2.0.0
 

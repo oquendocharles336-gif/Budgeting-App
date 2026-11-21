@@ -1,0 +1,16 @@
+{
+  "latestVersion": "1.1.0",
+  "latestBuild": 2,
+  "minSupportedBuild": 1,
+  "releasedAt": "2026-11-21",
+  "apkUrl": "https://github.com/YOUR-GITHUB-NAME/pitaka-releases/releases/download/v1.1.0/pitaka-1.1.0.apk",
+  "sha256": "",
+  "notes": [
+    "Pay Later: record purchases you'll pay later, with reminders 2 days before they're due.",
+    "Loans: mark \"Loan\" transactions as paid.",
+    "Transfers can include an optional fee, shown before you confirm.",
+    "Business side: capital, inventory with recipes and stock history, products, orders and sales charts.",
+    "Photos are encrypted, and backups now include them.",
+    "The app can tell you when a newer version is available."
+  ]
+}

@@ -8,6 +8,7 @@ import '../providers/core_providers.dart';
 import '../providers/data_providers.dart';
 import '../widgets/motion/animated_icons.dart';
 import '../widgets/motion/cascade.dart';
+import '../widgets/update_sheets.dart';
 import 'budget/budget_screen.dart';
 import 'business/inventory_screen.dart';
 import 'business/products_screen.dart';
@@ -50,8 +51,37 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     // tabs will most likely need next, so they open with data ready.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _prefetch();
-      _recoverPhoto();
+      _startupFlow();
     });
+  }
+
+  /// Photo recovery first (it may reopen a form), then "What's new" after
+  /// an update, then the daily "newer version" check.
+  Future<void> _startupFlow() async {
+    await _recoverPhoto();
+    await _showWhatsNew();
+    await _checkForUpdate();
+  }
+
+  Future<void> _showWhatsNew() async {
+    try {
+      final updates = ref.read(updateServiceProvider);
+      final hasData = (await ref.read(transactionRepositoryProvider).recent(limit: 1)).isNotEmpty ||
+          (await ref.read(cardRepositoryProvider).all()).isNotEmpty;
+      final entries = await updates.pendingWhatsNew(hasExistingData: hasData);
+      if (entries.isEmpty || !mounted) return;
+      await showWhatsNewSheet(context, entries);
+      await updates.markWhatsNewSeen((await updates.installed()).build);
+    } catch (e) {
+      debugPrint('What\'s new failed: $e');
+    }
+  }
+
+  Future<void> _checkForUpdate() async {
+    final updates = ref.read(updateServiceProvider);
+    final check = await updates.checkIfDue(); // never throws
+    if (check == null || !check.shouldPrompt || !mounted) return;
+    await showUpdateSheet(context, check: check, onSkip: updates.skip);
   }
 
   /// Android may close the app while the camera is open (low memory). If
