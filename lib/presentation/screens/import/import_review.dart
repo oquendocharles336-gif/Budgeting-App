@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../data/models/category.dart';
+import '../../../data/models/transaction_entry.dart';
 import '../../../domain/import/deduplicator.dart';
 import '../../../domain/import/transaction_import_service.dart';
 import '../../providers/core_providers.dart';
@@ -54,7 +55,7 @@ class _ImportReviewState extends ConsumerState<ImportReview> {
         child: ListView(
           shrinkWrap: true,
           children: [
-            for (final cat in categories)
+            for (final cat in categories.where((x) => x.isIncome == (c.raw.kind == TransactionKind.income)))
               ListTile(
                 leading: CategoryAvatar(category: cat, size: 36),
                 title: Text(cat.name),

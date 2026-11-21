@@ -4,25 +4,49 @@ import '../../data/models/payment_card.dart';
 import '../theme/app_theme.dart';
 
 /// A small visual "plastic card".
-class PaymentCardView extends StatelessWidget {
-  const PaymentCardView({super.key, required this.card, this.onTap, this.width = 220, this.subtitle});
+class PaymentCardView extends StatefulWidget {
+  const PaymentCardView({
+    super.key,
+    required this.card,
+    this.onTap,
+    this.width = 220,
+    this.subtitle,
+    this.allowReveal = false,
+  });
 
   final PaymentCard card;
   final VoidCallback? onTap;
   final double width;
   final String? subtitle;
 
+  /// Shows an eye button that reveals an e-wallet's full mobile number.
+  final bool allowReveal;
+
+  @override
+  State<PaymentCardView> createState() => _PaymentCardViewState();
+}
+
+class _PaymentCardViewState extends State<PaymentCardView> {
+  bool _revealed = false;
+
   @override
   Widget build(BuildContext context) {
+    final card = widget.card;
+    final onTap = widget.onTap;
+    final canReveal = widget.allowReveal && card.hasMobileNumber;
+    final number = canReveal && _revealed ? card.mobileNumber! : card.maskedNumber;
     final base = Color(card.color);
     final hsl = HSLColor.fromColor(base);
     final end = hsl.withLightness((hsl.lightness * 0.6).clamp(0.05, 1.0).toDouble()).toColor();
     final fg = AppTheme.onColor(base);
     return Semantics(
       button: onTap != null,
-      label: '${card.nickname}, ${card.type.label} card ending ${card.last4}',
+      // Screen readers get the same last 3 digits the mask shows, never the full number.
+      label: card.hasMobileNumber && card.mobileNumber!.length >= 3
+          ? '${card.nickname}, ${card.type.label}, number ending ${card.mobileNumber!.substring(card.mobileNumber!.length - 3)}'
+          : '${card.nickname}, ${card.type.label} card ending ${card.last4}',
       child: SizedBox(
-        width: width,
+        width: widget.width,
         child: AspectRatio(
           aspectRatio: 1.6,
           child: Material(
@@ -56,13 +80,29 @@ class PaymentCardView extends StatelessWidget {
                         ],
                       ),
                       const Spacer(),
-                      Text(
-                        '••••  ${card.last4}',
-                        style: TextStyle(color: fg, fontSize: 18, letterSpacing: 2, fontWeight: FontWeight.w600),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              number,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: fg, fontSize: 18, letterSpacing: 2, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          if (canReveal)
+                            IconButton(
+                              visualDensity: VisualDensity.compact,
+                              tooltip: _revealed ? 'Hide number' : 'Show number',
+                              color: fg,
+                              icon: Icon(_revealed ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 20),
+                              onPressed: () => setState(() => _revealed = !_revealed),
+                            ),
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        subtitle ?? card.type.label,
+                        widget.subtitle ?? card.type.label,
                         style: TextStyle(color: fg.withValues(alpha: 0.85), fontSize: 13),
                       ),
                     ],

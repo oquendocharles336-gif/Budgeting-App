@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/money.dart';
 import '../../../data/models/category.dart';
+import '../../../data/models/debt.dart';
 import '../../../data/models/payment_card.dart';
 import '../../../data/models/raw_transaction.dart';
 import '../../../data/models/transaction_entry.dart';
@@ -15,6 +16,7 @@ import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../widgets/common.dart';
 import '../cards/card_form_screen.dart';
+import '../debts/debt_form_screen.dart';
 
 /// Add a new transaction, or edit/delete an existing one.
 class TransactionFormScreen extends ConsumerStatefulWidget {
@@ -32,12 +34,27 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
   late final TextEditingController _amount;
   late final TextEditingController _description;
   late final TextEditingController _notes;
+  late final TextEditingController _customCategory;
   late TransactionKind _kind;
   late DateTime _date;
   int? _categoryId;
   int? _cardId;
+  int? _toCardId;
   bool _categoryTouched = false;
   bool _saving = false;
+
+  /// Income from "Borrowed money": where it was borrowed (for the new debt).
+  LenderType? _loanLender;
+
+  /// Last categories shown, so _save can look up the picked one.
+  List<Category> _categoryList = const [];
+
+  Category? get _selectedCategory {
+    for (final c in _categoryList) {
+      if (c.id == _categoryId) return c;
+    }
+    return null;
+  }
   Timer? _suggestTimer;
 
   bool get _isEdit => widget.existing != null;
@@ -49,10 +66,12 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     _amount = TextEditingController(text: e == null ? '' : Money.toInput(e.amount));
     _description = TextEditingController(text: e?.description ?? '');
     _notes = TextEditingController(text: e?.notes ?? '');
+    _customCategory = TextEditingController(text: e?.customCategory ?? '');
     _kind = e?.kind ?? TransactionKind.expense;
     _date = e?.date ?? DateTime.now();
     _categoryId = e?.categoryId;
     _cardId = e?.cardId ?? widget.initialCardId;
+    _toCardId = e?.toCardId;
     _categoryTouched = e != null;
   }
 
@@ -62,11 +81,13 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     _amount.dispose();
     _description.dispose();
     _notes.dispose();
+    _customCategory.dispose();
     super.dispose();
   }
 
   void _onDescriptionChanged(String text) {
-    if (_categoryTouched) return;
+    // Keyword rules point at expense categories only.
+    if (_categoryTouched || _kind != TransactionKind.expense) return;
     _suggestTimer?.cancel();
     _suggestTimer = Timer(const Duration(milliseconds: 350), () async {
       final id = await ref.read(transactionServiceProvider).suggestCategory(text);
@@ -92,32 +113,79 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     setState(() => _saving = true);
     final amount = Money.parse(_amount.text)!.abs();
     final notes = _notes.text.trim().isEmpty ? null : _notes.text.trim();
+    final isTransfer = _kind == TransactionKind.transfer;
+    final description = _description.text.trim().isEmpty && isTransfer ? 'Transfer' : _description.text.trim();
+    final categoryId = isTransfer ? null : _categoryId;
+    final toCardId = isTransfer ? _toCardId : null;
+    final selected = isTransfer ? null : _selectedCategory;
+    final typed = _customCategory.text.trim();
+    final customCategory = (selected?.isOther ?? false) && typed.isNotEmpty ? typed : null;
+    // New income from "Borrowed money" is also added to Debts.
+    final addDebt = !_isEdit && _kind == TransactionKind.income && (selected?.isLoan ?? false);
     final service = ref.read(transactionServiceProvider);
+    Debt? createdDebt;
     try {
       if (_isEdit) {
         await service.update(widget.existing!.copyWith(
           amount: amount,
           kind: _kind,
-          description: _description.text.trim(),
-          categoryId: () => _categoryId,
+          description: description,
+          categoryId: () => categoryId,
+          customCategory: () => customCategory,
           cardId: () => _cardId,
+          toCardId: () => toCardId,
           date: _date,
           notes: () => notes,
         ));
       } else {
         await service.create(RawTransaction(
           date: _date,
-          description: _description.text.trim(),
+          description: description,
           amount: amount,
           kind: _kind,
           source: TransactionSourceType.manual,
           cardId: _cardId,
-          categoryId: _categoryId,
+          toCardId: toCardId,
+          categoryId: categoryId,
+          customCategory: customCategory,
           notes: notes,
         ));
       }
+      if (addDebt) {
+        final debt = Debt(
+          creditor: description,
+          type: DebtType.loan,
+          lenderType: _loanLender,
+          totalAmount: amount,
+          createdAt: _date,
+          notes: 'Added from income on ${DateFormat('MMM d, yyyy').format(_date)}',
+        );
+        final id = await ref.read(debtServiceProvider).save(debt, currencySymbol: ref.read(currencyProvider).symbol);
+        createdDebt = Debt(
+          id: id,
+          creditor: debt.creditor,
+          type: debt.type,
+          lenderType: debt.lenderType,
+          totalAmount: debt.totalAmount,
+          createdAt: debt.createdAt,
+          notes: debt.notes,
+        );
+      }
       ref.refreshData();
-      if (mounted) Navigator.of(context).pop();
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.of(context);
+      final navigator = Navigator.of(context);
+      navigator.pop();
+      final d = createdDebt;
+      if (d != null) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('Also added to Debts: ${d.creditor}'),
+          action: SnackBarAction(
+            label: 'Add interest & due date',
+            onPressed: () => navigator.push(MaterialPageRoute(builder: (_) => DebtFormScreen(existing: d))),
+          ),
+        ));
+      }
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
@@ -136,15 +204,32 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final symbol = ref.watch(currencyProvider).symbol;
     final categories = ref.watch(categoriesProvider);
-    final cards = ref.watch(cardsProvider).asDataOrNull ?? const <PaymentCard>[];
-    final existing = widget.existing;
+    final cards = ref.watch(cardsProvider);
+    final cardMap = ref.watch(cardMapProvider);
 
-    // Keep an archived card selectable when editing an old transaction.
-    final allCards = ref.watch(cardMapProvider).asDataOrNull ?? const <int, PaymentCard>{};
-    final archivedCard = (_cardId != null && !cards.any((c) => c.id == _cardId)) ? allCards[_cardId] : null;
+    // The form needs categories and accounts before it can be shown. Show a
+    // spinner while they load and a retryable error if a query fails, so the
+    // screen is never silently empty.
+    final sources = <AsyncValue<Object>>[categories, cards, cardMap];
+    final Widget body;
+    // A failed background refresh keeps the last data, so typed input isn't lost.
+    final failed = sources.where((v) => v.hasError && !v.hasValue).firstOrNull;
+    if (failed != null) {
+      debugPrint('TransactionFormScreen: could not load form data: ${failed.error}');
+      body = ErrorView(
+        error: failed.error!,
+        onRetry: () {
+          ref.invalidate(categoriesProvider);
+          ref.invalidate(cardsProvider);
+          ref.invalidate(cardMapProvider);
+        },
+      );
+    } else if (sources.any((v) => !v.hasValue)) {
+      body = const LoadingView();
+    } else {
+      body = _buildForm(context, categories.requireValue, cards.requireValue, cardMap.requireValue);
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -153,129 +238,241 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
           if (_isEdit) IconButton(tooltip: 'Delete', onPressed: _delete, icon: const Icon(Icons.delete_outline_rounded)),
         ],
       ),
-      body: Form(
-        key: _form,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-          children: [
-            SegmentedButton<TransactionKind>(
-              segments: const [
-                ButtonSegment(value: TransactionKind.expense, label: Text('Expense'), icon: Icon(Icons.arrow_upward_rounded)),
-                ButtonSegment(value: TransactionKind.income, label: Text('Income / refund'), icon: Icon(Icons.arrow_downward_rounded)),
+      body: body,
+    );
+  }
+
+  /// Dropdown entries for "Cash" plus each account.
+  List<DropdownMenuItem<int?>> _accountItems(List<PaymentCard> accounts) => [
+        const DropdownMenuItem<int?>(
+          value: null,
+          child: Row(children: [Icon(Icons.payments_rounded), SizedBox(width: 10), Text('Cash')]),
+        ),
+        for (final c in accounts)
+          DropdownMenuItem<int?>(
+            value: c.id,
+            child: Row(
+              children: [
+                Icon(
+                  c.type == CardType.ewallet ? Icons.account_balance_wallet_rounded : Icons.credit_card_rounded,
+                  color: Color(c.color),
+                ),
+                const SizedBox(width: 10),
+                // Needs a bounded width: the dropdowns below use isExpanded.
+                Flexible(child: Text(c.label, overflow: TextOverflow.ellipsis)),
               ],
-              selected: {_kind},
-              onSelectionChanged: (s) => setState(() => _kind = s.first),
             ),
+          ),
+      ];
+
+  Widget _buildForm(
+    BuildContext context,
+    List<Category> categories,
+    List<PaymentCard> cards,
+    Map<int, PaymentCard> allCards,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final symbol = ref.watch(currencyProvider).symbol;
+    final existing = widget.existing;
+    final isTransfer = _kind == TransactionKind.transfer;
+    _categoryList = categories;
+    // Expense shows spending categories, income shows income types.
+    final kindCategories = categories.where((c) => c.kind == _kind).toList();
+    final isLoan = _kind == TransactionKind.income && (_selectedCategory?.isLoan ?? false);
+
+    // Keep an archived card selectable when editing an old transaction.
+    final accounts = [
+      ...cards,
+      for (final id in {_cardId, _toCardId})
+        if (id != null && !cards.any((c) => c.id == id) && allCards[id] != null) allCards[id]!,
+    ];
+    final items = _accountItems(accounts);
+    // A value that isn't in the items trips a DropdownButton assertion.
+    int? safe(int? id) => accounts.any((c) => c.id == id) ? id : null;
+
+    return Form(
+      key: _form,
+      child: ListView(
+        padding: EdgeInsets.fromLTRB(16, 8, 16, 32 + MediaQuery.viewPaddingOf(context).bottom),
+        children: [
+          SegmentedButton<TransactionKind>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(value: TransactionKind.expense, label: Text('Expense'), icon: Icon(Icons.arrow_upward_rounded)),
+              ButtonSegment(value: TransactionKind.income, label: Text('Income'), icon: Icon(Icons.arrow_downward_rounded)),
+              ButtonSegment(value: TransactionKind.transfer, label: Text('Transfer'), icon: Icon(Icons.swap_horiz_rounded)),
+            ],
+            selected: {_kind},
+            onSelectionChanged: (s) => setState(() {
+              _kind = s.first;
+              // Expense and income have different categories.
+              if (_selectedCategory?.kind != _kind) {
+                _categoryId = null;
+                _categoryTouched = false;
+              }
+            }),
+          ),
+          const SizedBox(height: 20),
+          TextFormField(
+            controller: _amount,
+            autofocus: !_isEdit,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+            style: Theme.of(context).textTheme.headlineMedium,
+            decoration: InputDecoration(
+              labelText: 'Amount',
+              prefixText: '$symbol ',
+              prefixStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            validator: validateAmount,
+          ),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: _description,
+            textCapitalization: TextCapitalization.sentences,
+            maxLength: 200,
+            decoration: InputDecoration(
+              labelText: switch (_kind) {
+                TransactionKind.expense => 'What was it for?',
+                TransactionKind.income => isLoan ? 'Who lent it to you?' : 'Where did it come from?',
+                TransactionKind.transfer => 'Description (optional)',
+              },
+              hintText: switch (_kind) {
+                TransactionKind.expense => 'e.g. Jollibee lunch',
+                TransactionKind.income => isLoan ? 'e.g. Tito Ben, BPI, GCash GLoan' : 'e.g. Salary from ABC Corp',
+                TransactionKind.transfer => 'e.g. Cash in to GCash',
+              },
+              counterText: '',
+            ),
+            onChanged: _onDescriptionChanged,
+            validator: (v) => (!isTransfer && (v == null || v.trim().isEmpty))
+                ? (_kind == TransactionKind.income ? 'Enter where it came from' : 'Enter a description')
+                : null,
+          ),
+          if (!isTransfer) ...[
             const SizedBox(height: 20),
-            TextFormField(
-              controller: _amount,
-              autofocus: !_isEdit,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-              style: Theme.of(context).textTheme.headlineMedium,
-              decoration: InputDecoration(
-                labelText: 'Amount',
-                prefixText: '$symbol ',
-                prefixStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(color: scheme.onSurfaceVariant),
-              ),
-              validator: validateAmount,
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _description,
-              textCapitalization: TextCapitalization.sentences,
-              maxLength: 200,
-              decoration: const InputDecoration(labelText: 'What was it for?', hintText: 'e.g. Jollibee lunch', counterText: ''),
-              onChanged: _onDescriptionChanged,
-              validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a description' : null,
-            ),
-            const SizedBox(height: 20),
-            Text('Category', style: Theme.of(context).textTheme.titleSmall),
+            Text(_kind == TransactionKind.income ? 'Type of income' : 'Category', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
-            AsyncView<List<Category>>(
-              value: categories,
-              data: (list) => Wrap(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final c in kindCategories)
+                  ChoiceChip(
+                    avatar: CategoryAvatar(category: c, size: 24),
+                    label: Text(c.name),
+                    selected: _categoryId == c.id,
+                    onSelected: (_) => setState(() {
+                      _categoryId = c.id;
+                      _categoryTouched = true;
+                    }),
+                  ),
+              ],
+            ),
+            if (_selectedCategory?.isOther ?? false) ...[
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _customCategory,
+                maxLength: 40,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  labelText: 'Type the category',
+                  hintText: _kind == TransactionKind.income ? 'e.g. Freelance project' : 'e.g. Pet food',
+                  counterText: '',
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty) ? 'Type what this is for' : null,
+              ),
+            ],
+            if (isLoan && !_isEdit) ...[
+              const SizedBox(height: 16),
+              Text('Where did you borrow?', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final c in list)
+                  for (final t in LenderType.values)
                     ChoiceChip(
-                      avatar: CategoryAvatar(category: c, size: 24),
-                      label: Text(c.name),
-                      selected: _categoryId == c.id,
-                      onSelected: (_) => setState(() {
-                        _categoryId = c.id;
-                        _categoryTouched = true;
-                      }),
+                      label: Text(t.label),
+                      selected: _loanLender == t,
+                      onSelected: (on) => setState(() => _loanLender = on ? t : null),
                     ),
                 ],
               ),
-            ),
-            const SizedBox(height: 20),
-            DropdownButtonFormField<int?>(
-              initialValue: _cardId,
-              decoration: const InputDecoration(labelText: 'Paid with'),
-              items: [
-                const DropdownMenuItem<int?>(
-                  value: null,
-                  child: Row(children: [Icon(Icons.payments_rounded), SizedBox(width: 10), Text('Cash')]),
-                ),
-                for (final c in [...cards, ?archivedCard])
-                  DropdownMenuItem<int?>(
-                    value: c.id,
-                    child: Row(
-                      children: [
-                        Icon(Icons.credit_card_rounded, color: Color(c.color)),
-                        const SizedBox(width: 10),
-                        Flexible(child: Text(c.label, overflow: TextOverflow.ellipsis)),
-                      ],
-                    ),
-                  ),
-              ],
-              onChanged: (v) => setState(() => _cardId = v),
-            ),
-            if (cards.isEmpty)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CardFormScreen())),
-                  icon: const Icon(Icons.add_card_rounded),
-                  label: const Text('Add a card'),
-                ),
-              ),
-            const SizedBox(height: 16),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.event_rounded),
-              title: const Text('Date'),
-              subtitle: Text(DateFormat('EEEE, MMMM d, yyyy').format(_date)),
-              trailing: const Icon(Icons.edit_calendar_rounded),
-              onTap: _pickDate,
-            ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _notes,
-              maxLines: 3,
-              minLines: 1,
-              maxLength: 500,
-              decoration: const InputDecoration(labelText: 'Notes (optional)'),
-            ),
-            if (existing != null && existing.source != TransactionSourceType.manual) ...[
               const SizedBox(height: 8),
               Text(
-                'Imported from ${existing.source.label}',
+                'This will also be added to Debts so you can track paying it back. '
+                'You can add the interest and due date there.',
                 style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
               ),
             ],
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _saving ? null : _save,
-              child: _saving
-                  ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
-                  : Text(_isEdit ? 'Save changes' : 'Add transaction'),
+          ],
+          const SizedBox(height: 20),
+          DropdownButtonFormField<int?>(
+            initialValue: safe(_cardId),
+            isExpanded: true,
+            decoration: InputDecoration(
+              labelText: switch (_kind) {
+                TransactionKind.expense => 'Paid with',
+                TransactionKind.income => 'Received in',
+                TransactionKind.transfer => 'From',
+              },
+            ),
+            items: items,
+            onChanged: (v) => setState(() => _cardId = v),
+          ),
+          if (isTransfer) ...[
+            const SizedBox(height: 16),
+            DropdownButtonFormField<int?>(
+              initialValue: safe(_toCardId),
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'To'),
+              items: items,
+              onChanged: (v) => setState(() => _toCardId = v),
+              validator: (v) => v == _cardId ? 'Pick a different account to transfer to' : null,
             ),
           ],
-        ),
+          if (cards.isEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const CardFormScreen())),
+                icon: const Icon(Icons.add_card_rounded),
+                label: const Text('Add a card'),
+              ),
+            ),
+          const SizedBox(height: 16),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.event_rounded),
+            title: const Text('Date'),
+            subtitle: Text(DateFormat('EEEE, MMMM d, yyyy').format(_date)),
+            trailing: const Icon(Icons.edit_calendar_rounded),
+            onTap: _pickDate,
+          ),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _notes,
+            maxLines: 3,
+            minLines: 1,
+            maxLength: 500,
+            decoration: const InputDecoration(labelText: 'Notes (optional)'),
+          ),
+          if (existing != null && existing.source != TransactionSourceType.manual) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Imported from ${existing.source.label}',
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+            ),
+          ],
+          const SizedBox(height: 24),
+          FilledButton(
+            onPressed: _saving ? null : _save,
+            child: _saving
+                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
+                : Text(_isEdit ? 'Save changes' : 'Save'),
+          ),
+        ],
       ),
     );
   }

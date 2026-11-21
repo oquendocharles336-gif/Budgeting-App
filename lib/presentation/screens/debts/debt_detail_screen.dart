@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/money.dart';
 import '../../../data/models/debt.dart';
+import '../../../domain/debt/interest_calculator.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
@@ -79,14 +80,52 @@ class DebtDetailScreen extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
+                    _row('Type', d.type.label),
+                    if (d.lenderLabel != null) _row('Borrowed from', d.lenderLabel!),
                     _row('Total', Money.format(d.totalAmount, symbol: symbol)),
                     _row('Paid so far', Money.format(s.paid, symbol: symbol)),
                     if (d.dueDate != null) _row('Due', DateFormat('MMMM d, yyyy').format(d.dueDate!)),
-                    if (d.interestRateBp != null) _row('Interest', '${(d.interestRateBp! / 100).toStringAsFixed(2)}%'),
+                    if (d.interestRateBp != null)
+                      _row(
+                        'Interest',
+                        '${(d.interestRateBp! / 100).toStringAsFixed(2)}% ${d.interestPeriod.label} · ${d.interestType.label.toLowerCase()}',
+                      ),
+                    if (d.termMonths != null) _row('Term', '${d.termMonths} monthly payments'),
                     if (d.notes != null) _row('Notes', d.notes!),
                   ],
                 ),
               ),
+              if (InterestCalculator.forStatus(s) case final q? when q.dueThisMonth > 0) ...[
+                const SizedBox(height: 12),
+                AppCard(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Get ready this month', style: TextStyle(color: scheme.onSurfaceVariant)),
+                      Text(Money.format(q.dueThisMonth, symbol: symbol), style: Theme.of(context).textTheme.headlineSmall),
+                      const SizedBox(height: 8),
+                      _row('Interest this month', Money.format(q.interestThisMonth, symbol: symbol)),
+                      if (q.monthlyPayment != null)
+                        _row('Monthly payment', Money.format(q.monthlyPayment!, symbol: symbol)),
+                      if (q.totalInterest != null)
+                        _row('Total interest', Money.format(q.totalInterest!, symbol: symbol)),
+                      const SizedBox(height: 4),
+                      Text(
+                        q.monthlyPayment == null
+                            ? 'Interest only. Add the number of payments (Edit) to include the principal.'
+                            : d.interestType == InterestType.compound
+                                ? 'Compound: interest is on what you still owe, so it goes down as you pay.'
+                                : 'Simple: interest is on the amount you borrowed.',
+                        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+                      ),
+                      Text(
+                        'Estimate. Your lender\'s statement is the final amount.',
+                        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () async {

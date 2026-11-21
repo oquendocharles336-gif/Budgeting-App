@@ -1,11 +1,75 @@
+/// What kind of debt this is. Stored in `debts.debt_type`.
+enum DebtType {
+  loan('Loan'),
+  installment('Installment'),
+  personal('Personal'),
+  other('Other');
+
+  const DebtType(this.label);
+  final String label;
+
+  static DebtType fromDb(String? v) =>
+      DebtType.values.firstWhere((t) => t.name == v, orElse: () => DebtType.other);
+}
+
+/// Where the money was borrowed from. Stored in `debts.lender_type`.
+enum LenderType {
+  bank('Bank'),
+  lendingApp('Lending app'),
+  cooperative('Cooperative'),
+  family('Family / friend'),
+  employer('Employer'),
+  creditCard('Credit card'),
+  pawnshop('Pawnshop'),
+  other('Other');
+
+  const LenderType(this.label);
+  final String label;
+
+  static LenderType? fromDb(String? v) {
+    for (final t in LenderType.values) {
+      if (t.name == v) return t;
+    }
+    return null;
+  }
+}
+
+/// Simple: interest is always on the amount borrowed.
+/// Compound: interest is on what's still owed, so it changes as you pay.
+enum InterestType {
+  simple('Simple'),
+  compound('Compound');
+
+  const InterestType(this.label);
+  final String label;
+
+  static InterestType fromDb(String? v) => v == 'compound' ? InterestType.compound : InterestType.simple;
+}
+
+enum InterestPeriod {
+  month('per month'),
+  year('per year');
+
+  const InterestPeriod(this.label);
+  final String label;
+
+  static InterestPeriod fromDb(String? v) => v == 'year' ? InterestPeriod.year : InterestPeriod.month;
+}
+
 class Debt {
   const Debt({
     this.id,
     required this.creditor,
+    this.type = DebtType.other,
+    this.lenderType,
+    this.lenderDetail,
     required this.totalAmount,
     this.initialPaid = 0,
     this.dueDate,
     this.interestRateBp,
+    this.interestType = InterestType.simple,
+    this.interestPeriod = InterestPeriod.month,
+    this.termMonths,
     this.notes,
     this.isPaid = false,
     required this.createdAt,
@@ -14,6 +78,13 @@ class Debt {
 
   final int? id;
   final String creditor;
+  final DebtType type;
+
+  /// Where it was borrowed from.
+  final LenderType? lenderType;
+
+  /// What the user typed when [lenderType] is "Other".
+  final String? lenderDetail;
 
   /// Centavos.
   final int totalAmount;
@@ -22,8 +93,21 @@ class Debt {
   final int initialPaid;
   final DateTime? dueDate;
 
-  /// Interest rate in basis points: 350 = 3.50%.
+  /// Interest rate in basis points: 350 = 3.50%, per [interestPeriod].
   final int? interestRateBp;
+  final InterestType interestType;
+  final InterestPeriod interestPeriod;
+
+  /// Number of monthly payments, if known. Used to work out the monthly amount.
+  final int? termMonths;
+
+  /// "Bank", or the typed text for "Other".
+  String? get lenderLabel {
+    final t = lenderType;
+    if (t == null) return null;
+    if (t == LenderType.other && (lenderDetail?.trim().isNotEmpty ?? false)) return lenderDetail!.trim();
+    return t.label;
+  }
   final String? notes;
   final bool isPaid;
   final DateTime createdAt;
@@ -31,6 +115,12 @@ class Debt {
 
   Debt copyWith({
     String? creditor,
+    DebtType? type,
+    LenderType? Function()? lenderType,
+    String? Function()? lenderDetail,
+    InterestType? interestType,
+    InterestPeriod? interestPeriod,
+    int? Function()? termMonths,
     int? totalAmount,
     int? initialPaid,
     DateTime? Function()? dueDate,
@@ -42,6 +132,12 @@ class Debt {
       Debt(
         id: id,
         creditor: creditor ?? this.creditor,
+        type: type ?? this.type,
+        lenderType: lenderType != null ? lenderType() : this.lenderType,
+        lenderDetail: lenderDetail != null ? lenderDetail() : this.lenderDetail,
+        interestType: interestType ?? this.interestType,
+        interestPeriod: interestPeriod ?? this.interestPeriod,
+        termMonths: termMonths != null ? termMonths() : this.termMonths,
         totalAmount: totalAmount ?? this.totalAmount,
         initialPaid: initialPaid ?? this.initialPaid,
         dueDate: dueDate != null ? dueDate() : this.dueDate,
@@ -55,6 +151,12 @@ class Debt {
   Map<String, Object?> toMap() => {
         if (id != null) 'id': id,
         'creditor': creditor,
+        'debt_type': type.name,
+        'lender_type': lenderType?.name,
+        'lender_detail': lenderDetail,
+        'interest_type': interestType.name,
+        'interest_period': interestPeriod.name,
+        'term_months': termMonths,
         'total_amount': totalAmount,
         'initial_paid': initialPaid,
         'due_date': dueDate?.millisecondsSinceEpoch,
@@ -68,6 +170,12 @@ class Debt {
   factory Debt.fromMap(Map<String, Object?> m) => Debt(
         id: m['id'] as int,
         creditor: m['creditor'] as String,
+        type: DebtType.fromDb(m['debt_type'] as String?),
+        lenderType: LenderType.fromDb(m['lender_type'] as String?),
+        lenderDetail: m['lender_detail'] as String?,
+        interestType: InterestType.fromDb(m['interest_type'] as String?),
+        interestPeriod: InterestPeriod.fromDb(m['interest_period'] as String?),
+        termMonths: m['term_months'] as int?,
         totalAmount: m['total_amount'] as int,
         initialPaid: m['initial_paid'] as int? ?? 0,
         dueDate: m['due_date'] == null

@@ -114,7 +114,7 @@ class BudgetScreen extends ConsumerWidget {
   Future<void> _addCategoryBudget(BuildContext context, WidgetRef ref, String monthKey, MonthSummary s) async {
     final categories = await ref.read(categoriesProvider.future);
     final withBudget = s.categoryRows.where((r) => r.progress.hasBudget).map((r) => r.category.id).toSet();
-    final options = categories.where((c) => !withBudget.contains(c.id)).toList();
+    final options = categories.where((c) => !c.isIncome && !withBudget.contains(c.id)).toList();
     if (!context.mounted) return;
     if (options.isEmpty) {
       showSnack(context, 'Every category already has a budget.');

@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:intl/intl.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import '../../core/money.dart';
 import '../../data/db/default_data.dart';
@@ -102,6 +102,9 @@ class BackupService {
             await txn.insert(t, row);
           }
         }
+        // Older backups (schema < 4) have no income categories.
+        await txn.update('categories', {'role': 'other'}, where: 'id = ? AND role IS NULL', whereArgs: [DefaultData.other]);
+        await DefaultData.ensureIncomeCategories(txn);
         // Older backups (schema 1) have no SMS patterns.
         if (tables['sms_patterns'] == null) {
           for (final p in DefaultData.smsPatterns) {
@@ -161,6 +164,7 @@ class BackupService {
       for (final c in DefaultData.categories) {
         await txn.insert('categories', c.toMap());
       }
+      await DefaultData.ensureIncomeCategories(txn);
       for (final r in DefaultData.rules) {
         await txn.insert('category_rules', r.toMap());
       }

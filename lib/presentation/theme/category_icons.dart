@@ -34,6 +34,9 @@ class CategoryIcons {
     'internet': Icons.wifi_rounded,
     'water': Icons.water_drop_rounded,
     'electricity': Icons.bolt_rounded,
+    'handshake': Icons.handshake_rounded,
+    'payback': Icons.currency_exchange_rounded,
+    'store': Icons.storefront_rounded,
   };
 
   static IconData of(String key) => all[key] ?? Icons.category_rounded;

@@ -10,16 +10,20 @@ import 'package:intl/intl.dart';
 import '../../../core/legal_text.dart';
 import '../../../core/money.dart';
 import '../../../data/db/seed_data.dart';
+import '../../../domain/security/password_crypto.dart';
+import '../../../domain/services/backup_crypto.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/color_picker.dart';
 import '../../widgets/common.dart';
+import '../../widgets/password_dialog.dart';
+import '../auth/recovery_key_screen.dart';
 import '../cards/cards_screen.dart';
 import '../debts/debts_screen.dart';
 import '../legal/legal_document_screen.dart';
 import 'categories_screen.dart';
-import 'pin_setup_screen.dart';
+import 'change_password_screen.dart';
 import 'rules_screen.dart';
 import 'sms_patterns_screen.dart';
 
@@ -58,7 +62,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = ref.watch(themeControllerProvider);
     final currency = ref.watch(currencyProvider);
-    final lock = ref.watch(lockControllerProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -138,44 +141,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Card(
             child: Column(
               children: [
-                SwitchListTile(
-                  secondary: const Icon(Icons.pin_rounded),
-                  title: const Text('App lock (PIN)'),
-                  subtitle: const Text('Ask for a PIN when opening the app'),
-                  value: lock.enabled,
-                  onChanged: (on) async {
-                    if (on) {
-                      final ok = await Navigator.of(context).push<bool>(
-                        MaterialPageRoute(fullscreenDialog: true, builder: (_) => const PinSetupScreen()),
-                      );
-                      if (ok == true) ref.read(lockControllerProvider.notifier).setEnabled(true);
-                    } else {
-                      await ref.read(appLockServiceProvider).removeLock();
-                      ref.read(lockControllerProvider.notifier).setEnabled(false);
-                      setState(() => _biometricOn = false);
-                    }
-                  },
+                const ListTile(
+                  leading: Icon(Icons.enhanced_encryption_rounded),
+                  title: Text('Your data is encrypted'),
+                  subtitle: Text('Only your password or recovery key can unlock it. Nobody else can, not even the developer.'),
                 ),
-                if (lock.enabled)
-                  ListTile(
-                    leading: const Icon(Icons.password_rounded),
-                    title: const Text('Change PIN'),
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(fullscreenDialog: true, builder: (_) => const PinSetupScreen()),
-                    ),
-                  ),
-                if (lock.enabled && _biometricAvailable)
+                ListTile(
+                  leading: const Icon(Icons.password_rounded),
+                  title: const Text('Change password'),
+                  onTap: () => _push(const ChangePasswordScreen()),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.key_rounded),
+                  title: const Text('New recovery key'),
+                  subtitle: const Text('Lost your recovery key? Make a new one; the old one stops working'),
+                  onTap: _newRecoveryKey,
+                ),
+                if (_biometricAvailable)
                   SwitchListTile(
                     secondary: const Icon(Icons.fingerprint_rounded),
                     title: const Text('Unlock with fingerprint / face'),
+                    subtitle: const Text('Your key is kept in the phone\'s secure keystore. The password always works too.'),
                     value: _biometricOn,
                     onChanged: (on) async {
                       final svc = ref.read(appLockServiceProvider);
-                      if (on && !await svc.authenticateWithBiometrics()) return;
-                      await svc.setBiometricEnabled(on);
-                      setState(() => _biometricOn = on);
+                      if (on) {
+                        if (!await svc.enableBiometric(ref.read(sessionProvider).dataKey)) return;
+                      } else {
+                        await svc.disableBiometric();
+                      }
+                      if (mounted) setState(() => _biometricOn = on);
                     },
                   ),
+                ListTile(
+                  leading: const Icon(Icons.lock_rounded),
+                  title: const Text('Lock now'),
+                  subtitle: const Text('Also happens after 30 seconds in the background'),
+                  onTap: () => ref.read(sessionProvider).lock(),
+                ),
               ],
             ),
           ),
@@ -191,8 +194,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.backup_rounded),
-                  title: const Text('Back up everything (JSON)'),
-                  subtitle: const Text('Save a full backup file you can restore later'),
+                  title: const Text('Back up everything (encrypted)'),
+                  subtitle: const Text('A backup file that only opens with your password'),
                   onTap: _exportJson,
                 ),
                 ListTile(
@@ -286,13 +289,61 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _exportCsv() async {
+    final ok = await confirm(
+      context,
+      title: 'Export unencrypted CSV?',
+      message: 'CSV files can\'t be encrypted. Anyone who gets the file can read your transactions. '
+          'For a safe copy, use "Back up everything" instead.',
+      confirmLabel: 'Export anyway',
+      destructive: false,
+    );
+    if (!ok) return;
     final csv = await ref.read(backupServiceProvider).exportTransactionsCsv();
     await _save('pitaka_transactions_$_stamp.csv', csv, 'text/csv');
   }
 
   Future<void> _exportJson() async {
-    final json = await ref.read(backupServiceProvider).exportJson();
-    await _save('pitaka_backup_$_stamp.json', json, 'application/json');
+    final vault = ref.read(sessionProvider).vault;
+    final password = await askPassword(
+      context,
+      title: 'Encrypt backup',
+      message: 'Enter your password. The backup can only be opened with this password.',
+      confirmLabel: 'Back up',
+      check: (pw) async => await vault.verifyPassword(pw) ? null : 'Wrong password',
+    );
+    if (password == null || !mounted) return;
+    try {
+      final json = await ref.read(backupServiceProvider).exportJson();
+      final encrypted = await BackupCrypto.encrypt(json, password);
+      await _save('pitaka_backup_$_stamp.json', encrypted, 'application/json');
+    } catch (e) {
+      if (mounted) showSnack(context, 'Could not create backup: $e', error: true);
+    }
+  }
+
+  Future<void> _newRecoveryKey() async {
+    final vault = ref.read(sessionProvider).vault;
+    String? newKey;
+    await askPassword(
+      context,
+      title: 'New recovery key',
+      message: 'Enter your password. Your old recovery key will stop working.',
+      confirmLabel: 'Create',
+      check: (pw) async {
+        try {
+          newKey = await vault.replaceRecoveryKey(password: pw);
+          return null;
+        } on WrongSecretException {
+          return 'Wrong password';
+        }
+      },
+    );
+    final key = newKey;
+    if (key == null || !mounted) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (ctx) => RecoveryKeyScreen(recoveryKey: key, onDone: () => Navigator.of(ctx).pop()),
+    ));
   }
 
   Future<void> _restore() async {
@@ -307,7 +358,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     try {
       final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: const ['json']);
       if (file == null) return;
-      final text = utf8.decode(await file.readAsBytes());
+      var text = utf8.decode(await file.readAsBytes());
+      if (BackupCrypto.isEncrypted(text)) {
+        final encrypted = text;
+        String? plain;
+        if (!mounted) return;
+        await askPassword(
+          context,
+          title: 'Backup password',
+          message: 'Enter the password this backup was made with.',
+          confirmLabel: 'Restore',
+          check: (pw) async {
+            try {
+              plain = await BackupCrypto.decrypt(encrypted, pw);
+              return null;
+            } on WrongSecretException catch (e) {
+              return e.message;
+            }
+          },
+        );
+        if (plain == null) return;
+        text = plain!;
+      }
       await ref.read(backupServiceProvider).restoreJson(text);
       final restored = await ref.read(settingsRepositoryProvider).all();
       ref.read(themeControllerProvider.notifier).reloadFrom(restored);
@@ -344,7 +416,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       context,
       title: 'Delete all data?',
       message: 'This permanently removes every card, transaction, budget, debt and custom category on this phone. '
-          'Your theme, currency and PIN are kept. It cannot be undone.',
+          'Your password, theme and currency are kept. It cannot be undone.',
       confirmLabel: 'Delete everything',
     );
     if (!ok) return;

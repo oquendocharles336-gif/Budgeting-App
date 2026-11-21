@@ -17,7 +17,8 @@ class CardDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final card = ref.watch(cardMapProvider).asDataOrNull?[cardId];
+    final allCards = ref.watch(cardMapProvider).asDataOrNull ?? const {};
+    final card = allCards[cardId];
     final txs = ref.watch(cardTransactionsProvider(cardId));
     final cats = ref.watch(categoryMapProvider).asDataOrNull ?? const {};
     final now = DateTime.now();
@@ -44,7 +45,7 @@ class CardDetailScreen extends ConsumerWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              Center(child: PaymentCardView(card: card, width: 320)),
+              Center(child: PaymentCardView(card: card, width: 320, allowReveal: true)),
               const SizedBox(height: 16),
               AppCard(
                 child: Row(
@@ -104,7 +105,9 @@ class CardDetailScreen extends ConsumerWidget {
                         TransactionTile(
                           tx: t,
                           category: cats[t.categoryId],
-                          card: card,
+                          // A transfer into this card has a different source.
+                          card: allCards[t.cardId],
+                          toCard: allCards[t.toCardId],
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(builder: (_) => TransactionFormScreen(existing: t)),
                           ),

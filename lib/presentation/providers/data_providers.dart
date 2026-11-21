@@ -152,7 +152,8 @@ final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, m
   final byCat = {for (final b in budgets.where((b) => !b.isOverall)) b.categoryId!: b.amount};
 
   final rows = <CategoryBudgetRow>[
-    for (final c in categories)
+    // Budgets are for spending, so income categories are left out.
+    for (final c in categories.where((c) => !c.isIncome))
       CategoryBudgetRow(
         category: c,
         progress: BudgetProgress(
@@ -172,7 +173,7 @@ final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, m
     transactions: txs,
     overall: BudgetProgress(budget: overallBudget, spent: BudgetCalculator.spent(txs)),
     categoryRows: rows,
-    income: txs.where((t) => !t.isExpense).fold<int>(0, (a, t) => a + t.amount),
+    income: txs.where((t) => t.isIncome).fold<int>(0, (a, t) => a + t.amount),
   );
 });
 

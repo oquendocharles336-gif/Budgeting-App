@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/db/default_data.dart';
 import '../../../data/models/category.dart';
+import '../../../data/models/transaction_entry.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../theme/category_icons.dart';
@@ -27,35 +28,46 @@ class CategoriesScreen extends ConsumerWidget {
         data: (list) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
           children: [
-            Card(
-              child: Column(
-                children: [
-                  for (final c in list)
-                    ListTile(
-                      leading: CategoryAvatar(category: c),
-                      title: Text(c.name),
-                      subtitle: c.isDefault ? const Text('Default') : null,
-                      trailing: c.id == DefaultData.other
-                          ? null
-                          : IconButton(
-                              tooltip: 'Delete ${c.name}',
-                              icon: const Icon(Icons.delete_outline_rounded),
-                              onPressed: () async {
-                                final ok = await confirm(
-                                  context,
-                                  title: 'Delete "${c.name}"?',
-                                  message: 'Its transactions move to "Other". Its budgets and keyword rules are removed.',
-                                );
-                                if (!ok) return;
-                                await ref.read(categoryRepositoryProvider).delete(c.id!);
-                                ref.refreshData();
-                              },
-                            ),
-                      onTap: () => showCategoryEditor(context, ref, existing: c),
-                    ),
-                ],
+            for (final kind in const [TransactionKind.expense, TransactionKind.income]) ...[
+              SectionHeader(kind == TransactionKind.expense ? 'Expense categories' : 'Income types'),
+              Card(
+                child: Column(
+                  children: [
+                    for (final c in list.where((c) => c.kind == kind))
+                      ListTile(
+                        leading: CategoryAvatar(category: c),
+                        title: Text(c.name),
+                        subtitle: c.isOther
+                            ? const Text('You type the name each time')
+                            : c.isLoan
+                                ? const Text('Also adds a debt')
+                                : c.isDefault
+                                    ? const Text('Default')
+                                    : null,
+                        trailing: (c.id == DefaultData.other || c.role != null)
+                            ? null
+                            : IconButton(
+                                tooltip: 'Delete ${c.name}',
+                                icon: const Icon(Icons.delete_outline_rounded),
+                                onPressed: () async {
+                                  final ok = await confirm(
+                                    context,
+                                    title: 'Delete "${c.name}"?',
+                                    message: c.isIncome
+                                        ? 'Its transactions move to "Other income".'
+                                        : 'Its transactions move to "Other". Its budgets and keyword rules are removed.',
+                                  );
+                                  if (!ok) return;
+                                  await ref.read(categoryRepositoryProvider).delete(c.id!);
+                                  ref.refreshData();
+                                },
+                              ),
+                        onTap: () => showCategoryEditor(context, ref, existing: c),
+                      ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -67,6 +79,7 @@ Future<void> showCategoryEditor(BuildContext context, WidgetRef ref, {Category? 
   final name = TextEditingController(text: existing?.name ?? '');
   var icon = existing?.icon ?? 'other';
   var color = Color(existing?.color ?? CategoryIcons.palette.first);
+  var kind = existing?.kind ?? TransactionKind.expense;
   final formKey = GlobalKey<FormState>();
   final repo = ref.read(categoryRepositoryProvider);
 
@@ -93,6 +106,18 @@ Future<void> showCategoryEditor(BuildContext context, WidgetRef ref, {Category? 
                   decoration: const InputDecoration(labelText: 'Name', counterText: ''),
                   validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
                 ),
+                if (existing == null) ...[
+                  const SizedBox(height: 12),
+                  SegmentedButton<TransactionKind>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(value: TransactionKind.expense, label: Text('Expense')),
+                      ButtonSegment(value: TransactionKind.income, label: Text('Income')),
+                    ],
+                    selected: {kind},
+                    onSelectionChanged: (v) => setState(() => kind = v.first),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 Text('Icon', style: Theme.of(ctx).textTheme.titleSmall),
                 const SizedBox(height: 8),
@@ -140,7 +165,7 @@ Future<void> showCategoryEditor(BuildContext context, WidgetRef ref, {Category? 
                       return;
                     }
                     if (existing == null) {
-                      await repo.insert(Category(name: n, icon: icon, color: color.toARGB32()));
+                      await repo.insert(Category(name: n, icon: icon, color: color.toARGB32(), kind: kind));
                     } else {
                       await repo.update(existing.copyWith(name: n, icon: icon, color: color.toARGB32()));
                     }

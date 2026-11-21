@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import '../../core/dates.dart';
 import '../../domain/import/deduplicator.dart';
@@ -36,9 +36,10 @@ class SeedData {
       ).toMap());
       final gcash = await txn.insert('cards', PaymentCard(
         nickname: 'GCash',
-        last4: '0917',
+        last4: '6768',
         type: CardType.ewallet,
         color: 0xFF2563EB,
+        mobileNumber: '09123456768',
         createdAt: today,
       ).toMap());
 
@@ -60,6 +61,9 @@ class SeedData {
         ('National Book Store', DefaultData.education, 150, 900, bpi),
       ];
 
+      final salaryRow = await txn.query('categories', columns: ['id'], where: "kind = 'income' AND name = 'Salary'", limit: 1);
+      final salaryCategory = salaryRow.isEmpty ? DefaultData.other : salaryRow.first['id'] as int;
+
       final start = DateTime(today.year, today.month - 1, 1);
       for (var day = start; !day.isAfter(today); day = DateTime(day.year, day.month, day.day + 1)) {
         final count = 1 + rnd.nextInt(3);
@@ -77,7 +81,7 @@ class SeedData {
         }
         // Salary on the 15th and 30th.
         if (day.day == 15 || day.day == 30) {
-          await txn.insert('transactions', _tx('Salary', DefaultData.other, bpi, 1800000, day, created,
+          await txn.insert('transactions', _tx('Salary', salaryCategory, bpi, 1800000, day, created,
               kind: TransactionKind.income));
         }
       }
@@ -93,6 +97,8 @@ class SeedData {
 
       final loanId = await txn.insert('debts', Debt(
         creditor: 'Tita Lorna',
+        type: DebtType.personal,
+        lenderType: LenderType.family,
         totalAmount: 1500000,
         initialPaid: 300000,
         dueDate: today.add(const Duration(days: 10)),
@@ -107,6 +113,9 @@ class SeedData {
       ).toMap());
       await txn.insert('debts', Debt(
         creditor: 'Home Credit',
+        type: DebtType.installment,
+        lenderType: LenderType.lendingApp,
+        termMonths: 12,
         totalAmount: 2400000,
         initialPaid: 800000,
         dueDate: today.add(const Duration(days: 3)),

@@ -1,4 +1,4 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import '../db/default_data.dart';
 import '../models/category.dart';
@@ -32,16 +32,31 @@ class CategoryRepository {
     return rows.isNotEmpty;
   }
 
-  /// Moves the category's transactions to "Other" and deletes it.
-  /// Its keyword rules and budgets are deleted by ON DELETE CASCADE.
+  /// The "Other income" category (where income goes when none is picked).
+  Future<int?> otherIncomeId() async {
+    final rows = await _db.query(
+      'categories',
+      columns: ['id'],
+      where: "kind = 'income' AND role = 'other'",
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.first['id'] as int;
+  }
+
+  /// Moves the category's transactions to "Other" (or "Other income") and
+  /// deletes it. Its keyword rules and budgets are deleted by ON DELETE CASCADE.
   Future<void> delete(int id) async {
-    if (id == DefaultData.other) {
-      throw StateError('The "Other" category cannot be deleted.');
+    final rows = await _db.query('categories', where: 'id = ?', whereArgs: [id], limit: 1);
+    if (rows.isEmpty) return;
+    final c = Category.fromMap(rows.first);
+    if (c.role != null || id == DefaultData.other) {
+      throw StateError('"${c.name}" is built in and cannot be deleted.');
     }
+    final target = c.isIncome ? await otherIncomeId() : DefaultData.other;
     await _db.transaction((txn) async {
       await txn.update(
         'transactions',
-        {'category_id': DefaultData.other},
+        {'category_id': target},
         where: 'category_id = ?',
         whereArgs: [id],
       );

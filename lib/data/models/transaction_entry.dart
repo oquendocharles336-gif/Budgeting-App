@@ -1,10 +1,16 @@
-/// Whether money went out (expense) or came in (income/refund/payment).
+/// Whether money went out (expense), came in (income/refund/payment), or
+/// moved between the user's own accounts (transfer). Transfers are neither
+/// spending nor income, so budgets and analytics ignore them.
 enum TransactionKind {
   expense,
-  income;
+  income,
+  transfer;
 
-  static TransactionKind fromDb(String v) =>
-      v == 'income' ? TransactionKind.income : TransactionKind.expense;
+  static TransactionKind fromDb(String v) => switch (v) {
+        'income' => TransactionKind.income,
+        'transfer' => TransactionKind.transfer,
+        _ => TransactionKind.expense,
+      };
 }
 
 /// Where a transaction came from. Stored in the `source` column.
@@ -31,7 +37,9 @@ class TransactionEntry {
     required this.kind,
     required this.description,
     this.categoryId,
+    this.customCategory,
     this.cardId,
+    this.toCardId,
     required this.date,
     this.notes,
     this.source = TransactionSourceType.manual,
@@ -49,8 +57,14 @@ class TransactionEntry {
   final String description;
   final int? categoryId;
 
-  /// null means a cash transaction.
+  /// What the user typed after picking an "Other" category, e.g. "Pet food".
+  final String? customCategory;
+
+  /// null means a cash transaction. For a transfer, the account it came from.
   final int? cardId;
+
+  /// Transfers only: the account the money went to (null = cash).
+  final int? toCardId;
   final DateTime date;
   final String? notes;
   final TransactionSourceType source;
@@ -61,9 +75,16 @@ class TransactionEntry {
 
   bool get isCash => cardId == null;
   bool get isExpense => kind == TransactionKind.expense;
+  bool get isIncome => kind == TransactionKind.income;
+  bool get isTransfer => kind == TransactionKind.transfer;
 
-  /// Signed amount: negative for expenses.
-  int get signedAmount => isExpense ? -amount : amount;
+  /// Signed amount: negative for expenses, zero for transfers (net worth
+  /// doesn't change when money moves between your own accounts).
+  int get signedAmount => switch (kind) {
+        TransactionKind.expense => -amount,
+        TransactionKind.income => amount,
+        TransactionKind.transfer => 0,
+      };
 
   TransactionEntry copyWith({
     int? id,
@@ -71,7 +92,9 @@ class TransactionEntry {
     TransactionKind? kind,
     String? description,
     int? Function()? categoryId,
+    String? Function()? customCategory,
     int? Function()? cardId,
+    int? Function()? toCardId,
     DateTime? date,
     String? Function()? notes,
     TransactionSourceType? source,
@@ -85,7 +108,9 @@ class TransactionEntry {
         kind: kind ?? this.kind,
         description: description ?? this.description,
         categoryId: categoryId != null ? categoryId() : this.categoryId,
+        customCategory: customCategory != null ? customCategory() : this.customCategory,
         cardId: cardId != null ? cardId() : this.cardId,
+        toCardId: toCardId != null ? toCardId() : this.toCardId,
         date: date ?? this.date,
         notes: notes != null ? notes() : this.notes,
         source: source ?? this.source,
@@ -101,7 +126,9 @@ class TransactionEntry {
         'kind': kind.name,
         'description': description,
         'category_id': categoryId,
+        'custom_category': customCategory,
         'card_id': cardId,
+        'to_card_id': toCardId,
         'date': date.millisecondsSinceEpoch,
         'notes': notes,
         'source': source.dbValue,
@@ -117,7 +144,9 @@ class TransactionEntry {
         kind: TransactionKind.fromDb(m['kind'] as String),
         description: m['description'] as String,
         categoryId: m['category_id'] as int?,
+        customCategory: m['custom_category'] as String?,
         cardId: m['card_id'] as int?,
+        toCardId: m['to_card_id'] as int?,
         date: DateTime.fromMillisecondsSinceEpoch(m['date'] as int),
         notes: m['notes'] as String?,
         source: TransactionSourceType.fromDb(m['source'] as String),
@@ -140,7 +169,7 @@ class TransactionFilter {
     this.kind,
   });
 
-  /// Only transactions on this card.
+  /// Only transactions on this card (including transfers into it).
   final int? cardId;
 
   /// Only cash transactions (ignored when [cardId] is set).

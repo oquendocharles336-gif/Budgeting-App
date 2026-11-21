@@ -399,6 +399,7 @@ class _RecentTransactions extends ConsumerWidget {
                   tx: t,
                   category: cats[t.categoryId],
                   card: cards[t.cardId],
+                  toCard: cards[t.toCardId],
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => TransactionFormScreen(existing: t)),
                   ),

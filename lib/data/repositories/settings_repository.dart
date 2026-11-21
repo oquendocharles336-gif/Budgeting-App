@@ -1,4 +1,4 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 
 /// Key/value app settings stored in the `settings` table.
 class SettingsRepository {

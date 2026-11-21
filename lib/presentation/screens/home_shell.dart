@@ -31,6 +31,8 @@ class _HomeShellState extends State<HomeShell> {
       body: IndexedStack(index: _index, children: pages),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Add transaction',
+        // Round so it sits in the CircularNotchedRectangle notch.
+        shape: const CircleBorder(),
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute(fullscreenDialog: true, builder: (_) => const TransactionFormScreen()),
         ),

@@ -105,7 +105,7 @@ class _SmsImportScreenState extends ConsumerState<SmsImportScreen> {
                       const SizedBox(height: 8),
                       Text(
                         'Pitaka looks through your text messages on this phone for purchase alerts that mention the card '
-                        'ending in ${widget.card.last4}. Messages never leave your phone, one-time PINs are skipped, '
+                        '${widget.card.hasMobileNumber ? widget.card.maskedNumber : 'ending in ${widget.card.last4}'}. Messages never leave your phone, one-time PINs are skipped, '
                         'and nothing is saved until you review it.',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: scheme.onSurfaceVariant, height: 1.4),

@@ -22,6 +22,9 @@ class TransactionService {
   Future<void> update(TransactionEntry tx) async {
     if (tx.id == null) throw ArgumentError('Transaction has no id');
     if (tx.amount <= 0) throw ArgumentError('Amount must be greater than zero');
+    if (tx.isTransfer && tx.cardId == tx.toCardId) {
+      throw ArgumentError('A transfer needs two different accounts');
+    }
     final description = tx.description.trim().isEmpty ? 'Unknown' : tx.description.trim();
     final hash = TransactionImportService.hashOf(RawTransaction(
       date: tx.date,

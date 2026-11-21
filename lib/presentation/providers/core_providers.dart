@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/db/app_database.dart';
@@ -10,6 +12,7 @@ import '../../data/repositories/sms_pattern_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
 import '../../data/sources/sms_inbox.dart';
 import '../../domain/import/transaction_import_service.dart';
+import '../../domain/security/vault.dart';
 import '../../domain/services/app_lock_service.dart';
 import '../../domain/services/backup_service.dart';
 import '../../domain/services/budget_alert_service.dart';
@@ -31,6 +34,23 @@ final initialSettingsProvider = Provider<Map<String, String>>(
 );
 
 final notificationServiceProvider = Provider<NotificationService>((ref) => NotificationService());
+
+/// The signed-in session: the vault (password / recovery key), the data
+/// key that is unlocking the database right now, and a way to lock again.
+class Session {
+  const Session({required this.vault, required this.dataKey, required this.lock});
+  final Vault vault;
+
+  /// Kept in memory only while unlocked (SQLCipher needs it anyway).
+  final Uint8List dataKey;
+
+  /// Closes the database, forgets the key and shows the login screen.
+  final Future<void> Function() lock;
+}
+
+final sessionProvider = Provider<Session>(
+  (ref) => throw UnimplementedError('sessionProvider must be overridden in main()'),
+);
 
 // -----------------------------------------------------------------------------
 // Repositories (data layer)
@@ -66,6 +86,7 @@ final importServiceProvider = Provider(
     transactions: ref.watch(transactionRepositoryProvider),
     rules: ref.watch(ruleRepositoryProvider),
     alerts: ref.watch(budgetAlertServiceProvider),
+    categories: ref.watch(categoryRepositoryProvider),
   ),
 );
 
@@ -86,7 +107,7 @@ final debtServiceProvider = Provider(
 
 final backupServiceProvider = Provider((ref) => BackupService(ref.watch(databaseProvider).db));
 
-final appLockServiceProvider = Provider((ref) => AppLockService(ref.watch(settingsRepositoryProvider)));
+final appLockServiceProvider = Provider((ref) => AppLockService());
 
 // -----------------------------------------------------------------------------
 // Data revision: every query provider watches this. After any write, call

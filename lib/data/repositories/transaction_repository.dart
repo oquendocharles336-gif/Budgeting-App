@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import '../models/transaction_entry.dart';
 
@@ -19,10 +19,13 @@ class TransactionRepository {
     final where = <String>[];
     final args = <Object?>[];
     if (filter.cardId != null) {
-      where.add('card_id = ?');
-      args.add(filter.cardId);
+      // Transfers into the card count as "on" it too.
+      where.add('(card_id = ? OR to_card_id = ?)');
+      args
+        ..add(filter.cardId)
+        ..add(filter.cardId);
     } else if (filter.cashOnly) {
-      where.add('card_id IS NULL');
+      where.add("(card_id IS NULL OR (kind = 'transfer' AND to_card_id IS NULL))");
     }
     if (filter.categoryId != null) {
       where.add('category_id = ?');

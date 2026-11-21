@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/ewallet_mask.dart';
 import '../../../data/models/payment_card.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
@@ -26,6 +27,7 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
   final _form = GlobalKey<FormState>();
   late final TextEditingController _nickname;
   late final TextEditingController _last4;
+  late final TextEditingController _mobile;
   late CardType _type;
   late Color _color;
   bool _saving = false;
@@ -36,16 +38,31 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
     final e = widget.existing;
     _nickname = TextEditingController(text: e?.nickname ?? '');
     _last4 = TextEditingController(text: e?.last4 ?? '');
+    _mobile = TextEditingController(text: e?.mobileNumber ?? '');
     _type = e?.type ?? CardType.credit;
     _color = Color(e?.color ?? palette.first.toARGB32());
     _nickname.addListener(() => setState(() {}));
     _last4.addListener(() => setState(() {}));
+    _mobile.addListener(() => setState(() {}));
+  }
+
+  bool get _isWallet => _type == CardType.ewallet;
+
+  /// E-wallets are identified by their mobile number; the last 4 digits
+  /// (used for SMS matching) come from it.
+  String? get _normalizedMobile => _isWallet ? normalizePhMobileNumber(_mobile.text) : null;
+
+  String get _effectiveLast4 {
+    final m = _normalizedMobile;
+    if (m != null && m.length >= 4) return m.substring(m.length - 4);
+    return _last4.text;
   }
 
   @override
   void dispose() {
     _nickname.dispose();
     _last4.dispose();
+    _mobile.dispose();
     super.dispose();
   }
 
@@ -58,17 +75,19 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
       if (e == null) {
         await repo.insert(PaymentCard(
           nickname: _nickname.text.trim(),
-          last4: _last4.text,
+          last4: _effectiveLast4,
           type: _type,
           color: _color.toARGB32(),
+          mobileNumber: _normalizedMobile,
           createdAt: DateTime.now(),
         ));
       } else {
         await repo.update(e.copyWith(
           nickname: _nickname.text.trim(),
-          last4: _last4.text,
+          last4: _effectiveLast4,
           type: _type,
           color: _color.toARGB32(),
+          mobileNumber: () => _normalizedMobile,
         ));
       }
       ref.refreshData();
@@ -86,9 +105,10 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
     final cards = ref.watch(cardsProvider).asDataOrNull ?? const <PaymentCard>[];
     final preview = PaymentCard(
       nickname: _nickname.text.trim().isEmpty ? 'Card nickname' : _nickname.text.trim(),
-      last4: _last4.text.padRight(4, '•'),
+      last4: _effectiveLast4.padRight(4, '•'),
       type: _type,
       color: _color.toARGB32(),
+      mobileNumber: _normalizedMobile,
       createdAt: DateTime.now(),
     );
     return Scaffold(
@@ -108,30 +128,47 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Give the card a nickname' : null,
             ),
             const SizedBox(height: 16),
-            TextFormField(
-              controller: _last4,
-              keyboardType: TextInputType.number,
-              maxLength: 4,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Last 4 digits',
-                helperText: 'Used to match SMS alerts. Never enter the full card number.',
-                counterText: '',
-              ),
-              validator: (v) {
-                if (v == null || !RegExp(r'^\d{4}$').hasMatch(v)) return 'Enter exactly 4 digits';
-                final clash = cards.any((c) => c.last4 == v && c.id != widget.existing?.id);
-                if (clash) return 'You already have a card ending in $v';
-                return null;
-              },
-            ),
-            const SizedBox(height: 16),
             DropdownButtonFormField<CardType>(
               initialValue: _type,
               decoration: const InputDecoration(labelText: 'Type'),
               items: [for (final t in CardType.values) DropdownMenuItem(value: t, child: Text(t.label))],
               onChanged: (v) => setState(() => _type = v ?? _type),
             ),
+            const SizedBox(height: 16),
+            if (_isWallet)
+              TextFormField(
+                controller: _mobile,
+                keyboardType: TextInputType.phone,
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+()\s-]'))],
+                decoration: const InputDecoration(
+                  labelText: 'Mobile number',
+                  hintText: 'e.g. 0912 345 6768',
+                  helperText: 'Shown masked in the app, e.g. 09******768.',
+                ),
+                validator: (v) {
+                  final n = normalizePhMobileNumber(v ?? '');
+                  if (!RegExp(r'^09\d{9}$').hasMatch(n)) return 'Enter an 11-digit mobile number like 09123456768';
+                  return null;
+                },
+              )
+            else
+              TextFormField(
+                controller: _last4,
+                keyboardType: TextInputType.number,
+                maxLength: 4,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: 'Last 4 digits',
+                  helperText: 'Used to match SMS alerts. Never enter the full card number.',
+                  counterText: '',
+                ),
+                validator: (v) {
+                  if (v == null || !RegExp(r'^\d{4}$').hasMatch(v)) return 'Enter exactly 4 digits';
+                  final clash = cards.any((c) => c.last4 == v && c.id != widget.existing?.id);
+                  if (clash) return 'You already have a card ending in $v';
+                  return null;
+                },
+              ),
             const SizedBox(height: 20),
             Text('Color', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 10),

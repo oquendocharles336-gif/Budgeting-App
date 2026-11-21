@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../data/models/debt.dart';
+import '../../../domain/debt/interest_calculator.dart';
 import '../../providers/data_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -15,15 +16,22 @@ class DebtsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final debts = ref.watch(debtsProvider);
+    void openAdd() => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DebtFormScreen()));
+    // Keep the last card clear of the FAB and the system gesture bar.
+    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     return Scaffold(
       appBar: AppBar(title: const Text('Debts')),
+      // Standard extended FAB (pill shape from Material 3). Scaffold already
+      // lifts it above the gesture bar; this screen has no bottom nav.
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DebtFormScreen())),
+        tooltip: 'Add debt',
+        onPressed: openAdd,
         icon: const Icon(Icons.add_rounded),
         label: const Text('Add debt'),
       ),
       body: AsyncView<List<DebtStatus>>(
         value: debts,
+        onRetry: () => ref.invalidate(debtsProvider),
         data: (list) {
           if (list.isEmpty) {
             return const EmptyState(
@@ -37,7 +45,7 @@ class DebtsScreen extends ConsumerWidget {
           final total = open.fold<int>(0, (a, d) => a + d.remaining);
           final scheme = Theme.of(context).colorScheme;
           return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 100 + bottomInset),
             children: [
               Container(
                 padding: const EdgeInsets.all(20),
@@ -83,6 +91,7 @@ class _DebtCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final overdue = status.isOverdue(now);
+    final quote = InterestCalculator.forStatus(status);
     String? dueText;
     if (d.dueDate != null && !status.isSettled) {
       final days = DateTime(d.dueDate!.year, d.dueDate!.month, d.dueDate!.day)
@@ -105,7 +114,18 @@ class _DebtCard extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Expanded(child: Text(d.creditor, style: Theme.of(context).textTheme.titleMedium)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(d.creditor, style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        [d.type.label, ?d.lenderLabel].join(' · '),
+                        style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
                 if (status.isSettled)
                   Icon(Icons.check_circle_rounded, color: StatusColors.ok(context))
                 else
@@ -142,6 +162,14 @@ class _DebtCard extends ConsumerWidget {
                   ),
               ],
             ),
+            if (quote != null && quote.dueThisMonth > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Prepare ${formatMoney(ref, quote.dueThisMonth)} this month'
+                '${quote.monthlyPayment == null ? ' (interest)' : ''}',
+                style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ],
           ],
         ),
       ),

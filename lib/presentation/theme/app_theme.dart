@@ -97,10 +97,12 @@ class AppTheme {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         side: BorderSide.none,
       ),
+      // No global shape here: a CircleBorder would also be applied to
+      // FloatingActionButton.extended and clip its icon + label into a
+      // 56px circle. The round centre "+" sets its own shape in HomeShell.
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: scheme.primary,
         foregroundColor: scheme.onPrimary,
-        shape: const CircleBorder(),
         elevation: 4,
       ),
       listTileTheme: const ListTileThemeData(contentPadding: EdgeInsets.symmetric(horizontal: 16)),

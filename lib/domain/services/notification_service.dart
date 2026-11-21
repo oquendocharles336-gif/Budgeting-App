@@ -16,6 +16,8 @@ class NotificationService {
     channelDescription: 'Alerts when you reach 80% and 100% of a budget',
     importance: Importance.high,
     priority: Priority.high,
+    // Amounts and names stay hidden on the phone's lock screen.
+    visibility: NotificationVisibility.private,
   );
 
   static const _debtChannel = AndroidNotificationDetails(
@@ -24,6 +26,7 @@ class NotificationService {
     channelDescription: 'Reminders before a debt is due',
     importance: Importance.high,
     priority: Priority.high,
+    visibility: NotificationVisibility.private,
   );
 
   /// Budget alerts use ids 1000..; debt reminders use 100000 + debtId * 2.

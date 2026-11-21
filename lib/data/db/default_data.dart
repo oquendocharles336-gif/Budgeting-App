@@ -1,3 +1,5 @@
+import 'package:sqflite_sqlcipher/sqflite.dart';
+
 import '../models/category.dart';
 import '../models/sms_pattern.dart';
 import '../models/transaction_entry.dart';
@@ -24,8 +26,49 @@ class DefaultData {
     Category(id: health, name: 'Health', icon: 'health', color: 0xFF26A69A, isDefault: true, sortOrder: 4),
     Category(id: entertainment, name: 'Entertainment', icon: 'entertainment', color: 0xFFFFB300, isDefault: true, sortOrder: 5),
     Category(id: education, name: 'Education', icon: 'education', color: 0xFF5C6BC0, isDefault: true, sortOrder: 6),
-    Category(id: other, name: 'Other', icon: 'other', color: 0xFF78909C, isDefault: true, sortOrder: 7),
+    Category(id: other, name: 'Other', icon: 'other', color: 0xFF78909C, isDefault: true, sortOrder: 7, role: CategoryRole.other),
   ];
+
+  /// Where money comes from. IDs are assigned on insert.
+  static const incomeCategories = <Category>[
+    Category(name: 'Salary', icon: 'salary', color: 0xFF66BB6A, isDefault: true, sortOrder: 100, kind: TransactionKind.income),
+    Category(name: 'Allowance', icon: 'savings', color: 0xFF29B6F6, isDefault: true, sortOrder: 101, kind: TransactionKind.income),
+    Category(
+      name: 'Borrowed money',
+      icon: 'handshake',
+      color: 0xFFFFA726,
+      isDefault: true,
+      sortOrder: 102,
+      kind: TransactionKind.income,
+      role: CategoryRole.loan,
+    ),
+    Category(name: 'Paid back to me', icon: 'payback', color: 0xFF26A69A, isDefault: true, sortOrder: 103, kind: TransactionKind.income),
+    Category(name: 'Business / sales', icon: 'store', color: 0xFF7E57C2, isDefault: true, sortOrder: 104, kind: TransactionKind.income),
+    Category(name: 'Gift received', icon: 'gift', color: 0xFFEC407A, isDefault: true, sortOrder: 105, kind: TransactionKind.income),
+    Category(
+      name: 'Other income',
+      icon: 'other',
+      color: 0xFF78909C,
+      isDefault: true,
+      sortOrder: 106,
+      kind: TransactionKind.income,
+      role: CategoryRole.other,
+    ),
+  ];
+
+  /// Inserts the income categories if there are none (new install, upgrade,
+  /// or a backup from before income categories existed). A name already
+  /// used by one of the user's own categories gets an "(income)" suffix.
+  static Future<void> ensureIncomeCategories(DatabaseExecutor db) async {
+    final existing = await db.rawQuery("SELECT COUNT(*) AS c FROM categories WHERE kind = 'income'");
+    if (((existing.first['c'] as int?) ?? 0) > 0) return;
+    for (final c in incomeCategories) {
+      var name = c.name;
+      final clash = await db.query('categories', where: 'name = ? COLLATE NOCASE', whereArgs: [name], limit: 1);
+      if (clash.isNotEmpty) name = '$name (income)';
+      await db.insert('categories', (c.copyWith(name: name).toMap())..remove('id'));
+    }
+  }
 
   static const _keywords = <int, List<String>>{
     food: [

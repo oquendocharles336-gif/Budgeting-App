@@ -44,12 +44,16 @@ class TransactionImportService {
     required this._transactions,
     required this._rules,
     this._alerts,
+    this._categories,
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now;
 
   final TransactionRepository _transactions;
   final RuleRepository _rules;
   final BudgetAlertService? _alerts;
+
+  /// Used to file income under "Other income" instead of expense rules.
+  final CategoryRepository? _categories;
   final DateTime Function() _clock;
 
   static const maxDescriptionLength = 200;
@@ -70,6 +74,7 @@ class TransactionImportService {
   /// Normalizes, categorizes and flags duplicates. Saves nothing.
   Future<List<ImportCandidate>> prepare(List<RawTransaction> raws) async {
     final categorizer = await _categorizer();
+    final otherIncome = await _categories?.otherIncomeId();
     final items = raws.map(normalize).where((r) => r.amount > 0).toList();
     final keys = [
       for (final r in items) DedupKey(hash: hashOf(r), cardId: r.cardId, externalId: r.externalId),
@@ -85,7 +90,10 @@ class TransactionImportService {
       for (var i = 0; i < items.length; i++)
         ImportCandidate(
           raw: items[i],
-          categoryId: items[i].categoryId ?? categorizer.categorize(items[i].description),
+          categoryId: items[i].categoryId ??
+              (items[i].kind == TransactionKind.income && otherIncome != null
+                  ? otherIncome
+                  : categorizer.categorize(items[i].description)),
           hash: keys[i].hash,
           duplicate: duplicates[i],
         ),
@@ -125,7 +133,16 @@ class TransactionImportService {
   Future<int> saveManual(RawTransaction raw) async {
     final r = normalize(raw);
     if (r.amount <= 0) throw ArgumentError('Amount must be greater than zero');
-    final categoryId = r.categoryId ?? (await _categorizer()).categorize(r.description);
+    if (r.kind == TransactionKind.transfer && r.cardId == r.toCardId) {
+      throw ArgumentError('A transfer needs two different accounts');
+    }
+    // Transfers aren't spending, so they don't get a category. Keyword
+    // rules point at expense categories, so income falls back to "Other income".
+    final categoryId = switch (r.kind) {
+      TransactionKind.transfer => null,
+      TransactionKind.income => r.categoryId ?? await _categories?.otherIncomeId(),
+      TransactionKind.expense => r.categoryId ?? (await _categorizer()).categorize(r.description),
+    };
     final id = await _transactions.insert(_toEntry(r, categoryId, hashOf(r), _clock()));
     await _alerts?.checkMonth(r.date);
     return id;
@@ -159,7 +176,9 @@ class TransactionImportService {
         kind: r.kind,
         description: r.description,
         categoryId: categoryId,
+        customCategory: r.customCategory,
         cardId: r.cardId,
+        toCardId: r.toCardId,
         date: r.date,
         notes: r.notes,
         source: r.source,

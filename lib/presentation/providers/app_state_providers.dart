@@ -7,7 +7,7 @@ import 'core_providers.dart';
 
 /// Bump this when the privacy policy or terms change in a way users must
 /// accept again.
-const currentTermsVersion = '1';
+const currentTermsVersion = '2'; // 2: password + encryption
 
 // -----------------------------------------------------------------------------
 // Theme
@@ -91,42 +91,3 @@ class TermsController extends Notifier<bool> {
 }
 
 final termsAcceptedProvider = NotifierProvider<TermsController, bool>(TermsController.new);
-
-// -----------------------------------------------------------------------------
-// App lock
-// -----------------------------------------------------------------------------
-
-class LockState {
-  const LockState({required this.enabled, required this.locked});
-  final bool enabled;
-  final bool locked;
-}
-
-class LockController extends Notifier<LockState> {
-  @override
-  LockState build() {
-    final enabled = ref.read(initialSettingsProvider).containsKey(SettingsRepository.pinHash);
-    return LockState(enabled: enabled, locked: enabled);
-  }
-
-  static const gracePeriod = Duration(seconds: 30);
-  DateTime? _backgroundedAt;
-
-  void unlock() => state = LockState(enabled: state.enabled, locked: false);
-
-  void markBackgrounded() => _backgroundedAt = DateTime.now();
-
-  /// Called when the app comes back to the foreground.
-  void lockIfAwayTooLong() {
-    final since = _backgroundedAt;
-    _backgroundedAt = null;
-    if (!state.enabled || since == null) return;
-    if (DateTime.now().difference(since) >= gracePeriod) {
-      state = const LockState(enabled: true, locked: true);
-    }
-  }
-
-  void setEnabled(bool enabled) => state = LockState(enabled: enabled, locked: false);
-}
-
-final lockControllerProvider = NotifierProvider<LockController, LockState>(LockController.new);

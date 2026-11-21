@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'presentation/providers/app_state_providers.dart';
+import 'presentation/providers/core_providers.dart';
 import 'presentation/screens/home_shell.dart';
 import 'presentation/screens/legal/legal_gate_screen.dart';
-import 'presentation/screens/lock/lock_screen.dart';
 import 'presentation/theme/app_theme.dart';
 
 class PitakaApp extends ConsumerStatefulWidget {
@@ -15,6 +15,10 @@ class PitakaApp extends ConsumerStatefulWidget {
 }
 
 class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserver {
+  /// Short grace period so picking a file or answering a call doesn't log out.
+  static const lockAfter = Duration(seconds: 30);
+  DateTime? _backgroundedAt;
+
   @override
   void initState() {
     super.initState();
@@ -29,13 +33,16 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Re-lock after the app was in the background for a while. The short
-    // grace period stops the lock from appearing after picking a file.
-    final lock = ref.read(lockControllerProvider.notifier);
+    // Sign out (close the encrypted database) after the app was in the
+    // background for a while.
     if (state == AppLifecycleState.paused) {
-      lock.markBackgrounded();
+      _backgroundedAt = DateTime.now();
     } else if (state == AppLifecycleState.resumed) {
-      lock.lockIfAwayTooLong();
+      final since = _backgroundedAt;
+      _backgroundedAt = null;
+      if (since != null && DateTime.now().difference(since) >= lockAfter) {
+        ref.read(sessionProvider).lock();
+      }
     }
   }
 
@@ -43,7 +50,6 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     final theme = ref.watch(themeControllerProvider);
     final accepted = ref.watch(termsAcceptedProvider);
-    final lock = ref.watch(lockControllerProvider);
 
     return MaterialApp(
       title: 'Pitaka',
@@ -52,22 +58,11 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
       darkTheme: AppTheme.dark(theme.accent),
       themeMode: theme.mode,
       // Respect the user's font size, but cap extreme values so layouts hold.
-      // The lock screen sits above the navigator, so it also covers any
-      // screen that was open when the app went to the background.
       builder: (context, child) {
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: 1.0, maxScaleFactor: 1.6)),
-          child: Stack(
-            children: [
-              child!,
-              if (accepted && lock.locked)
-                // Own Overlay so tooltips work above the app's navigator.
-                Positioned.fill(
-                  child: Overlay(initialEntries: [OverlayEntry(builder: (_) => const LockScreen())]),
-                ),
-            ],
-          ),
+          child: child!,
         );
       },
       home: accepted ? const HomeShell() : const LegalGateScreen(),

@@ -1,55 +1,24 @@
-import 'dart:convert';
-import 'dart:math';
-
-import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:local_auth/local_auth.dart';
 
-import '../../data/repositories/settings_repository.dart';
-
-/// Optional PIN and biometric lock.
+/// Optional fingerprint / face unlock.
 ///
-/// The PIN is never stored. Only a salted SHA-256 hash is kept in the local
-/// database. (This keeps casual snoopers out; it is not bank-grade
-/// encryption of the data itself.)
+/// When turned on, the database key is kept in the operating system's
+/// secure storage (Android Keystore / iOS Keychain), which only this app
+/// can read, and the app asks for the fingerprint or face before using it.
+/// The password always works too. Turning it off deletes the stored key.
+///
+/// The app never receives biometric data; the phone's OS checks it.
 class AppLockService {
-  AppLockService(this._settings, {LocalAuthentication? auth}) : _auth = auth ?? LocalAuthentication();
+  AppLockService({LocalAuthentication? auth, FlutterSecureStorage? storage})
+      : _auth = auth ?? LocalAuthentication(),
+        _storage = storage ?? const FlutterSecureStorage();
 
-  final SettingsRepository _settings;
   final LocalAuthentication _auth;
+  final FlutterSecureStorage _storage;
 
-  static final _pinFormat = RegExp(r'^\d{4,6}$');
-
-  static bool isValidPin(String pin) => _pinFormat.hasMatch(pin);
-
-  Future<bool> isPinSet() async => (await _settings.get(SettingsRepository.pinHash)) != null;
-
-  Future<void> setPin(String pin) async {
-    if (!isValidPin(pin)) throw ArgumentError('PIN must be 4 to 6 digits');
-    final rnd = Random.secure();
-    final salt = base64Encode(List<int>.generate(16, (_) => rnd.nextInt(256)));
-    await _settings.set(SettingsRepository.pinSalt, salt);
-    await _settings.set(SettingsRepository.pinHash, _hash(pin, salt));
-  }
-
-  Future<bool> verifyPin(String pin) async {
-    final hash = await _settings.get(SettingsRepository.pinHash);
-    final salt = await _settings.get(SettingsRepository.pinSalt);
-    if (hash == null || salt == null) return false;
-    return _hash(pin, salt) == hash;
-  }
-
-  Future<void> removeLock() async {
-    await _settings.remove(SettingsRepository.pinHash);
-    await _settings.remove(SettingsRepository.pinSalt);
-    await _settings.remove(SettingsRepository.biometricEnabled);
-  }
-
-  Future<bool> isBiometricEnabled() async =>
-      (await _settings.get(SettingsRepository.biometricEnabled)) == '1';
-
-  Future<void> setBiometricEnabled(bool enabled) =>
-      _settings.set(SettingsRepository.biometricEnabled, enabled ? '1' : '0');
+  static const _keyName = 'pitaka_data_key_v1';
 
   Future<bool> canUseBiometrics() async {
     try {
@@ -60,6 +29,39 @@ class AppLockService {
       debugPrint('Biometric check failed: $e');
       return false;
     }
+  }
+
+  Future<bool> isBiometricEnabled() async {
+    try {
+      return await _storage.containsKey(key: _keyName);
+    } catch (e) {
+      debugPrint('Secure storage unavailable: $e');
+      return false;
+    }
+  }
+
+  /// Asks for the fingerprint/face, then stores [dataKey]. Returns false if cancelled.
+  Future<bool> enableBiometric(Uint8List dataKey) async {
+    if (!await authenticateWithBiometrics()) return false;
+    await _storage.write(key: _keyName, value: _hex(dataKey));
+    return true;
+  }
+
+  Future<void> disableBiometric() async {
+    try {
+      await _storage.delete(key: _keyName);
+    } catch (e) {
+      debugPrint('Could not remove stored key: $e');
+    }
+  }
+
+  /// Asks for the fingerprint/face and returns the stored data key, or null.
+  Future<Uint8List?> unlockWithBiometrics() async {
+    if (!await isBiometricEnabled()) return null;
+    if (!await authenticateWithBiometrics()) return null;
+    final hex = await _storage.read(key: _keyName);
+    if (hex == null || hex.length != 64) return null;
+    return Uint8List.fromList([for (var i = 0; i < hex.length; i += 2) int.parse(hex.substring(i, i + 2), radix: 16)]);
   }
 
   /// Shows the system fingerprint/face prompt. Returns false on cancel or error.
@@ -79,6 +81,5 @@ class AppLockService {
     }
   }
 
-  static String _hash(String pin, String salt) =>
-      sha256.convert(utf8.encode('$salt:$pin')).toString();
+  static String _hex(List<int> bytes) => bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
 }

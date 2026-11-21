@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../core/money.dart';
 import '../../data/models/debt.dart';
 import '../../data/repositories/debt_repository.dart';
@@ -67,9 +69,15 @@ class DebtService {
     }
   }
 
+  /// Reminders are a nice-to-have: a scheduling error must not make a save
+  /// that already reached the database look like it failed.
   Future<void> _sync(int debtId, String symbol) async {
     final status = await _repo.statusById(debtId);
     if (status == null) return;
-    await _notifications.scheduleDebtReminders(status, remainingText: Money.format(status.remaining, symbol: symbol));
+    try {
+      await _notifications.scheduleDebtReminders(status, remainingText: Money.format(status.remaining, symbol: symbol));
+    } catch (e) {
+      debugPrint('Could not schedule debt reminders: $e');
+    }
   }
 }

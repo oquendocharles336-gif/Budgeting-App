@@ -4,6 +4,8 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Bundle;
+import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 
@@ -29,6 +31,14 @@ public class MainActivity extends FlutterFragmentActivity {
     private static final int MAX_MESSAGES = 2000;
 
     private MethodChannel.Result pendingPermissionResult;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Hide the app's contents in the Recent apps preview and block
+        // screenshots / screen recording, so balances aren't exposed.
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+    }
 
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {

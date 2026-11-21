@@ -97,7 +97,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                 _chip('Cash', filter.cashOnly && filter.cardId == null,
                     () => _setFilter(filter.copyWith(cardId: () => null, cashOnly: true))),
                 for (final c in cards)
-                  _chip('${c.nickname} ••${c.last4}', filter.cardId == c.id,
+                  _chip(c.shortLabel, filter.cardId == c.id,
                       () => _setFilter(filter.copyWith(cardId: () => c.id, cashOnly: false))),
               ],
             ),
@@ -296,6 +296,7 @@ class _GroupedListState extends ConsumerState<_GroupedList> {
             tx: t,
             category: categories[t.categoryId],
             card: cards[t.cardId],
+            toCard: cards[t.toCardId],
             showDate: false,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => TransactionFormScreen(existing: t)),

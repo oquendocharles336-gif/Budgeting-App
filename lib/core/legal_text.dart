@@ -20,7 +20,7 @@ Privacy Policy
 Effective date: $effectiveDate
 
 1. Summary
-Pitaka is an offline budgeting app. All of your data is stored only on this device in a local database. The app has no user accounts, no login, no analytics, no ads, and no server. Your data is never uploaded or sent to us or to anyone else.
+Pitaka is an offline budgeting app. All of your data is stored only on this device in a local database. The app has no online accounts, no analytics, no ads, and no server. The password you create is a local login that encrypts your data on this phone. Your data is never uploaded or sent to us or to anyone else.
 
 2. What the app stores
 On this device only: the cards you add (a nickname, the last 4 digits, card type and color), your transactions, categories, keyword rules, debts and payments, budgets, SMS patterns, and app settings. The app never asks for or stores full card numbers, CVV codes, bank passwords or PINs to your bank.
@@ -31,11 +31,12 @@ SMS access is off by default. If you turn on "Import from SMS" and grant permiss
 4. Notifications
 Budget alerts and debt reminders are local notifications created by the app on your phone. No push service is used.
 
-5. App lock
-If you set a PIN, only a salted hash of it is stored on the device. Fingerprint or face unlock is handled by your phone's operating system; the app never receives your biometric data.
+5. Password and encryption
+Your data is stored in an encrypted database (SQLCipher, AES-256). The key that unlocks it is protected by your password and by a recovery key that is shown to you once. Neither your password nor your recovery key is stored, and nothing is sent anywhere, so we cannot see your data or reset your password. If you lose both your password and your recovery key, your data cannot be recovered by anyone.
+If you turn on fingerprint or face unlock, the database key is kept in your phone's secure storage (Android Keystore or iOS Keychain). The fingerprint or face check is handled by your phone's operating system; the app never receives your biometric data.
 
 6. Backups and exports
-When you export a CSV or JSON file or create a backup, the file is saved where you choose (for example, your Downloads folder or a cloud drive you pick). Anything you do with that file afterwards is up to you and the service you saved it to.
+Full backups are encrypted with your password. CSV exports are not encrypted. When you export a file or create a backup, the file is saved where you choose (for example, your Downloads folder or a cloud drive you pick). Anything you do with that file afterwards is up to you and the service you saved it to.
 On Android, the app opts out of automatic cloud backup of its data. On iPhone, your own device backup (iCloud or computer backup) may include the app's data, as it does for most apps; that backup is controlled by you and Apple, not by this app.
 
 7. Deleting your data

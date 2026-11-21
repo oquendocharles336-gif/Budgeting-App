@@ -1,4 +1,4 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import '../models/payment_card.dart';
 
@@ -27,7 +27,10 @@ class CardRepository {
   }
 
   Future<int> transactionCount(int cardId) async {
-    final r = await _db.rawQuery('SELECT COUNT(*) AS c FROM transactions WHERE card_id = ?', [cardId]);
+    final r = await _db.rawQuery(
+      'SELECT COUNT(*) AS c FROM transactions WHERE card_id = ? OR to_card_id = ?',
+      [cardId, cardId],
+    );
     return (r.first['c'] as int?) ?? 0;
   }
 
@@ -35,7 +38,7 @@ class CardRepository {
   /// transaction can't silently turn into a cash one.
   Future<void> delete(int cardId) async {
     await _db.transaction((txn) async {
-      await txn.delete('transactions', where: 'card_id = ?', whereArgs: [cardId]);
+      await txn.delete('transactions', where: 'card_id = ? OR to_card_id = ?', whereArgs: [cardId, cardId]);
       await txn.delete('cards', where: 'id = ?', whereArgs: [cardId]);
     });
   }

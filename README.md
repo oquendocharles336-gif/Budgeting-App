@@ -14,7 +14,7 @@ Architecture overview: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 - Debts with payments, remaining balance, due-date reminders
 - Analytics: daily chart, category donut, weekly and monthly comparison, average per day
 - Light/dark/system theme and accent color; currency (default ₱ PHP)
-- CSV/JSON export, full backup/restore, delete all data, optional PIN + fingerprint/face lock
+- Password login that encrypts the whole database (SQLCipher) with a one-time recovery key; optional fingerprint/face unlock; password-encrypted backups, CSV export, delete all data
 - Privacy Policy and Terms shown on first launch with an "I agree" checkbox
 
 ## Requirements

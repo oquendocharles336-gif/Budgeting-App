@@ -34,7 +34,7 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Auto-categorize rules')),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _edit(null, cats.values.toList()),
+        onPressed: () => _edit(null, cats.values.where((c) => !c.isIncome).toList()),
         icon: const Icon(Icons.add_rounded),
         label: const Text('New rule'),
       ),
@@ -84,7 +84,7 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
                         leading: CategoryAvatar(category: cats[r.categoryId], size: 36),
                         title: Text(r.keyword),
                         subtitle: Text(cats[r.categoryId]?.name ?? 'Unknown category'),
-                        onTap: () => _edit(r, cats.values.toList()),
+                        onTap: () => _edit(r, cats.values.where((c) => !c.isIncome).toList()),
                         trailing: IconButton(
                           tooltip: 'Delete rule',
                           icon: const Icon(Icons.delete_outline_rounded),
