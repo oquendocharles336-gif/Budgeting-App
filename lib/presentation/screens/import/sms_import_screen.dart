@@ -5,6 +5,7 @@ import '../../../data/models/payment_card.dart';
 import '../../../data/repositories/settings_repository.dart';
 import '../../../data/sources/sms_parser_source.dart';
 import '../../../domain/import/transaction_import_service.dart';
+import '../../../domain/services/app_lock_service.dart';
 import '../../providers/core_providers.dart';
 import '../../widgets/common.dart';
 import '../settings/sms_patterns_screen.dart';
@@ -40,7 +41,7 @@ class _SmsImportScreenState extends ConsumerState<SmsImportScreen> {
   }
 
   Future<void> _requestPermission() async {
-    final granted = await ref.read(smsInboxProvider).requestPermission();
+    final granted = await LockGuard.run(() => ref.read(smsInboxProvider).requestPermission());
     if (granted) await ref.read(settingsRepositoryProvider).set(SettingsRepository.smsEnabled, '1');
     if (!mounted) return;
     setState(() => _hasPermission = granted);

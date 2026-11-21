@@ -1,47 +1,71 @@
 import 'package:flutter/material.dart';
 
-/// Visual style: soft rounded cards on a tinted background, a bold gradient
-/// "hero" card for the main number, generous 16-20px spacing and clear
-/// type hierarchy. Built on Material 3 so contrast comes from the scheme.
+import 'app_palette.dart';
+
+/// Visual style: soft rounded cards on a calm background, generous
+/// 16-20px spacing and a clear type hierarchy, built on Material 3.
+///
+/// All colors come from [ThemeTokens] (see app_palette.dart), split
+/// 60 / 30 / 10: main (backgrounds) / second (cards, containers) /
+/// accent (buttons, highlights, key numbers). Screens read colors from the
+/// [ColorScheme] or `context.tokens`, never hard-coded values.
 class AppTheme {
   AppTheme._();
 
   static const radius = 20.0;
   static const gap = 16.0;
 
-  static const accentPalette = <Color>[
-    Color(0xFF4F46E5), // indigo
-    Color(0xFF0D9488), // teal
-    Color(0xFF059669), // emerald
-    Color(0xFF0284C7), // sky
-    Color(0xFF7C3AED), // violet
-    Color(0xFFDB2777), // pink
-    Color(0xFFE11D48), // rose
-    Color(0xFFEA580C), // orange
-    Color(0xFFCA8A04), // amber
-    Color(0xFF475569), // slate
-  ];
+  /// Swatches for the theme picker (one per palette).
+  static List<Color> get accentPalette => [for (final p in AppPalettes.all) p.seed];
 
-  static ThemeData light(Color accent) => _build(accent, Brightness.light);
-  static ThemeData dark(Color accent) => _build(accent, Brightness.dark);
+  /// [accent] is the saved palette's seed color (settings `accent_color`).
+  static ThemeData light(Color accent) => _build(AppPalettes.byId(accent.toARGB32()).light);
+  static ThemeData dark(Color accent) => _build(AppPalettes.byId(accent.toARGB32()).dark);
 
-  static ThemeData _build(Color accent, Brightness brightness) {
-    final isDark = brightness == Brightness.dark;
-    final scheme = ColorScheme.fromSeed(seedColor: accent, brightness: brightness);
-    final background = isDark ? const Color(0xFF0E1014) : const Color(0xFFF4F5FA);
-    final surface = isDark ? const Color(0xFF181B22) : Colors.white;
+  static ThemeData _build(ThemeTokens t) {
+    final isDark = t.isDark;
+    // Seeded scheme only for the few roles not covered by the tokens
+    // (tertiary, inverse colors); everything visible is mapped below.
+    final seeded = ColorScheme.fromSeed(seedColor: t.accent, brightness: t.brightness);
+    final scheme = seeded.copyWith(
+      // 10%: loud.
+      primary: t.accent,
+      onPrimary: t.onAccent,
+      // 30%: containers.
+      primaryContainer: t.secondHigh,
+      onPrimaryContainer: t.onSecond,
+      secondary: t.secondHigh,
+      onSecondary: t.onSecond,
+      secondaryContainer: t.second,
+      onSecondaryContainer: t.onSecond,
+      surfaceContainerLowest: t.second,
+      surfaceContainerLow: t.second,
+      surfaceContainer: t.second,
+      surfaceContainerHigh: t.secondHigh,
+      surfaceContainerHighest: t.secondHigh,
+      // 60%: background.
+      surface: t.main,
+      onSurface: t.onMain,
+      onSurfaceVariant: t.onMainMuted,
+      outline: t.onMainMuted,
+      outlineVariant: t.outline,
+      error: t.danger,
+      onError: Contrast.bestOn(t.danger),
+      errorContainer: Color.alphaBlend(t.danger.withValues(alpha: 0.16), t.second),
+      onErrorContainer: t.onSecond,
+      scrim: t.scrim,
+    );
     final base = ThemeData(
       useMaterial3: true,
-      brightness: brightness,
-      colorScheme: scheme.copyWith(surface: surface),
+      brightness: t.brightness,
+      colorScheme: scheme,
+      extensions: [AppColors(t)],
     );
-    final text = base.textTheme.apply(
-      bodyColor: scheme.onSurface,
-      displayColor: scheme.onSurface,
-    );
+    final text = base.textTheme.apply(bodyColor: t.onMain, displayColor: t.onMain);
 
     return base.copyWith(
-      scaffoldBackgroundColor: background,
+      scaffoldBackgroundColor: t.main,
+      canvasColor: t.main,
       textTheme: text.copyWith(
         headlineLarge: text.headlineLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5),
         headlineMedium: text.headlineMedium?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5),
@@ -51,7 +75,8 @@ class AppTheme {
         bodyMedium: text.bodyMedium?.copyWith(fontSize: 15),
       ),
       appBarTheme: AppBarThemeData(
-        backgroundColor: background,
+        backgroundColor: t.main,
+        foregroundColor: t.onMain,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -59,29 +84,39 @@ class AppTheme {
         titleTextStyle: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
       ),
       cardTheme: CardThemeData(
-        color: surface,
+        color: t.second,
         elevation: 0,
         margin: EdgeInsets.zero,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
       ),
+      // Cards are "second"; text on them uses onSecond via DefaultTextStyle
+      // in AppCard. List tiles inside cards pick it up from here.
+      listTileTheme: ListTileThemeData(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        iconColor: t.onMainMuted,
+      ),
       inputDecorationTheme: InputDecorationThemeData(
         filled: true,
-        fillColor: isDark ? const Color(0xFF22262F) : const Color(0xFFF0F1F6),
+        fillColor: t.second,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        labelStyle: TextStyle(color: t.onSecondMuted),
+        hintStyle: TextStyle(color: t.onSecondMuted),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: scheme.primary, width: 1.5),
+          borderSide: BorderSide(color: t.accent, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide(color: scheme.error),
+          borderSide: BorderSide(color: t.danger),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+          backgroundColor: t.accent,
+          foregroundColor: t.onAccent,
           minimumSize: const Size.fromHeight(52),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
@@ -89,11 +124,20 @@ class AppTheme {
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+          foregroundColor: t.onMain,
+          side: BorderSide(color: t.outline),
           minimumSize: const Size.fromHeight(48),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
       ),
+      textButtonTheme: TextButtonThemeData(
+        // Text buttons sit on the 60% background: the accent tuned for it.
+        style: TextButton.styleFrom(foregroundColor: Contrast.ensure(t.accent, t.main)),
+      ),
       chipTheme: base.chipTheme.copyWith(
+        backgroundColor: t.second,
+        selectedColor: t.secondHigh,
+        labelStyle: TextStyle(color: t.onSecond),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         side: BorderSide.none,
       ),
@@ -101,37 +145,54 @@ class AppTheme {
       // FloatingActionButton.extended and clip its icon + label into a
       // 56px circle. The round centre "+" sets its own shape in HomeShell.
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: scheme.primary,
-        foregroundColor: scheme.onPrimary,
+        backgroundColor: t.accent,
+        foregroundColor: t.onAccent,
         elevation: 4,
       ),
-      listTileTheme: const ListTileThemeData(contentPadding: EdgeInsets.symmetric(horizontal: 16)),
-      dividerTheme: DividerThemeData(color: scheme.outlineVariant.withValues(alpha: 0.4), space: 1),
-      snackBarTheme: const SnackBarThemeData(behavior: SnackBarBehavior.floating),
+      bottomAppBarTheme: BottomAppBarThemeData(color: t.second, surfaceTintColor: Colors.transparent),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: t.accent, linearTrackColor: t.secondHigh),
+      dividerTheme: DividerThemeData(color: t.outline, space: 1),
+      // Dim what's behind dialogs and sheets so there is one focus.
+      dialogTheme: DialogThemeData(
+        backgroundColor: t.second,
+        barrierColor: t.scrim,
+        surfaceTintColor: Colors.transparent,
+      ),
+      bottomSheetTheme: BottomSheetThemeData(
+        backgroundColor: t.second,
+        modalBackgroundColor: t.second,
+        modalBarrierColor: t.scrim,
+        surfaceTintColor: Colors.transparent,
+      ),
+      popupMenuTheme: PopupMenuThemeData(color: t.secondHigh, surfaceTintColor: Colors.transparent),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: isDark ? t.secondHigh : t.onMain,
+        contentTextStyle: TextStyle(color: isDark ? t.onSecond : t.main),
+        actionTextColor: isDark ? Contrast.ensure(t.accent, t.secondHigh) : Contrast.ensure(t.accent, t.onMain),
+      ),
     );
   }
 
-  /// Gradient for hero cards, derived from the accent.
-  static LinearGradient heroGradient(ColorScheme scheme) {
-    final hsl = HSLColor.fromColor(scheme.primary);
-    final end = hsl.withHue((hsl.hue + 35) % 360).withLightness((hsl.lightness * 0.85).clamp(0.2, 0.6).toDouble()).toColor();
-    return LinearGradient(
-      colors: [scheme.primary, end],
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-    );
-  }
+  /// Background for "hero" cards (the big number at the top). It is part
+  /// of the 30%: a gentle gradient inside the container color, with the
+  /// key number in the accent ([ThemeTokens.accentOnSecond]).
+  static LinearGradient heroGradient(ColorScheme scheme) => LinearGradient(
+        colors: [scheme.secondaryContainer, scheme.primaryContainer],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      );
 
-  /// Black or white text, whichever reads better on [background].
-  static Color onColor(Color background) =>
-      ThemeData.estimateBrightnessForColor(background) == Brightness.dark ? Colors.white : Colors.black87;
+  /// Black or white text, whichever reads better on [background]. For
+  /// user-picked colors (cards, categories), which aren't theme tokens.
+  static Color onColor(Color background) => Contrast.bestOn(background);
 }
 
-/// Semantic colors for budget states that read well in light and dark mode.
+/// Semantic status colors from the theme tokens (AA on cards).
 class StatusColors {
   StatusColors._();
-  static Color ok(BuildContext c) => Theme.of(c).brightness == Brightness.dark ? const Color(0xFF4ADE80) : const Color(0xFF15803D);
-  static Color warning(BuildContext c) => Theme.of(c).brightness == Brightness.dark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
-  static Color danger(BuildContext c) => Theme.of(c).colorScheme.error;
+  static Color ok(BuildContext c) => c.tokens.success;
+  static Color warning(BuildContext c) => c.tokens.warning;
+  static Color danger(BuildContext c) => c.tokens.danger;
   static Color income(BuildContext c) => ok(c);
 }

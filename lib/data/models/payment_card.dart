@@ -25,6 +25,7 @@ class PaymentCard {
     required this.type,
     required this.color,
     this.mobileNumber,
+    this.balance = 0,
     this.archived = false,
     required this.createdAt,
   });
@@ -40,8 +41,21 @@ class PaymentCard {
   /// E-wallets only: the full mobile number (e.g. "09123456768"). Stored
   /// unmasked; use [maskedNumber] / [label] to show it.
   final String? mobileNumber;
+
+  /// Money in the account right now, in centavos. For a credit card this is
+  /// the credit still available. Can go below zero if the user confirms an
+  /// expense larger than the balance.
+  final int balance;
   final bool archived;
   final DateTime createdAt;
+
+  bool get isCredit => type == CardType.credit;
+
+  /// Credit isn't the user's own money, so it is left out of "available balance".
+  bool get countsTowardAvailable => !isCredit && !archived;
+
+  /// "Balance" or "Available credit".
+  String get balanceLabel => isCredit ? 'Available credit' : 'Balance';
 
   bool get hasMobileNumber => type == CardType.ewallet && (mobileNumber?.trim().isNotEmpty ?? false);
 
@@ -61,6 +75,7 @@ class PaymentCard {
     CardType? type,
     int? color,
     String? Function()? mobileNumber,
+    int? balance,
     bool? archived,
   }) =>
       PaymentCard(
@@ -70,6 +85,7 @@ class PaymentCard {
         type: type ?? this.type,
         color: color ?? this.color,
         mobileNumber: mobileNumber != null ? mobileNumber() : this.mobileNumber,
+        balance: balance ?? this.balance,
         archived: archived ?? this.archived,
         createdAt: createdAt,
       );
@@ -81,6 +97,7 @@ class PaymentCard {
         'card_type': type.name,
         'color': color,
         'mobile_number': mobileNumber,
+        'balance': balance,
         'archived': archived ? 1 : 0,
         'created_at': createdAt.millisecondsSinceEpoch,
       };
@@ -92,6 +109,7 @@ class PaymentCard {
         type: CardType.fromDb(m['card_type'] as String),
         color: m['color'] as int,
         mobileNumber: m['mobile_number'] as String?,
+        balance: m['balance'] as int? ?? 0,
         archived: (m['archived'] as int? ?? 0) == 1,
         createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
       );

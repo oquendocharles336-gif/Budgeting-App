@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../../core/money.dart';
 import '../../../data/models/debt.dart';
 import '../../../domain/debt/interest_calculator.dart';
+import '../../../domain/services/app_lock_service.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../widgets/common.dart';
@@ -33,6 +34,11 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
   late InterestType _interestType;
   late InterestPeriod _interestPeriod;
   bool _saving = false;
+
+  /// Asked when adding: true = new debt (also added to expenses),
+  /// false = existing debt (reminder only). Null until the user picks.
+  bool? _isNew;
+  bool _originMissing = false;
 
   @override
   void initState() {
@@ -80,9 +86,11 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
   }
 
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
-    setState(() => _saving = true);
     final e = widget.existing;
+    final formOk = _form.currentState!.validate();
+    setState(() => _originMissing = e == null && _isNew == null);
+    if (!formOk || _originMissing) return;
+    setState(() => _saving = true);
     final debt = Debt(
       id: e?.id,
       creditor: _creditor.text.trim(),
@@ -98,6 +106,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
       interestRateBp: _interestBp(),
       notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
       isPaid: e?.isPaid ?? false,
+      isNew: e?.isNew ?? _isNew!,
       createdAt: e?.createdAt ?? DateTime.now(),
       paidAt: e?.paidAt,
     );
@@ -112,14 +121,31 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
     // Saved: refresh the list first so the Debts screen updates even if the
     // (optional) notification permission prompt below fails.
     ref.refreshData();
-    if (debt.dueDate != null) {
-      try {
-        await ref.read(notificationServiceProvider).requestPermission();
-      } catch (err) {
-        debugPrint('Notification permission request failed: $err');
-      }
-    }
+    if (debt.dueDate != null) await _askForReminders();
     if (mounted) Navigator.of(context).pop();
+  }
+
+  /// The first time a debt gets a deadline: say what the reminder is for,
+  /// then ask the OS for notification permission.
+  Future<void> _askForReminders() async {
+    const key = 'debt_reminders_explained';
+    final settings = ref.read(settingsRepositoryProvider);
+    try {
+      if (await settings.get(key) != null) return;
+      if (!mounted) return;
+      final yes = await confirm(
+        context,
+        title: 'Remind you before it\'s due?',
+        message: 'Pitaka can notify you 2 days before a debt\'s deadline. '
+            'Reminders are set on this phone; nothing is sent online.',
+        confirmLabel: 'Turn on',
+        destructive: false,
+      );
+      await settings.set(key, yes ? 'yes' : 'no');
+      if (yes) await LockGuard.run(() => ref.read(notificationServiceProvider).requestPermission());
+    } catch (err) {
+      debugPrint('Notification permission request failed: $err');
+    }
   }
 
   @override
@@ -133,6 +159,53 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
+            if (widget.existing == null) ...[
+              Text('Is this a new debt?', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              SegmentedButton<bool>(
+                emptySelectionAllowed: true,
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: true, label: Text('New'), icon: Icon(Icons.fiber_new_rounded)),
+                  ButtonSegment(value: false, label: Text('Existing'), icon: Icon(Icons.history_rounded)),
+                ],
+                selected: {?_isNew},
+                onSelectionChanged: (s) => setState(() {
+                  _isNew = s.isEmpty ? null : s.first;
+                  _originMissing = false;
+                }),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                switch (_isNew) {
+                  true => 'Money you just borrowed or spent on credit. It\'s also added to your expenses '
+                      '(category "Debt"), so it counts in this month\'s budget.',
+                  false => 'A debt you already had. Only a reminder: it\'s added to your debts, '
+                      'not to expenses or the budget.',
+                  null => 'New: just borrowed or bought on credit (added to expenses). '
+                      'Existing: you already owed it (reminder only).',
+                },
+                style: TextStyle(
+                  color: _originMissing ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontSize: 13,
+                ),
+              ),
+              if (_originMissing)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Choose New or Existing',
+                    style: TextStyle(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w600, fontSize: 13),
+                  ),
+                ),
+              const SizedBox(height: 20),
+            ] else if (widget.existing!.isNew) ...[
+              Text(
+                'New debt: its expense in "Debt" is updated when you save.',
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+              ),
+              const SizedBox(height: 16),
+            ],
             TextFormField(
               controller: _creditor,
               textCapitalization: TextCapitalization.words,

@@ -1,9 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+/// The app logo (assets/logo/logo.png). Falls back to an icon if the
+/// asset is missing, so a bad asset never blocks unlocking.
+class AppLogo extends StatelessWidget {
+  const AppLogo({super.key, this.size = 88});
+  final double size;
+
+  static const asset = 'assets/logo/logo.png';
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      label: 'Pitaka',
+      image: true,
+      child: Image.asset(
+        asset,
+        width: size,
+        height: size,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, _, _) => Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(color: scheme.primaryContainer, shape: BoxShape.circle),
+          child: Icon(Icons.account_balance_wallet_rounded, size: size * 0.45, color: scheme.onPrimaryContainer),
+        ),
+      ),
+    );
+  }
+}
 
 /// Centered, scrollable column used by the sign-up / login screens.
 class AuthLayout extends StatelessWidget {
-  const AuthLayout({super.key, required this.icon, required this.title, this.message, required this.children});
+  const AuthLayout({
+    super.key,
+    required this.icon,
+    required this.title,
+    this.message,
+    required this.children,
+    this.showLogo = false,
+  });
 
+  /// Shows the app logo instead of [icon] (setup and lock screens).
+  final bool showLogo;
   final IconData icon;
   final String title;
   final String? message;
@@ -23,11 +63,13 @@ class AuthLayout extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Center(
-                    child: Container(
-                      padding: const EdgeInsets.all(18),
-                      decoration: BoxDecoration(color: scheme.primaryContainer, shape: BoxShape.circle),
-                      child: Icon(icon, size: 36, color: scheme.onPrimaryContainer),
-                    ),
+                    child: showLogo
+                        ? const AppLogo()
+                        : Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(color: scheme.primaryContainer, shape: BoxShape.circle),
+                            child: Icon(icon, size: 36, color: scheme.onPrimaryContainer),
+                          ),
                   ),
                   const SizedBox(height: 16),
                   Text(title, textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineSmall),
@@ -58,7 +100,14 @@ class PasswordField extends StatefulWidget {
     this.onSubmitted,
     this.textInputAction = TextInputAction.next,
     this.autofillHints = const [AutofillHints.password],
+    this.keyboardType,
+    this.inputFormatters,
   });
+
+  final List<TextInputFormatter>? inputFormatters;
+
+  /// [TextInputType.number] for a numeric PIN.
+  final TextInputType? keyboardType;
 
   final TextEditingController controller;
   final String label;
@@ -79,6 +128,8 @@ class _PasswordFieldState extends State<PasswordField> {
   Widget build(BuildContext context) => TextFormField(
         controller: widget.controller,
         obscureText: _obscure,
+        keyboardType: widget.keyboardType,
+        inputFormatters: widget.inputFormatters,
         autofocus: widget.autofocus,
         enableSuggestions: false,
         autocorrect: false,

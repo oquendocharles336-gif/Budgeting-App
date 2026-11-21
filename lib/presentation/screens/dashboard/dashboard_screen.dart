@@ -6,22 +6,31 @@ import '../../../core/dates.dart';
 import '../../../domain/budget/budget_calculator.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
+import '../../theme/app_palette.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/available_balance_card.dart';
 import '../../widgets/common.dart';
+import '../../widgets/motion/skeleton.dart';
 import '../../widgets/payment_card_view.dart';
 import '../../widgets/transaction_tile.dart';
+import '../analytics/analytics_screen.dart';
 import '../cards/card_detail_screen.dart';
-import '../cards/cards_screen.dart';
 import '../debts/debts_screen.dart';
 import '../import/import_hub_screen.dart';
 import '../settings/settings_screen.dart';
 import '../transactions/transaction_form_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
-  const DashboardScreen({super.key, required this.onSeeAllTransactions, required this.onOpenBudget});
+  const DashboardScreen({
+    super.key,
+    required this.onSeeAllTransactions,
+    required this.onOpenBudget,
+    required this.onOpenWallets,
+  });
 
   final VoidCallback onSeeAllTransactions;
   final VoidCallback onOpenBudget;
+  final VoidCallback onOpenWallets;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -46,22 +55,23 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               AsyncView(
                 value: summary,
-                loading: const SizedBox(height: 190, child: LoadingView()),
+                loading: const SkeletonCard(height: 190),
                 data: (s) => Column(
                   children: [
                     _HeroBudgetCard(summary: s, onTap: onOpenBudget),
-                    _BudgetBanner(progress: s.overall, onTap: onOpenBudget),
                   ],
                 ),
               ),
+              const SizedBox(height: 12),
+              AvailableBalanceCard(onTap: onOpenWallets),
               const SizedBox(height: 20),
               _QuickActions(
                 onImport: () => _push(context, const ImportHubScreen()),
                 onDebts: () => _push(context, const DebtsScreen()),
-                onCards: () => _push(context, const CardsScreen()),
+                onInsights: () => _push(context, const AnalyticsScreen()),
               ),
               const SizedBox(height: 12),
-              const _CardsStrip(),
+              _CardsStrip(onOpenWallets: onOpenWallets),
               const SizedBox(height: 8),
               const _DebtSummary(),
               const SizedBox(height: 8),
@@ -116,7 +126,9 @@ class _HeroBudgetCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final p = summary.overall;
-    final fg = scheme.onPrimary;
+    final fg = scheme.onSecondaryContainer;
+    // The key number is the loud 10%.
+    final key = context.tokens.accentOnSecond;
     final now = DateTime.now();
     final safe = BudgetCalculator.safeDailySpend(budget: p.budget, spent: p.spent, month: summary.month, now: now);
 
@@ -136,12 +148,12 @@ class _HeroBudgetCard extends ConsumerWidget {
                 children: [
                   Text(
                     p.hasBudget ? (p.remaining >= 0 ? 'Left to spend in ${DateFormat('MMMM').format(now)}' : 'Over budget by') : 'Spent this month',
-                    style: TextStyle(color: fg.withValues(alpha: 0.85), fontWeight: FontWeight.w500),
+                    style: TextStyle(color: context.tokens.onSecondMuted, fontWeight: FontWeight.w500),
                   ),
                   const SizedBox(height: 6),
                   AmountText(
                     p.hasBudget ? p.remaining.abs() : p.spent,
-                    style: TextStyle(color: fg, fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -0.5),
+                    style: TextStyle(color: key, fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -0.5),
                   ),
                   const SizedBox(height: 16),
                   if (p.hasBudget) ...[
@@ -152,7 +164,7 @@ class _HeroBudgetCard extends ConsumerWidget {
                         Expanded(
                           child: Text(
                             '${formatMoney(ref, p.spent)} of ${formatMoney(ref, p.budget)} · ${p.percentUsed}%',
-                            style: TextStyle(color: fg.withValues(alpha: 0.9), fontSize: 13),
+                            style: TextStyle(color: context.tokens.onSecondMuted, fontSize: 13),
                           ),
                         ),
                         if (safe > 0)
@@ -162,6 +174,28 @@ class _HeroBudgetCard extends ConsumerWidget {
                           ),
                       ],
                     ),
+                    // Inline, in context (no banner box): only at 80% / 100%.
+                    if (p.level == BudgetLevel.warning || p.level == BudgetLevel.exceeded) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(
+                            p.level == BudgetLevel.exceeded ? Icons.error_rounded : Icons.warning_amber_rounded,
+                            size: 16,
+                            color: budgetColor(context, p.level),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              p.level == BudgetLevel.exceeded
+                                  ? 'You\'ve used your whole budget for this month.'
+                                  : 'You\'ve used ${p.percentUsed}% of this month\'s budget.',
+                              style: TextStyle(color: budgetColor(context, p.level), fontWeight: FontWeight.w600, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ] else
                     Row(
                       children: [
@@ -180,61 +214,18 @@ class _HeroBudgetCard extends ConsumerWidget {
   }
 }
 
-/// In-app banner at 80% and 100%.
-class _BudgetBanner extends StatelessWidget {
-  const _BudgetBanner({required this.progress, required this.onTap});
-  final BudgetProgress progress;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final level = progress.level;
-    if (level != BudgetLevel.warning && level != BudgetLevel.exceeded) return const SizedBox.shrink();
-    final exceeded = level == BudgetLevel.exceeded;
-    final color = budgetColor(context, level);
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Material(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              children: [
-                Icon(exceeded ? Icons.error_rounded : Icons.warning_amber_rounded, color: color),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    exceeded
-                        ? "You've used your whole budget for this month."
-                        : "You've used ${progress.percentUsed}% of this month's budget.",
-                    style: TextStyle(color: color, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _QuickActions extends StatelessWidget {
-  const _QuickActions({required this.onImport, required this.onDebts, required this.onCards});
+  const _QuickActions({required this.onImport, required this.onDebts, required this.onInsights});
   final VoidCallback onImport;
   final VoidCallback onDebts;
-  final VoidCallback onCards;
+  final VoidCallback onInsights;
 
   @override
   Widget build(BuildContext context) => Row(
         children: [
           Expanded(child: _Action(icon: Icons.file_download_rounded, label: 'Import', onTap: onImport)),
           const SizedBox(width: 12),
-          Expanded(child: _Action(icon: Icons.credit_card_rounded, label: 'Cards', onTap: onCards)),
+          Expanded(child: _Action(icon: Icons.insights_rounded, label: 'Insights', onTap: onInsights)),
           const SizedBox(width: 12),
           Expanded(child: _Action(icon: Icons.handshake_rounded, label: 'Debts', onTap: onDebts)),
         ],
@@ -265,7 +256,8 @@ class _Action extends StatelessWidget {
 }
 
 class _CardsStrip extends ConsumerWidget {
-  const _CardsStrip();
+  const _CardsStrip({required this.onOpenWallets});
+  final VoidCallback onOpenWallets;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -275,19 +267,23 @@ class _CardsStrip extends ConsumerWidget {
       loading: const SizedBox(height: 40),
       data: (list) {
         if (list.isEmpty) return const SizedBox.shrink();
+        // Closure: each card is ~64% of the row, so the next one always
+        // peeks in from the edge and the row reads as "swipe for more".
+        final cardWidth = (MediaQuery.sizeOf(context).width - 32) * 0.64;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SectionHeader('My cards'),
+            SectionHeader('My cards & e-wallets', actionLabel: 'See all', onAction: onOpenWallets),
             SizedBox(
-              height: 112,
+              height: cardWidth / 1.6,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: list.length,
                 separatorBuilder: (_, _) => const SizedBox(width: 12),
                 itemBuilder: (context, i) => PaymentCardView(
                   card: list[i],
-                  width: 180,
+                  width: cardWidth,
+                  subtitle: formatMoney(ref, list[i].balance),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => CardDetailScreen(cardId: list[i].id!)),
                   ),

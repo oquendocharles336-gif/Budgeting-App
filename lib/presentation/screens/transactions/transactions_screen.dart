@@ -11,6 +11,8 @@ import '../../../data/models/transaction_entry.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../widgets/common.dart';
+import '../../widgets/motion/animated_icons.dart';
+import '../../widgets/motion/cascade.dart';
 import '../../widgets/transaction_tile.dart';
 import '../import/import_hub_screen.dart';
 import 'transaction_form_screen.dart';
@@ -24,12 +26,44 @@ class TransactionsScreen extends ConsumerStatefulWidget {
 
 class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
   Timer? _debounce;
+
+  /// The search field slides open from the app bar icon (magnifier <-> X).
+  bool _searchOpen = false;
+
+  /// Filter chips row, shown/hidden from the app bar (menu <-> X).
+  bool _filtersOpen = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Coming back with a search still active: keep the field open.
+    final active = ref.read(transactionFilterProvider).search;
+    if (active != null) {
+      _searchOpen = true;
+      _search.text = active;
+    }
+  }
+
+  void _toggleSearch() {
+    setState(() => _searchOpen = !_searchOpen);
+    if (_searchOpen) {
+      _searchFocus.requestFocus();
+    } else {
+      _searchFocus.unfocus();
+      if (_search.text.isNotEmpty) {
+        _search.clear();
+        _onSearch('');
+      }
+    }
+  }
 
   @override
   void dispose() {
     _debounce?.cancel();
     _search.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -55,6 +89,16 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
         title: const Text('Activity'),
         actions: [
           IconButton(
+            tooltip: _searchOpen ? 'Close search' : 'Search',
+            onPressed: _toggleSearch,
+            icon: AnimatedSearchIcon(open: _searchOpen),
+          ),
+          IconButton(
+            tooltip: _filtersOpen ? 'Hide filters' : 'Show filters',
+            onPressed: () => setState(() => _filtersOpen = !_filtersOpen),
+            icon: AnimatedMenuIcon(open: _filtersOpen),
+          ),
+          IconButton(
             tooltip: 'Import',
             icon: const Icon(Icons.file_download_rounded),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ImportHubScreen())),
@@ -63,10 +107,16 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       ),
       body: Column(
         children: [
-          Padding(
+          AnimatedSize(
+            duration: Cascade.reduced(context) ? Duration.zero : const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            child: !_searchOpen
+                ? const SizedBox(width: double.infinity)
+                : Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: TextField(
               controller: _search,
+              focusNode: _searchFocus,
               onChanged: _onSearch,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
@@ -86,6 +136,15 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
               ),
             ),
           ),
+          ),
+          AnimatedSize(
+            duration: Cascade.reduced(context) ? Duration.zero : const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+            child: !_filtersOpen
+                ? const SizedBox(width: double.infinity)
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
           SizedBox(
             height: 48,
             child: ListView(
@@ -136,6 +195,9 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                   ),
               ],
             ),
+          ),
+                    ],
+                  ),
           ),
           Expanded(
             child: AsyncView(
@@ -260,7 +322,9 @@ class _GroupedListState extends ConsumerState<_GroupedList> {
       itemBuilder: (context, i) {
         final item = items[i];
         if (item is DateTime) {
-          return Padding(
+          return CascadeIn(
+            index: i,
+            child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
             child: Row(
               children: [
@@ -273,10 +337,14 @@ class _GroupedListState extends ConsumerState<_GroupedList> {
                   ),
               ],
             ),
+          ),
           );
         }
         final t = item as TransactionEntry;
-        return Dismissible(
+        return CascadeIn(
+          key: ValueKey('row-${t.id}'),
+          index: i,
+          child: Dismissible(
           key: ValueKey('tx-${t.id}'),
           direction: DismissDirection.endToStart,
           background: Container(
@@ -301,6 +369,7 @@ class _GroupedListState extends ConsumerState<_GroupedList> {
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => TransactionFormScreen(existing: t)),
             ),
+          ),
           ),
         );
       },

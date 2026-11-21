@@ -43,13 +43,7 @@ class DebtDetailScreen extends ConsumerWidget {
               IconButton(
                 tooltip: 'Delete',
                 icon: const Icon(Icons.delete_outline_rounded),
-                onPressed: () async {
-                  final ok = await confirm(context, title: 'Delete this debt?', message: 'Its payment history is deleted too.');
-                  if (!ok) return;
-                  await ref.read(debtServiceProvider).delete(debtId);
-                  ref.refreshData();
-                  if (context.mounted) Navigator.of(context).pop();
-                },
+                onPressed: () => _delete(context, ref),
               ),
             ],
           ),
@@ -186,6 +180,47 @@ class DebtDetailScreen extends ConsumerWidget {
           ],
         ),
       );
+
+  /// Deletes the debt. A new debt's expense is kept or removed, as the user chooses.
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final service = ref.read(debtServiceProvider);
+    final linked = await service.hasLinkedExpense(debtId);
+    if (!context.mounted) return;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete this debt?'),
+        content: Text(
+          linked
+              ? 'Its payment history is deleted too.\n\nThis debt also added an expense. Remove that expense '
+                  'from your spending too, or keep it?'
+              : 'Its payment history is deleted too.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          if (linked) TextButton(onPressed: () => Navigator.pop(ctx, 'keep'), child: const Text('Keep expense')),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+              foregroundColor: Theme.of(ctx).colorScheme.onError,
+              minimumSize: const Size(88, 44),
+            ),
+            onPressed: () => Navigator.pop(ctx, 'remove'),
+            child: Text(linked ? 'Remove both' : 'Delete'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null) return;
+    try {
+      await service.delete(debtId, removeLinkedExpense: choice == 'remove');
+    } catch (e) {
+      if (context.mounted) showSnack(context, 'Could not delete: $e', error: true);
+      return;
+    }
+    ref.refreshData();
+    if (context.mounted) Navigator.of(context).pop();
+  }
 
   Future<void> _recordPayment(BuildContext context, WidgetRef ref, DebtStatus s) async {
     final amount = TextEditingController(text: Money.toInput(s.remaining));

@@ -45,6 +45,8 @@ class TransactionEntry {
     this.source = TransactionSourceType.manual,
     this.externalId,
     this.dedupHash,
+    this.affectsBalance = false,
+    this.debtId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -70,6 +72,14 @@ class TransactionEntry {
   final TransactionSourceType source;
   final String? externalId;
   final String? dedupHash;
+
+  /// True when saving this row changed the account balances (manual entries
+  /// since v5). Editing or deleting it then undoes / redoes that change.
+  final bool affectsBalance;
+
+  /// Set on the expense a new debt created, so editing or deleting the
+  /// debt keeps it in sync.
+  final int? debtId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -100,6 +110,8 @@ class TransactionEntry {
     TransactionSourceType? source,
     String? Function()? externalId,
     String? Function()? dedupHash,
+    bool? affectsBalance,
+    int? Function()? debtId,
     DateTime? updatedAt,
   }) =>
       TransactionEntry(
@@ -116,6 +128,8 @@ class TransactionEntry {
         source: source ?? this.source,
         externalId: externalId != null ? externalId() : this.externalId,
         dedupHash: dedupHash != null ? dedupHash() : this.dedupHash,
+        affectsBalance: affectsBalance ?? this.affectsBalance,
+        debtId: debtId != null ? debtId() : this.debtId,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -134,6 +148,8 @@ class TransactionEntry {
         'source': source.dbValue,
         'external_id': externalId,
         'dedup_hash': dedupHash,
+        'affects_balance': affectsBalance ? 1 : 0,
+        'debt_id': debtId,
         'created_at': createdAt.millisecondsSinceEpoch,
         'updated_at': updatedAt.millisecondsSinceEpoch,
       };
@@ -152,6 +168,8 @@ class TransactionEntry {
         source: TransactionSourceType.fromDb(m['source'] as String),
         externalId: m['external_id'] as String?,
         dedupHash: m['dedup_hash'] as String?,
+        affectsBalance: (m['affects_balance'] as int? ?? 0) == 1,
+        debtId: m['debt_id'] as int?,
         createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
         updatedAt: DateTime.fromMillisecondsSinceEpoch(m['updated_at'] as int),
       );

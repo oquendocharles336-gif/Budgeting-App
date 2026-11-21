@@ -184,6 +184,10 @@ class TransactionImportService {
         source: r.source,
         externalId: r.externalId,
         dedupHash: hash,
+        // Typed entries move the account balance. Imported statement / SMS
+        // rows don't: the starting balance the user typed already includes
+        // them, so counting them again would take the money out twice.
+        affectsBalance: r.source == TransactionSourceType.manual,
         createdAt: now,
         updatedAt: now,
       );

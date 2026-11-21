@@ -9,6 +9,7 @@ import '../../widgets/transaction_tile.dart';
 import '../import/import_hub_screen.dart';
 import '../transactions/transaction_form_screen.dart';
 import 'card_form_screen.dart';
+import 'cards_screen.dart';
 
 /// One card: what was bought with it.
 class CardDetailScreen extends ConsumerWidget {
@@ -47,6 +48,36 @@ class CardDetailScreen extends ConsumerWidget {
             children: [
               Center(child: PaymentCardView(card: card, width: 320, allowReveal: true)),
               const SizedBox(height: 16),
+              AppCard(
+                onTap: () => editBalance(
+                  context,
+                  ref,
+                  accountId: card.id,
+                  name: card.nickname,
+                  current: card.balance,
+                  isCredit: card.isCredit,
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(card.balanceLabel),
+                          AmountText(
+                            card.balance,
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                  color: card.balance < 0 ? Theme.of(context).colorScheme.error : null,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(Icons.edit_rounded),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
               AppCard(
                 child: Row(
                   children: [

@@ -10,8 +10,10 @@ import '../../../data/sources/csv_import_source.dart';
 import '../../../domain/csv/csv_parser.dart';
 import '../../../domain/csv/date_parser.dart';
 import '../../../domain/import/transaction_import_service.dart';
+import '../../../domain/services/app_lock_service.dart';
 import '../../providers/core_providers.dart';
 import '../../widgets/common.dart';
+import '../../widgets/work_steps.dart';
 import 'import_review.dart';
 
 enum _Step { pick, map, review }
@@ -45,11 +47,12 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
       _error = null;
     });
     try {
-      final file = await FilePicker.pickFile(
-        type: FileType.custom,
-        allowedExtensions: const ['csv', 'txt'],
-        dialogTitle: 'Choose a CSV statement',
-      );
+      // Guarded: leaving for the picker must not lock the app.
+      final file = await LockGuard.run(() => FilePicker.pickFile(
+            type: FileType.custom,
+            allowedExtensions: const ['csv', 'txt'],
+            dialogTitle: 'Choose a CSV statement',
+          ));
       if (file == null) {
         setState(() => _busy = false);
         return;
@@ -79,15 +82,52 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
     }
   }
 
+  /// Steps shown while checking the file (the work, not a spinner).
+  List<WorkStep> _progress = const [];
+
+  void _showStep(int index, WorkStep step) {
+    if (!mounted) return;
+    setState(() {
+      final list = [..._progress];
+      if (index < list.length) {
+        list[index] = step;
+      } else {
+        list.add(step);
+      }
+      _progress = list;
+    });
+  }
+
   Future<void> _buildPreview() async {
     final mapping = _mapping!;
-    setState(() => _busy = true);
+    final service = ref.read(importServiceProvider);
+    setState(() {
+      _busy = true;
+      _progress = const [];
+    });
     try {
       final source = CsvImportSource(rows: _rows, mapping: mapping);
-      final candidates = await ref.read(importServiceProvider).preview(source, card: widget.card);
+      _showStep(0, WorkStep('Reading ${_rows.length} rows…'));
+      await Future<void>.delayed(Duration.zero); // let the step paint
+      final raws = await source.fetchTransactions(card: widget.card);
+      final skipped = source.rowErrors.length;
+      _showStep(0, WorkStep('Read ${_rows.length} rows').finish());
+      _showStep(1, WorkStep('Cleaning ${raws.length} transactions…'));
+      await Future<void>.delayed(Duration.zero);
+      final candidates = await service.prepare(raws);
+      _showStep(
+        1,
+        WorkStep('Cleaned: ${raws.length} usable${skipped > 0 ? ', $skipped skipped (missing date or amount)' : ''}')
+            .finish(),
+      );
+      final dupes = candidates.where((c) => c.isDuplicate).length;
+      _showStep(2, WorkStep('Checked duplicates: ${dupes == 0 ? 'none found' : '$dupes found and unticked'}').finish());
+      // A short beat so the finished steps can be read before moving on.
+      await Future<void>.delayed(const Duration(milliseconds: 450));
+      if (!mounted) return;
       setState(() {
         _candidates = candidates;
-        _invalidRows = source.rowErrors.length;
+        _invalidRows = skipped;
         _step = _Step.review;
         _busy = false;
       });
@@ -285,9 +325,19 @@ class _CsvImportScreenState extends ConsumerState<CsvImportScreen> {
           top: false,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            child: FilledButton(
-              onPressed: _busy ? null : _buildPreview,
-              child: Text(_busy ? 'Checking…' : 'Review transactions'),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_busy && _progress.isNotEmpty) ...[
+                  WorkSteps(steps: _progress),
+                  const SizedBox(height: 8),
+                ],
+                FilledButton(
+                  onPressed: _busy ? null : _buildPreview,
+                  child: Text(_busy ? 'Checking…' : 'Review transactions'),
+                ),
+              ],
             ),
           ),
         ),

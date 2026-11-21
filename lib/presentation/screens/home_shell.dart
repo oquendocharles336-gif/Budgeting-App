@@ -1,57 +1,195 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'analytics/analytics_screen.dart';
+import '../../core/dates.dart';
+import '../providers/data_providers.dart';
+import '../widgets/motion/animated_icons.dart';
+import '../widgets/motion/cascade.dart';
 import 'budget/budget_screen.dart';
+import 'cards/cards_screen.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'transactions/transaction_form_screen.dart';
 import 'transactions/transactions_screen.dart';
 
 /// Bottom navigation with a centered "+" button for quick add.
-class HomeShell extends StatefulWidget {
+///
+/// Back button: screens pushed on top (add transaction, settings, ...)
+/// close first, as usual. On a tab, back returns to the previously visited
+/// tab, then to Home; on Home it asks before leaving the app.
+class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
+  static const home = 0;
+  static const activity = 1;
+  static const budget = 2;
+  static const wallets = 3;
+
   @override
-  State<HomeShell> createState() => _HomeShellState();
+  ConsumerState<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
-  int _index = 0;
+class _HomeShellState extends ConsumerState<HomeShell> {
+  int _index = HomeShell.home;
 
-  void _go(int i) => setState(() => _index = i);
+  /// Tabs are built the first time they're opened, so their list
+  /// entrance plays when the user actually sees it.
+  final Set<int> _built = {HomeShell.home};
+
+  /// The "+" shows "×" while the add screen it opened is up.
+  bool _adding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start the work early: while Home is showing, load what the other
+    // tabs will most likely need next, so they open with data ready.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetch());
+  }
+
+  void _prefetch() {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final thisMonth = Dates.monthKey(now);
+    final lastMonth = Dates.monthKey(Dates.previousMonth(Dates.monthStart(now)));
+    // Results are cached in the providers; errors show on the screen later.
+    ref.read(analyticsProvider(thisMonth).future).ignore();
+    ref.read(monthSummaryProvider(lastMonth).future).ignore();
+    ref.read(budgetHistoryProvider.future).ignore();
+    ref.read(filteredTransactionsProvider.future).ignore();
+    ref.read(balanceSummaryProvider.future).ignore();
+    ref.read(debtsProvider.future).ignore();
+  }
+
+  Future<void> _openAdd() async {
+    setState(() => _adding = true);
+    await Navigator.of(context).push(
+      MaterialPageRoute(fullscreenDialog: true, builder: (_) => const TransactionFormScreen()),
+    );
+    if (mounted) setState(() => _adding = false);
+  }
+
+  /// Tabs visited before the current one, oldest first.
+  final List<int> _history = [];
+  bool _exitDialogOpen = false;
+
+  void _go(int i) {
+    if (i == _index) return;
+    setState(() {
+      // No duplicate consecutive entries.
+      if (_history.isEmpty || _history.last != _index) _history.add(_index);
+      _index = i;
+      _built.add(i);
+    });
+  }
+
+  Future<void> _onBack() async {
+    if (_index != HomeShell.home) {
+      setState(() {
+        var previous = HomeShell.home;
+        // Skip entries equal to the tab we're leaving.
+        while (_history.isNotEmpty) {
+          final last = _history.removeLast();
+          if (last != _index) {
+            previous = last;
+            break;
+          }
+        }
+        _index = previous;
+        _built.add(previous);
+      });
+      return;
+    }
+    if (_exitDialogOpen) return;
+    _exitDialogOpen = true;
+    final exit = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Exit app?'),
+        content: const Text('Are you sure you want to exit?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          FilledButton(
+            style: FilledButton.styleFrom(minimumSize: const Size(88, 44)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Exit'),
+          ),
+        ],
+      ),
+    );
+    _exitDialogOpen = false;
+    if (exit ?? false) await SystemNavigator.pop();
+  }
 
   @override
   Widget build(BuildContext context) {
     final pages = [
-      DashboardScreen(onSeeAllTransactions: () => _go(1), onOpenBudget: () => _go(2)),
+      DashboardScreen(
+        onSeeAllTransactions: () => _go(HomeShell.activity),
+        onOpenBudget: () => _go(HomeShell.budget),
+        onOpenWallets: () => _go(HomeShell.wallets),
+      ),
       const TransactionsScreen(),
       const BudgetScreen(),
-      const AnalyticsScreen(),
+      const CardsScreen(asTab: true),
     ];
-    return Scaffold(
-      body: IndexedStack(index: _index, children: pages),
-      floatingActionButton: FloatingActionButton(
-        tooltip: 'Add transaction',
-        // Round so it sits in the CircularNotchedRectangle notch.
-        shape: const CircleBorder(),
-        onPressed: () => Navigator.of(context).push(
-          MaterialPageRoute(fullscreenDialog: true, builder: (_) => const TransactionFormScreen()),
-        ),
-        child: const Icon(Icons.add_rounded, size: 30),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-      bottomNavigationBar: BottomAppBar(
-        shape: const CircularNotchedRectangle(),
-        notchMargin: 8,
-        height: 68,
-        padding: EdgeInsets.zero,
-        child: Row(
+    // Only this route's own back press reaches here: a pushed screen on top
+    // is its own route and pops normally before any tab logic applies.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _onBack();
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _index,
           children: [
-            _NavItem(icon: Icons.home_rounded, label: 'Home', selected: _index == 0, onTap: () => _go(0)),
-            _NavItem(icon: Icons.receipt_long_rounded, label: 'Activity', selected: _index == 1, onTap: () => _go(1)),
-            const SizedBox(width: 72),
-            _NavItem(icon: Icons.pie_chart_rounded, label: 'Budget', selected: _index == 2, onTap: () => _go(2)),
-            _NavItem(icon: Icons.insights_rounded, label: 'Insights', selected: _index == 3, onTap: () => _go(3)),
+            for (var i = 0; i < pages.length; i++)
+              _built.contains(i) ? CascadeScope(child: pages[i]) : const SizedBox.shrink(),
           ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          tooltip: 'Add transaction',
+          // Round so it sits in the CircularNotchedRectangle notch.
+          shape: const CircleBorder(),
+          onPressed: _adding ? null : _openAdd,
+          child: AnimatedPlusIcon(open: _adding),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+        bottomNavigationBar: BottomAppBar(
+          shape: const CircularNotchedRectangle(),
+          notchMargin: 8,
+          height: 68,
+          padding: EdgeInsets.zero,
+          child: Row(
+            children: [
+              _NavItem(
+                icon: Icons.home_rounded,
+                label: 'Home',
+                selected: _index == HomeShell.home,
+                onTap: () => _go(HomeShell.home),
+              ),
+              _NavItem(
+                icon: Icons.receipt_long_rounded,
+                label: 'Activity',
+                selected: _index == HomeShell.activity,
+                onTap: () => _go(HomeShell.activity),
+              ),
+              const SizedBox(width: 72),
+              _NavItem(
+                icon: Icons.pie_chart_rounded,
+                label: 'Budget',
+                selected: _index == HomeShell.budget,
+                onTap: () => _go(HomeShell.budget),
+              ),
+              _NavItem(
+                icon: Icons.account_balance_wallet_rounded,
+                label: 'Wallets',
+                selected: _index == HomeShell.wallets,
+                onTap: () => _go(HomeShell.wallets),
+              ),
+            ],
+          ),
         ),
       ),
     );

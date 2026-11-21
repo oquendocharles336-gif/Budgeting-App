@@ -11,19 +11,26 @@ import '../../../data/models/debt.dart';
 import '../../../data/models/payment_card.dart';
 import '../../../data/models/raw_transaction.dart';
 import '../../../data/models/transaction_entry.dart';
+import '../../../domain/services/transaction_service.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
+import '../../providers/optimistic_providers.dart';
 import '../../widgets/common.dart';
+import '../../widgets/motion/animated_icons.dart';
 import '../cards/card_form_screen.dart';
 import '../debts/debt_form_screen.dart';
 
 /// Add a new transaction, or edit/delete an existing one.
 class TransactionFormScreen extends ConsumerStatefulWidget {
-  const TransactionFormScreen({super.key, this.existing, this.initialCardId});
+  const TransactionFormScreen({super.key, this.existing, this.initialCardId, this.draft});
 
   final TransactionEntry? existing;
   final int? initialCardId;
+
+  /// Values to start a new transaction with (e.g. "Try again" after a
+  /// save failed). Ignored when editing.
+  final TransactionEntry? draft;
 
   @override
   ConsumerState<TransactionFormScreen> createState() => _TransactionFormScreenState();
@@ -62,7 +69,7 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
   @override
   void initState() {
     super.initState();
-    final e = widget.existing;
+    final e = widget.existing ?? widget.draft;
     _amount = TextEditingController(text: e == null ? '' : Money.toInput(e.amount));
     _description = TextEditingController(text: e?.description ?? '');
     _notes = TextEditingController(text: e?.notes ?? '');
@@ -107,11 +114,44 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     setState(() => _date = DateTime(picked.year, picked.month, picked.day, _date.hour, _date.minute));
   }
 
+  /// Warns when an expense or transfer is more than the paying account
+  /// holds. Returns false if the user backs out.
+  Future<bool> _confirmBalance(int amount) async {
+    final int? available;
+    try {
+      available = await ref.read(transactionServiceProvider).availableBefore(
+            kind: _kind,
+            accountId: _cardId,
+            editing: widget.existing,
+          );
+    } catch (e) {
+      debugPrint('Balance check failed: $e');
+      return true; // Never block saving because the check itself failed.
+    }
+    if (available == null || amount <= available) return true;
+    if (!mounted) return true;
+    final account = _cardId == null ? null : (ref.read(cardMapProvider).asDataOrNull ?? const {})[_cardId];
+    final name = account?.nickname ?? 'Cash';
+    final what = (account?.isCredit ?? false) ? 'available credit' : 'balance';
+    final symbol = ref.read(currencyProvider).symbol;
+    final kind = _kind == TransactionKind.transfer ? 'transfer' : 'expense';
+    return confirm(
+      context,
+      title: 'Insufficient balance',
+      message: '$name has ${Money.format(available, symbol: symbol)} $what, but this $kind is '
+          '${Money.format(amount, symbol: symbol)}.\n\n'
+          'Save anyway? The $what will go below zero. You can correct it later in Wallets.',
+      confirmLabel: 'Save anyway',
+      destructive: false,
+    );
+  }
+
   Future<void> _save() async {
-    if (!_form.currentState!.validate()) return;
+    if (_saving || !_form.currentState!.validate()) return;
+    final amount = Money.parse(_amount.text)!.abs();
+    if (!await _confirmBalance(amount) || !mounted) return;
     // No category picked: the keyword rules decide, falling back to "Other".
     setState(() => _saving = true);
-    final amount = Money.parse(_amount.text)!.abs();
     final notes = _notes.text.trim().isEmpty ? null : _notes.text.trim();
     final isTransfer = _kind == TransactionKind.transfer;
     final description = _description.text.trim().isEmpty && isTransfer ? 'Transfer' : _description.text.trim();
@@ -123,6 +163,18 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     // New income from "Borrowed money" is also added to Debts.
     final addDebt = !_isEdit && _kind == TransactionKind.income && (selected?.isLoan ?? false);
     final service = ref.read(transactionServiceProvider);
+    if (!addDebt) {
+      _saveOptimistically(
+        service: service,
+        amount: amount,
+        description: description,
+        categoryId: categoryId,
+        customCategory: customCategory,
+        toCardId: toCardId,
+        notes: notes,
+      );
+      return;
+    }
     Debt? createdDebt;
     try {
       if (_isEdit) {
@@ -194,10 +246,136 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     }
   }
 
+  /// Optimistic UI: close the form and show the transaction (and a "Saved"
+  /// check) right away, then write to the database. If the write fails the
+  /// change is taken back out and a message offers to try again.
+  ///
+  /// Runs on after this screen is gone, so it only uses things captured
+  /// before closing (the provider container, the app's messenger).
+  void _saveOptimistically({
+    required TransactionService service,
+    required int amount,
+    required String description,
+    required int? categoryId,
+    required String? customCategory,
+    required int? toCardId,
+    required String? notes,
+  }) {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    final onError = Theme.of(context).colorScheme.onError;
+    final snackText = Theme.of(context).snackBarTheme.contentTextStyle?.color;
+    final pending = container.read(pendingTransactionsProvider.notifier);
+    final now = DateTime.now();
+    final existing = widget.existing;
+    final preview = (existing ??
+            TransactionEntry(
+              amount: amount,
+              kind: _kind,
+              description: description,
+              date: _date,
+              source: TransactionSourceType.manual,
+              affectsBalance: true,
+              createdAt: now,
+              updatedAt: now,
+            ))
+        .copyWith(
+      amount: amount,
+      kind: _kind,
+      description: description,
+      categoryId: () => categoryId,
+      customCategory: () => customCategory,
+      cardId: () => _cardId,
+      toCardId: () => toCardId,
+      date: _date,
+      notes: () => notes,
+      updatedAt: now,
+    );
+    final pendingId = existing == null ? pending.add(preview) : pending.put(preview);
+
+    navigator.pop();
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Row(
+          children: [
+            AnimatedCheckIcon(playOnMount: true, size: 20, color: snackText),
+            const SizedBox(width: 10),
+            Expanded(child: Text(existing == null ? 'Saved' : 'Changes saved')),
+          ],
+        ),
+      ));
+
+    Future<void> write() async {
+      if (existing != null) {
+        await service.update(preview);
+      } else {
+        await service.create(RawTransaction(
+          date: _date,
+          description: description,
+          amount: amount,
+          kind: _kind,
+          source: TransactionSourceType.manual,
+          cardId: _cardId,
+          toCardId: toCardId,
+          categoryId: categoryId,
+          customCategory: customCategory,
+          notes: notes,
+        ));
+      }
+    }
+
+    write().then((_) {
+      // Reload from the database first, then drop the pending copy: the
+      // lists keep showing it until the saved row arrives (no flicker).
+      try {
+        container.read(dataRevisionProvider.notifier).bump();
+        pending.clear(pendingId);
+      } catch (e) {
+        debugPrint('Session closed before the save finished: $e'); // app locked meanwhile
+      }
+    }, onError: (Object e) {
+      debugPrint('Save failed: $e');
+      try {
+        pending.clear(pendingId);
+      } catch (_) {
+        // The session was locked meanwhile; nothing left to roll back.
+      }
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          backgroundColor: errorColor,
+          duration: const Duration(seconds: 8),
+          content: Text(
+            'Couldn\'t save "$description", so it was taken back out. Nothing changed.',
+            style: TextStyle(color: onError),
+          ),
+          action: SnackBarAction(
+            label: 'Try again',
+            textColor: onError,
+            onPressed: () => navigator.push(MaterialPageRoute(
+              fullscreenDialog: true,
+              builder: (_) => existing != null
+                  ? TransactionFormScreen(existing: existing)
+                  : TransactionFormScreen(draft: preview),
+            )),
+          ),
+        ));
+    });
+  }
+
   Future<void> _delete() async {
     final ok = await confirm(context, title: 'Delete transaction?', message: 'This can\'t be undone.');
     if (!ok) return;
-    await ref.read(transactionServiceProvider).delete(widget.existing!.id!);
+    try {
+      await ref.read(transactionServiceProvider).delete(widget.existing!.id!);
+    } catch (e) {
+      if (mounted) showSnack(context, 'Could not delete: $e', error: true);
+      return;
+    }
     ref.refreshData();
     if (mounted) Navigator.of(context).pop();
   }
@@ -242,11 +420,20 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     );
   }
 
-  /// Dropdown entries for "Cash" plus each account.
-  List<DropdownMenuItem<int?>> _accountItems(List<PaymentCard> accounts) => [
-        const DropdownMenuItem<int?>(
+  /// Dropdown entries for "Cash" plus each account, with what's in them.
+  List<DropdownMenuItem<int?>> _accountItems(List<PaymentCard> accounts, int? cash, String symbol) => [
+        DropdownMenuItem<int?>(
           value: null,
-          child: Row(children: [Icon(Icons.payments_rounded), SizedBox(width: 10), Text('Cash')]),
+          child: Row(children: [
+            const Icon(Icons.payments_rounded),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                cash == null ? 'Cash' : 'Cash · ${Money.format(cash, symbol: symbol)}',
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ]),
         ),
         for (final c in accounts)
           DropdownMenuItem<int?>(
@@ -259,7 +446,9 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
                 ),
                 const SizedBox(width: 10),
                 // Needs a bounded width: the dropdowns below use isExpanded.
-                Flexible(child: Text(c.label, overflow: TextOverflow.ellipsis)),
+                Flexible(
+                  child: Text('${c.label} · ${Money.format(c.balance, symbol: symbol)}', overflow: TextOverflow.ellipsis),
+                ),
               ],
             ),
           ),
@@ -286,7 +475,7 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
       for (final id in {_cardId, _toCardId})
         if (id != null && !cards.any((c) => c.id == id) && allCards[id] != null) allCards[id]!,
     ];
-    final items = _accountItems(accounts);
+    final items = _accountItems(accounts, ref.watch(cashBalanceProvider).asDataOrNull, symbol);
     // A value that isn't in the items trips a DropdownButton assertion.
     int? safe(int? id) => accounts.any((c) => c.id == id) ? id : null;
 
@@ -458,6 +647,13 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
             maxLength: 500,
             decoration: const InputDecoration(labelText: 'Notes (optional)'),
           ),
+          if (existing?.debtId != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Added by a new debt. Edit the debt in Debts to change its amount; it updates this expense.',
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+            ),
+          ],
           if (existing != null && existing.source != TransactionSourceType.manual) ...[
             const SizedBox(height: 8),
             Text(

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Adaptive launcher icon background (flutter_launcher_icons: adaptive_icon_background). -->
+    <color name="ic_launcher_background">#EEF2FF</color>
+    <!-- Splash background, matches the app's light / dark scaffold color. -->
+    <color name="splash_background">#F7F8FC</color>
+    <color name="splash_background_dark">#0A0D14</color>
+</resources>

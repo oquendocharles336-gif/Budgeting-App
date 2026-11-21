@@ -7,10 +7,14 @@ import '../../../core/dates.dart';
 import '../../../core/money.dart';
 import '../../../data/models/category.dart';
 import '../../../domain/budget/budget_calculator.dart';
+import '../../../domain/services/app_lock_service.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
+import '../../providers/optimistic_providers.dart';
+import '../../widgets/available_balance_card.dart';
 import '../../widgets/common.dart';
+import '../../widgets/motion/cascade.dart';
 
 class BudgetScreen extends ConsumerWidget {
   const BudgetScreen({super.key});
@@ -22,6 +26,11 @@ class BudgetScreen extends ConsumerWidget {
     final summary = ref.watch(monthSummaryProvider(key));
     final history = ref.watch(budgetHistoryProvider);
     final notifier = ref.read(selectedMonthProvider.notifier);
+    // Start the work early: when the month changes, load the one before it
+    // too (the next tap on "previous" opens instantly).
+    ref.listen(selectedMonthProvider, (_, next) {
+      ref.read(monthSummaryProvider(Dates.monthKey(Dates.previousMonth(next))).future).ignore();
+    });
 
     return Scaffold(
       appBar: AppBar(title: const Text('Budget')),
@@ -36,6 +45,12 @@ class BudgetScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _OverallCard(summary: s, onEdit: () => _editBudget(context, ref, key, null, s.overall.budget)),
+                const SizedBox(height: 12),
+                // Income goes into an account, so it raises what's available to spend.
+                AvailableBalanceCard(
+                  incomeLabel: 'Income in ${DateFormat('MMMM').format(month)}:',
+                  income: s.income,
+                ),
                 const SizedBox(height: 8),
                 SectionHeader(
                   'Category budgets',
@@ -50,10 +65,14 @@ class BudgetScreen extends ConsumerWidget {
                   Card(
                     child: Column(
                       children: [
-                        for (final r in s.categoryRows)
-                          _CategoryRow(
-                            row: r,
-                            onTap: () => _editBudget(context, ref, key, r.category, r.progress.budget),
+                        for (final (i, r) in s.categoryRows.indexed)
+                          CascadeIn(
+                            key: ValueKey('budget-${r.category.id}'),
+                            index: i,
+                            child: _CategoryRow(
+                              row: r,
+                              onTap: () => _editBudget(context, ref, key, r.category, r.progress.budget),
+                            ),
                           ),
                       ],
                     ),
@@ -175,12 +194,27 @@ class BudgetScreen extends ConsumerWidget {
       ),
     );
     if (result == null) return;
-    await ref.read(budgetRepositoryProvider).setBudget(monthKey, category?.id, result == 0 ? null : result);
-    if (result > 0) {
-      await ref.read(notificationServiceProvider).requestPermission();
-      await ref.read(budgetAlertServiceProvider).checkMonth(Dates.parseMonthKey(monthKey));
+    // Optimistic: show the new amount now, save, then reconcile. If the
+    // write fails, the old amount comes back with a message.
+    final pending = ref.read(pendingBudgetsProvider.notifier);
+    final key = pending.put(monthKey, category?.id, result == 0 ? null : result);
+    try {
+      await ref.read(budgetRepositoryProvider).setBudget(monthKey, category?.id, result == 0 ? null : result);
+    } catch (e) {
+      pending.clear(key);
+      if (context.mounted) showSnack(context, 'Couldn\'t save the budget, so it was put back: $e', error: true);
+      return;
     }
     ref.refreshData();
+    pending.clear(key);
+    if (result > 0) {
+      try {
+        await LockGuard.run(() => ref.read(notificationServiceProvider).requestPermission());
+        await ref.read(budgetAlertServiceProvider).checkMonth(Dates.parseMonthKey(monthKey));
+      } catch (e) {
+        debugPrint('Budget alert check failed: $e');
+      }
+    }
   }
 }
 

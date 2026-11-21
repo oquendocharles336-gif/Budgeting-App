@@ -25,7 +25,7 @@ class _RecoveryKeyScreenState extends State<RecoveryKeyScreen> {
       child: AuthLayout(
         icon: Icons.key_rounded,
         title: 'Save your recovery key',
-        message: 'If you forget your password, this key is the only way back in. '
+        message: 'If you can\'t unlock (forgot your PIN or password, or lost your phone lock), this key is the only way back in. '
             'Write it down and keep it somewhere safe, away from your phone. It won\'t be shown again.',
         children: [
           Container(
@@ -59,7 +59,7 @@ class _RecoveryKeyScreenState extends State<RecoveryKeyScreen> {
             value: _saved,
             onChanged: (v) => setState(() => _saved = v ?? false),
             title: const Text('I saved my recovery key'),
-            subtitle: const Text('Without the password or this key, your data can\'t be recovered by anyone.'),
+            subtitle: const Text('Without your unlock method or this key, your data can\'t be recovered by anyone.'),
           ),
           const SizedBox(height: 16),
           FilledButton(onPressed: _saved ? widget.onDone : null, child: const Text('Continue')),

@@ -7,8 +7,10 @@ import '../../data/models/category.dart';
 import '../../data/models/transaction_entry.dart';
 import '../../domain/budget/budget_calculator.dart';
 import '../providers/app_state_providers.dart';
+import '../theme/app_palette.dart';
 import '../theme/app_theme.dart';
 import '../theme/category_icons.dart';
+import 'motion/skeleton.dart';
 
 extension AsyncDataOrNull<T> on AsyncValue<T> {
   /// The current (or previous, while refreshing) value, or null.
@@ -33,11 +35,18 @@ class AsyncView<T> extends StatelessWidget {
   }
 }
 
+/// Default loading state: skeleton rows in the shape of a list (never a
+/// spinner). Clipped, so it fits any height it's given.
 class LoadingView extends StatelessWidget {
-  const LoadingView({super.key});
+  const LoadingView({super.key, this.rows = 6});
+  final int rows;
+
   @override
-  Widget build(BuildContext context) => const Center(
-        child: Padding(padding: EdgeInsets.all(32), child: CircularProgressIndicator()),
+  Widget build(BuildContext context) => ClipRect(
+        child: SingleChildScrollView(
+          physics: const NeverScrollableScrollPhysics(),
+          child: SkeletonList(rows: rows),
+        ),
       );
 }
 
@@ -184,8 +193,9 @@ class BudgetProgressBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = onDark ? Colors.white : budgetColor(context, progress.level);
-    final track = onDark ? Colors.white24 : Theme.of(context).colorScheme.surfaceContainerHighest;
+    // On a hero card the track is one step up from the card color.
+    final color = budgetColor(context, progress.level);
+    final track = onDark ? context.tokens.main.withValues(alpha: 0.35) : context.tokens.secondHigh;
     return Semantics(
       label: '${progress.percentUsed} percent of budget used',
       child: ClipRRect(

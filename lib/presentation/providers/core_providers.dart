@@ -93,6 +93,7 @@ final importServiceProvider = Provider(
 final transactionServiceProvider = Provider(
   (ref) => TransactionService(
     repository: ref.watch(transactionRepositoryProvider),
+    cards: ref.watch(cardRepositoryProvider),
     importer: ref.watch(importServiceProvider),
     alerts: ref.watch(budgetAlertServiceProvider),
   ),
@@ -101,6 +102,7 @@ final transactionServiceProvider = Provider(
 final debtServiceProvider = Provider(
   (ref) => DebtService(
     repository: ref.watch(debtRepositoryProvider),
+    categories: ref.watch(categoryRepositoryProvider),
     notifications: ref.watch(notificationServiceProvider),
   ),
 );

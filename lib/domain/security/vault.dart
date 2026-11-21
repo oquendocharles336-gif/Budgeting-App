@@ -60,9 +60,34 @@ class Vault {
 
   Future<bool> exists() => _file.exists();
 
+  static const minPinLength = 6;
+  static const maxPinLength = 12;
+
+  /// Accepts a numeric PIN (6-12 digits, not 000000 / 123456 style) or a
+  /// password of at least [minPasswordLength] characters.
   static String? validatePassword(String password) {
-    if (password.length < minPasswordLength) return 'Use at least $minPasswordLength characters';
+    if (RegExp(r'^\d+$').hasMatch(password)) {
+      if (password.length < minPinLength) return 'A PIN needs at least $minPinLength digits';
+      if (password.length > maxPinLength) return 'A PIN can have at most $maxPinLength digits';
+      if (_isTrivialPin(password)) return 'That PIN is too easy to guess';
+      return null;
+    }
+    if (password.length < minPasswordLength) {
+      return 'Use a PIN of $minPinLength+ digits or a password of $minPasswordLength+ characters';
+    }
     return null;
+  }
+
+  /// Same digit repeated, or a straight run up or down (123456, 987654).
+  static bool _isTrivialPin(String pin) {
+    final d = pin.codeUnits.map((c) => c - 48).toList();
+    if (d.every((x) => x == d.first)) return true;
+    var up = true, down = true;
+    for (var i = 1; i < d.length; i++) {
+      if (d[i] != (d[i - 1] + 1) % 10) up = false;
+      if (d[i] != (d[i - 1] + 9) % 10) down = false;
+    }
+    return up || down;
   }
 
   static String generateRecoveryKey() {
@@ -100,7 +125,49 @@ class Vault {
     return VaultDraft(dataKey: dataKey, recoveryKey: recoveryKey, json: json);
   }
 
+  /// For the phone-lock method: the data key is sealed only under the
+  /// recovery key here (the phone keystore holds the everyday copy), so
+  /// there is no in-app password until the user sets one.
+  Future<VaultDraft> prepareWithoutPassword() async {
+    final dataKey = Uint8List.fromList(PasswordCrypto.randomBytes(32));
+    final recoveryKey = generateRecoveryKey();
+    final json = <String, Object?>{
+      'app': 'pitaka',
+      'version': 1,
+      'recovery': (await PasswordCrypto.seal(
+        dataKey,
+        normalizeRecoveryKey(recoveryKey),
+        iterations: recoveryIterations,
+        aad: _aadRecovery,
+      ))
+          .toJson(),
+    };
+    return VaultDraft(dataKey: dataKey, recoveryKey: recoveryKey, json: json);
+  }
+
   Future<void> save(VaultDraft draft) => _write(draft.json);
+
+  /// Whether an in-app PIN / password can unlock the data.
+  Future<bool> hasPassword() async => (await _read())['password'] != null;
+
+  /// Seals the (already unlocked) data key under [password]: used when
+  /// switching to the in-app PIN, or when the phone lock was removed.
+  Future<void> setPassword(Uint8List dataKey, String password) async {
+    final error = validatePassword(password);
+    if (error != null) throw ArgumentError(error);
+    final json = await _read();
+    json['password'] =
+        (await PasswordCrypto.seal(dataKey, password, iterations: passwordIterations, aad: _aadPassword)).toJson();
+    await _write(json);
+  }
+
+  /// Switching to the phone lock: the old PIN stops working. The recovery
+  /// key keeps working.
+  Future<void> removePassword() async {
+    final json = await _read();
+    json.remove('password');
+    await _write(json);
+  }
 
   /// Returns the data key. Throws [WrongSecretException] for a wrong password.
   Future<Uint8List> unlockWithPassword(String password) async {
@@ -152,8 +219,12 @@ class Vault {
   }
 
   /// Replaces the recovery key (the old one stops working). Returns the new one.
-  Future<String> replaceRecoveryKey({required String password}) async {
-    final dataKey = await unlockWithPassword(password);
+  Future<String> replaceRecoveryKey({required String password}) async =>
+      replaceRecoveryKeyWith(await unlockWithPassword(password));
+
+  /// Same, with the data key of the open session (phone-lock method, after
+  /// the phone confirmed it's the owner).
+  Future<String> replaceRecoveryKeyWith(List<int> dataKey) async {
     final json = await _read();
     final recoveryKey = generateRecoveryKey();
     json['recovery'] = (await PasswordCrypto.seal(

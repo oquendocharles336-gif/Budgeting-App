@@ -7,9 +7,11 @@ import '../../data/models/debt.dart';
 import '../../data/models/payment_card.dart';
 import '../../data/models/sms_pattern.dart';
 import '../../data/models/transaction_entry.dart';
+import '../../domain/analytics/data_prep.dart';
 import '../../domain/analytics/spending_analytics.dart';
 import '../../domain/budget/budget_calculator.dart';
 import 'core_providers.dart';
+import 'optimistic_providers.dart';
 
 // Every provider below watches dataRevisionProvider, so a single bump()
 // after a write refreshes everything on screen.
@@ -24,6 +26,34 @@ final cardMapProvider = FutureProvider<Map<int, PaymentCard>>((ref) async {
   ref.watch(dataRevisionProvider);
   final cards = await ref.watch(cardRepositoryProvider).all(includeArchived: true);
   return {for (final c in cards) c.id!: c};
+});
+
+/// Money in Cash (the account with no card).
+final cashBalanceProvider = FutureProvider<int>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(cardRepositoryProvider).cashBalance();
+});
+
+/// Totals shown on Home, Budget and the Wallets tab.
+class BalanceSummary {
+  const BalanceSummary({required this.cash, required this.accounts});
+  final int cash;
+
+  /// Active (not archived) accounts.
+  final List<PaymentCard> accounts;
+
+  /// Cash plus every debit / prepaid / e-wallet balance. Credit cards are
+  /// left out: available credit is borrowed money, not the user's own.
+  int get available => cash + accounts.where((c) => c.countsTowardAvailable).fold<int>(0, (a, c) => a + c.balance);
+
+  int get availableCredit => accounts.where((c) => c.isCredit).fold<int>(0, (a, c) => a + c.balance);
+  bool get hasCredit => accounts.any((c) => c.isCredit);
+}
+
+final balanceSummaryProvider = FutureProvider<BalanceSummary>((ref) async {
+  final cash = await ref.watch(cashBalanceProvider.future);
+  final accounts = await ref.watch(cardsProvider.future);
+  return BalanceSummary(cash: cash, accounts: accounts);
 });
 
 final categoriesProvider = FutureProvider<List<Category>>((ref) {
@@ -61,15 +91,27 @@ class TransactionFilterController extends Notifier<TransactionFilter> {
 final transactionFilterProvider =
     NotifierProvider<TransactionFilterController, TransactionFilter>(TransactionFilterController.new);
 
-final filteredTransactionsProvider = FutureProvider<List<TransactionEntry>>((ref) {
+final _filteredBaseProvider = FutureProvider<List<TransactionEntry>>((ref) {
   ref.watch(dataRevisionProvider);
   final filter = ref.watch(transactionFilterProvider);
   return ref.watch(transactionRepositoryProvider).query(filter, limit: 1000);
 });
 
-final recentTransactionsProvider = FutureProvider<List<TransactionEntry>>((ref) {
+/// The Activity list, with saves still in progress shown at once.
+final filteredTransactionsProvider = FutureProvider<List<TransactionEntry>>((ref) async {
+  final base = await ref.watch(_filteredBaseProvider.future);
+  final filter = ref.watch(transactionFilterProvider);
+  return withPending(base, ref.watch(pendingTransactionsProvider), matches: (t) => matchesFilter(t, filter));
+});
+
+final _recentBaseProvider = FutureProvider<List<TransactionEntry>>((ref) {
   ref.watch(dataRevisionProvider);
   return ref.watch(transactionRepositoryProvider).recent(limit: 6);
+});
+
+final recentTransactionsProvider = FutureProvider<List<TransactionEntry>>((ref) async {
+  final base = await ref.watch(_recentBaseProvider.future);
+  return withPending(base, ref.watch(pendingTransactionsProvider), limit: 6);
 });
 
 final cardTransactionsProvider = FutureProvider.family<List<TransactionEntry>, int>((ref, cardId) {
@@ -123,7 +165,11 @@ class MonthSummary {
     required this.overall,
     required this.categoryRows,
     required this.income,
+    this.prep = PrepReport.empty,
   });
+
+  /// What the data-prep step cleaned for these totals.
+  final PrepReport prep;
 
   final DateTime month;
   final List<TransactionEntry> transactions;
@@ -134,7 +180,10 @@ class MonthSummary {
   final int income;
 }
 
-final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, monthKey) async {
+/// What a month's summary is computed from (database side).
+typedef _MonthBase = ({List<Budget> budgets, List<Category> categories, PreparedData prepared});
+
+final _monthBaseProvider = FutureProvider.family<_MonthBase, String>((ref, monthKey) async {
   ref.watch(dataRevisionProvider);
   final month = Dates.parseMonthKey(monthKey);
   final now = DateTime.now();
@@ -145,11 +194,42 @@ final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, m
   final List<Budget> budgets = month.isBefore(Dates.monthStart(now))
       ? await budgetRepo.forMonth(monthKey)
       : await budgetRepo.ensureMonth(monthKey);
-  final txs = await ref.watch(transactionRepositoryProvider).between(month, Dates.monthEnd(month));
   final categories = await ref.watch(categoriesProvider.future);
+  // Clean first (missing values, duplicates, formats); every total below
+  // uses the cleaned rows.
+  final prepared = DataPrep.clean(
+    await ref.watch(transactionRepositoryProvider).rawBetween(month, Dates.monthEnd(month)),
+    knownCategoryIds: {for (final c in categories) c.id!},
+  );
+  return (budgets: budgets, categories: categories, prepared: prepared);
+});
 
-  final overallBudget = budgets.where((b) => b.isOverall).fold<int>(0, (a, b) => a + b.amount);
-  final byCat = {for (final b in budgets.where((b) => !b.isOverall)) b.categoryId!: b.amount};
+/// Budget vs spending for one month. Budget edits still being saved
+/// (optimistic UI) are applied on top, so the screen updates at once.
+final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, monthKey) async {
+  final base = await ref.watch(_monthBaseProvider(monthKey).future);
+  final pending = ref.watch(pendingBudgetsProvider);
+  final month = Dates.parseMonthKey(monthKey);
+  final categories = base.categories;
+  final prepared = base.prepared;
+  final txs = prepared.rows;
+
+  var overallBudget = base.budgets.where((b) => b.isOverall).fold<int>(0, (a, b) => a + b.amount);
+  final byCat = {for (final b in base.budgets.where((b) => !b.isOverall)) b.categoryId!: b.amount};
+  for (final e in pending.entries) {
+    final [m, cat] = e.key.split('|');
+    if (m != monthKey) continue;
+    if (cat == 'all') {
+      overallBudget = e.value ?? 0;
+    } else {
+      final id = int.parse(cat);
+      if (e.value == null) {
+        byCat.remove(id);
+      } else {
+        byCat[id] = e.value!;
+      }
+    }
+  }
 
   final rows = <CategoryBudgetRow>[
     // Budgets are for spending, so income categories are left out.
@@ -174,6 +254,7 @@ final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, m
     overall: BudgetProgress(budget: overallBudget, spent: BudgetCalculator.spent(txs)),
     categoryRows: rows,
     income: txs.where((t) => t.isIncome).fold<int>(0, (a, t) => a + t.amount),
+    prep: prepared.report,
   );
 });
 
@@ -191,7 +272,7 @@ final budgetHistoryProvider = FutureProvider<List<BudgetHistoryItem>>((ref) asyn
   final items = <BudgetHistoryItem>[];
   for (final b in history.take(12)) {
     final m = Dates.parseMonthKey(b.month);
-    final txs = await txRepo.between(m, Dates.monthEnd(m));
+    final txs = DataPrep.clean(await txRepo.rawBetween(m, Dates.monthEnd(m))).rows;
     items.add(BudgetHistoryItem(
       month: m,
       progress: BudgetProgress(budget: b.amount, spent: BudgetCalculator.spent(txs)),
@@ -215,7 +296,10 @@ class AnalyticsData {
     required this.week,
     required this.weeks,
     required this.transactionCount,
+    this.prep = PrepReport.empty,
   });
+
+  final PrepReport prep;
 
   final DateTime month;
   final List<int> daily;
@@ -238,11 +322,14 @@ final analyticsProvider = FutureProvider.family<AnalyticsData, String>((ref, mon
   final now = DateTime.now();
   final repo = ref.watch(transactionRepositoryProvider);
 
-  final txs = await repo.between(month, Dates.monthEnd(month));
+  final known = {for (final c in await ref.watch(categoriesProvider.future)) c.id!};
+  PreparedData prep(List<Map<String, Object?>> raw) => DataPrep.clean(raw, knownCategoryIds: known);
+  final prepared = prep(await repo.rawBetween(month, Dates.monthEnd(month)));
+  final txs = prepared.rows;
   final prevMonth = Dates.previousMonth(month);
-  final prevTxs = await repo.between(prevMonth, month);
+  final prevTxs = prep(await repo.rawBetween(prevMonth, month)).rows;
   final weekStart = Dates.startOfWeek(now).subtract(const Duration(days: 7));
-  final weekTxs = await repo.between(weekStart, Dates.startOfDay(now).add(const Duration(days: 1)));
+  final weekTxs = prep(await repo.rawBetween(weekStart, Dates.startOfDay(now).add(const Duration(days: 1)))).rows;
 
   final total = SpendingAnalytics.total(txs);
   return AnalyticsData(
@@ -255,5 +342,6 @@ final analyticsProvider = FutureProvider.family<AnalyticsData, String>((ref, mon
     week: SpendingAnalytics.weekOverWeek(weekTxs, now),
     weeks: SpendingAnalytics.weeksOfMonth(txs, month),
     transactionCount: txs.where((t) => t.isExpense).length,
+    prep: prepared.report,
   );
 });

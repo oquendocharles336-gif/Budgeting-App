@@ -6,7 +6,10 @@ enum CategoryRole {
   other,
 
   /// "Borrowed money": saving this income also adds a debt.
-  loan;
+  loan,
+
+  /// "Debt": the expense category for new debts.
+  debt;
 
   static CategoryRole? fromDb(String? v) {
     for (final r in CategoryRole.values) {
@@ -46,6 +49,7 @@ class Category {
   bool get isIncome => kind == TransactionKind.income;
   bool get isOther => role == CategoryRole.other;
   bool get isLoan => role == CategoryRole.loan;
+  bool get isDebt => role == CategoryRole.debt;
 
   Category copyWith({String? name, String? icon, int? color, int? sortOrder, TransactionKind? kind}) => Category(
         id: id,

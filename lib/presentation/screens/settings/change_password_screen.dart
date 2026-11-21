@@ -41,11 +41,11 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
     try {
       await ref.read(sessionProvider).vault.changePassword(current: _current.text, next: _next.text);
       if (!mounted) return;
-      showSnack(context, 'Password changed');
+      showSnack(context, 'PIN or password changed');
       Navigator.of(context).pop();
       return;
     } on WrongSecretException {
-      _error = 'Current password is wrong';
+      _error = 'Current PIN or password is wrong';
     } catch (e) {
       _error = 'Could not change password: $e';
     }
@@ -54,28 +54,28 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('Change password')),
+        appBar: AppBar(title: const Text('Change PIN or password')),
         body: Form(
           key: _form,
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              PasswordField(controller: _current, label: 'Current password', autofocus: true),
+              PasswordField(controller: _current, label: 'Current PIN or password', autofocus: true),
               const SizedBox(height: 16),
               PasswordField(
                 controller: _next,
-                label: 'New password',
+                label: 'New PIN or password',
                 autofillHints: const [AutofillHints.newPassword],
                 validator: (v) => Vault.validatePassword(v ?? ''),
               ),
               const SizedBox(height: 16),
               PasswordField(
                 controller: _confirm,
-                label: 'Confirm new password',
+                label: 'Enter it again',
                 autofillHints: const [AutofillHints.newPassword],
                 textInputAction: TextInputAction.done,
                 onSubmitted: (_) => _submit(),
-                validator: (v) => v != _next.text ? 'Passwords don\'t match' : null,
+                validator: (v) => v != _next.text ? 'They don\'t match' : null,
               ),
               const SizedBox(height: 12),
               Text(
@@ -83,7 +83,7 @@ class _ChangePasswordScreenState extends ConsumerState<ChangePasswordScreen> {
                 style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
               ),
               const SizedBox(height: 24),
-              BusyButton(label: 'Change password', busy: _busy, onPressed: _submit),
+              BusyButton(label: 'Change', busy: _busy, onPressed: _submit),
               ErrorText(_error),
             ],
           ),

@@ -6,6 +6,7 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 import '../../core/money.dart';
 import '../../data/db/default_data.dart';
 import '../../data/db/migrations.dart';
+import '../../data/repositories/account_ledger.dart';
 import '../../data/repositories/settings_repository.dart';
 
 class BackupException implements Exception {
@@ -105,6 +106,7 @@ class BackupService {
         // Older backups (schema < 4) have no income categories.
         await txn.update('categories', {'role': 'other'}, where: 'id = ? AND role IS NULL', whereArgs: [DefaultData.other]);
         await DefaultData.ensureIncomeCategories(txn);
+        await DefaultData.ensureDebtCategory(txn);
         // Older backups (schema 1) have no SMS patterns.
         if (tables['sms_patterns'] == null) {
           for (final p in DefaultData.smsPatterns) {
@@ -160,11 +162,16 @@ class BackupService {
         if (t == 'settings') continue;
         await txn.delete(t);
       }
-      await txn.delete('settings', where: "key LIKE 'budget_alerts_%' OR key LIKE 'budget_init_%'");
+      await txn.delete(
+        'settings',
+        where: "key LIKE 'budget_alerts_%' OR key LIKE 'budget_init_%' OR key = ?",
+        whereArgs: [AccountLedger.cashKey],
+      );
       for (final c in DefaultData.categories) {
         await txn.insert('categories', c.toMap());
       }
       await DefaultData.ensureIncomeCategories(txn);
+      await DefaultData.ensureDebtCategory(txn);
       for (final r in DefaultData.rules) {
         await txn.insert('category_rules', r.toMap());
       }

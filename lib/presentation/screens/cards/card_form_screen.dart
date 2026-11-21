@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/ewallet_mask.dart';
+import '../../../core/money.dart';
 import '../../../data/models/payment_card.dart';
+import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../widgets/color_picker.dart';
@@ -28,6 +30,7 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
   late final TextEditingController _nickname;
   late final TextEditingController _last4;
   late final TextEditingController _mobile;
+  late final TextEditingController _balance;
   late CardType _type;
   late Color _color;
   bool _saving = false;
@@ -39,6 +42,7 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
     _nickname = TextEditingController(text: e?.nickname ?? '');
     _last4 = TextEditingController(text: e?.last4 ?? '');
     _mobile = TextEditingController(text: e?.mobileNumber ?? '');
+    _balance = TextEditingController(text: e == null ? '' : Money.toInput(e.balance < 0 ? 0 : e.balance));
     _type = e?.type ?? CardType.credit;
     _color = Color(e?.color ?? palette.first.toARGB32());
     _nickname.addListener(() => setState(() {}));
@@ -63,6 +67,7 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
     _nickname.dispose();
     _last4.dispose();
     _mobile.dispose();
+    _balance.dispose();
     super.dispose();
   }
 
@@ -71,6 +76,7 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
     setState(() => _saving = true);
     final repo = ref.read(cardRepositoryProvider);
     final e = widget.existing;
+    final balance = Money.parse(_balance.text)!;
     try {
       if (e == null) {
         await repo.insert(PaymentCard(
@@ -79,9 +85,14 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
           type: _type,
           color: _color.toARGB32(),
           mobileNumber: _normalizedMobile,
+          balance: balance,
           createdAt: DateTime.now(),
         ));
       } else {
+        // Only overwrite the balance if the user changed the field, so money
+        // moved by transactions while this screen was open isn't lost.
+        final shown = e.balance < 0 ? 0 : e.balance;
+        if (balance != shown) await repo.setBalance(e.id, balance);
         await repo.update(e.copyWith(
           nickname: _nickname.text.trim(),
           last4: _effectiveLast4,
@@ -112,7 +123,7 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
       createdAt: DateTime.now(),
     );
     return Scaffold(
-      appBar: AppBar(title: Text(widget.existing == null ? 'Add card' : 'Edit card')),
+      appBar: AppBar(title: Text(widget.existing == null ? 'Add card or e-wallet' : 'Edit ${widget.existing!.nickname}')),
       body: Form(
         key: _form,
         child: ListView(
@@ -169,12 +180,28 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
                   return null;
                 },
               ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _balance,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+              decoration: InputDecoration(
+                labelText: _type == CardType.credit ? 'Available credit now' : 'Current balance',
+                hintText: '0.00',
+                prefixText: '${ref.watch(currencyProvider).symbol} ',
+                helperText: widget.existing == null
+                    ? 'How much is in this account today. Expenses paid with it are taken from this.'
+                    : 'Change this if it doesn\'t match your real balance.',
+                helperMaxLines: 2,
+              ),
+              validator: (v) => validateAmount(v, allowZero: true),
+            ),
             const SizedBox(height: 20),
             Text('Color', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 10),
             ColorPickerField(colors: palette, selected: _color, onChanged: (c) => setState(() => _color = c)),
             const SizedBox(height: 32),
-            FilledButton(onPressed: _saving ? null : _save, child: const Text('Save card')),
+            FilledButton(onPressed: _saving ? null : _save, child: const Text('Save')),
           ],
         ),
       ),

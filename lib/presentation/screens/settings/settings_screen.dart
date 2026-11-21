@@ -11,14 +11,18 @@ import '../../../core/legal_text.dart';
 import '../../../core/money.dart';
 import '../../../data/db/seed_data.dart';
 import '../../../domain/security/password_crypto.dart';
+import '../../../domain/security/vault.dart';
+import '../../../domain/services/app_lock_service.dart';
 import '../../../domain/services/backup_crypto.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/color_picker.dart';
 import '../../widgets/common.dart';
+import '../../widgets/motion/animated_icons.dart';
 import '../../widgets/password_dialog.dart';
 import '../auth/recovery_key_screen.dart';
+import '../auth/sign_up_screen.dart';
 import '../cards/cards_screen.dart';
 import '../debts/debts_screen.dart';
 import '../legal/legal_document_screen.dart';
@@ -37,24 +41,41 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _biometricAvailable = false;
   bool _biometricOn = false;
+  UnlockMethod _method = UnlockMethod.pin;
+
+  /// "Lock now" closes the padlock first, then locks.
+  bool _locking = false;
+
+  Future<void> _lockNow() async {
+    setState(() => _locking = true);
+    await Future<void>.delayed(const Duration(milliseconds: 380));
+    if (mounted) await ref.read(sessionProvider).lock();
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadBiometric();
+    _loadSecurity();
   }
 
-  Future<void> _loadBiometric() async {
+  Future<void> _loadSecurity() async {
     final lock = ref.read(appLockServiceProvider);
+    final vault = ref.read(sessionProvider).vault;
     final available = await lock.canUseBiometrics();
     final on = await lock.isBiometricEnabled();
+    final hasPassword = await vault.hasPassword();
+    final saved = await lock.savedMethod();
     if (mounted) {
       setState(() {
         _biometricAvailable = available;
         _biometricOn = on;
+        // Same rule as at start-up: no in-app password means phone lock.
+        _method = !hasPassword ? UnlockMethod.device : (saved ?? UnlockMethod.pin);
       });
     }
   }
+
+  bool get _usesDeviceLock => _method == UnlockMethod.device;
 
   void _push(Widget page) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 
@@ -85,7 +106,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onSelectionChanged: (s) => ref.read(themeControllerProvider.notifier).setMode(s.first),
                   ),
                   const SizedBox(height: 16),
-                  Text('Accent color', style: Theme.of(context).textTheme.titleSmall),
+                  Text('Theme colors', style: Theme.of(context).textTheme.titleSmall),
                   const SizedBox(height: 10),
                   ColorPickerField(
                     colors: AppTheme.accentPalette,
@@ -118,8 +139,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onTap: () => _push(const RulesScreen()),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.credit_card_rounded),
-                  title: const Text('Cards'),
+                  leading: const Icon(Icons.account_balance_wallet_rounded),
+                  title: const Text('Cards & e-wallets'),
+                  subtitle: const Text('Accounts and their balances'),
                   onTap: () => _push(const CardsScreen()),
                 ),
                 ListTile(
@@ -144,29 +166,40 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 const ListTile(
                   leading: Icon(Icons.enhanced_encryption_rounded),
                   title: Text('Your data is encrypted'),
-                  subtitle: Text('Only your password or recovery key can unlock it. Nobody else can, not even the developer.'),
+                  subtitle: Text('Only your unlock method or recovery key can open it. Nobody else can, not even the developer.'),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.password_rounded),
-                  title: const Text('Change password'),
-                  onTap: () => _push(const ChangePasswordScreen()),
+                  leading: Icon(_usesDeviceLock ? Icons.phonelink_lock_rounded : Icons.dialpad_rounded),
+                  title: const Text('Unlock method'),
+                  subtitle: Text(
+                    _usesDeviceLock ? 'Phone screen lock (PIN, pattern, fingerprint or face)' : 'In-app PIN or password',
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: _changeMethod,
                 ),
+                if (!_usesDeviceLock)
+                  ListTile(
+                    leading: const Icon(Icons.password_rounded),
+                    title: const Text('Change PIN or password'),
+                    onTap: () => _push(const ChangePasswordScreen()),
+                  ),
                 ListTile(
                   leading: const Icon(Icons.key_rounded),
                   title: const Text('New recovery key'),
                   subtitle: const Text('Lost your recovery key? Make a new one; the old one stops working'),
                   onTap: _newRecoveryKey,
                 ),
-                if (_biometricAvailable)
+                if (_biometricAvailable && !_usesDeviceLock)
                   SwitchListTile(
                     secondary: const Icon(Icons.fingerprint_rounded),
                     title: const Text('Unlock with fingerprint / face'),
-                    subtitle: const Text('Your key is kept in the phone\'s secure keystore. The password always works too.'),
+                    subtitle: const Text('Your key is kept in the phone\'s secure keystore. Your PIN always works too.'),
                     value: _biometricOn,
                     onChanged: (on) async {
                       final svc = ref.read(appLockServiceProvider);
                       if (on) {
-                        if (!await svc.enableBiometric(ref.read(sessionProvider).dataKey)) return;
+                        final dataKey = ref.read(sessionProvider).dataKey;
+                        if (!await LockGuard.run(() => svc.enableBiometric(dataKey))) return;
                       } else {
                         await svc.disableBiometric();
                       }
@@ -174,10 +207,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     },
                   ),
                 ListTile(
-                  leading: const Icon(Icons.lock_rounded),
+                  leading: AnimatedLockIcon(unlocked: !_locking),
                   title: const Text('Lock now'),
-                  subtitle: const Text('Also happens after 30 seconds in the background'),
-                  onTap: () => ref.read(sessionProvider).lock(),
+                  subtitle: const Text('Also happens whenever you leave the app'),
+                  onTap: _locking ? null : _lockNow,
                 ),
               ],
             ),
@@ -275,12 +308,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _save(String fileName, String content, String mime) async {
     try {
-      final uri = await FilePicker.saveFile(
-        dialogTitle: 'Save file',
-        fileName: fileName,
-        bytes: Uint8List.fromList(utf8.encode(content)),
-        mimeType: mime,
-      );
+      final uri = await LockGuard.run(() => FilePicker.saveFile(
+            dialogTitle: 'Save file',
+            fileName: fileName,
+            bytes: Uint8List.fromList(utf8.encode(content)),
+            mimeType: mime,
+          ));
       if (!mounted) return;
       if (uri != null) showSnack(context, 'Saved $fileName');
     } catch (e) {
@@ -304,13 +337,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _exportJson() async {
     final vault = ref.read(sessionProvider).vault;
-    final password = await askPassword(
-      context,
-      title: 'Encrypt backup',
-      message: 'Enter your password. The backup can only be opened with this password.',
-      confirmLabel: 'Back up',
-      check: (pw) async => await vault.verifyPassword(pw) ? null : 'Wrong password',
-    );
+    final String? password;
+    if (_usesDeviceLock) {
+      // There is no in-app password to reuse, so the backup gets its own.
+      password = await _askNewBackupPassword();
+    } else {
+      password = await askPassword(
+        context,
+        title: 'Encrypt backup',
+        message: 'Enter your PIN or password. The backup can only be opened with it.',
+        label: 'PIN or password',
+        confirmLabel: 'Back up',
+        check: (pw) async => await vault.verifyPassword(pw) ? null : 'Wrong PIN or password',
+      );
+    }
     if (password == null || !mounted) return;
     try {
       final json = await ref.read(backupServiceProvider).exportJson();
@@ -321,23 +361,138 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<String?> _askNewBackupPassword() async {
+    final first = await askPassword(
+      context,
+      title: 'Backup password',
+      message: 'Choose a password for this backup file. You\'ll need it to restore; nobody can recover it.',
+      confirmLabel: 'Next',
+      check: (pw) async => Vault.validatePassword(pw),
+    );
+    if (first == null || !mounted) return null;
+    return askPassword(
+      context,
+      title: 'Confirm backup password',
+      message: 'Type the backup password again.',
+      confirmLabel: 'Back up',
+      check: (pw) async => pw == first ? null : 'That doesn\'t match',
+    );
+  }
+
+  /// Device-lock method: the phone confirms it's the owner.
+  Future<bool> _confirmWithDevice(String reason) async {
+    final outcome = await LockGuard.run(() => ref.read(appLockServiceProvider).authenticateDevice(reason: reason));
+    if (!outcome.ok && mounted) showSnack(context, outcome.message, error: true);
+    return outcome.ok;
+  }
+
+  Future<void> _changeMethod() async {
+    final svc = ref.read(appLockServiceProvider);
+    final deviceSupported = await svc.isDeviceSupported();
+    if (!mounted) return;
+    final picked = await showModalBottomSheet<UnlockMethod>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.phonelink_lock_rounded),
+              title: const Text('Phone screen lock'),
+              subtitle: Text(
+                deviceSupported
+                    ? 'Your phone PIN, pattern or password, plus fingerprint or face'
+                    : 'Turn on a screen lock in your phone settings first',
+              ),
+              enabled: deviceSupported,
+              selected: _usesDeviceLock,
+              trailing: _usesDeviceLock ? const Icon(Icons.check_rounded) : null,
+              onTap: () => Navigator.pop(ctx, UnlockMethod.device),
+            ),
+            ListTile(
+              leading: const Icon(Icons.dialpad_rounded),
+              title: const Text('In-app PIN or password'),
+              subtitle: const Text('A separate code just for Pitaka'),
+              selected: !_usesDeviceLock,
+              trailing: !_usesDeviceLock ? const Icon(Icons.check_rounded) : null,
+              onTap: () => Navigator.pop(ctx, UnlockMethod.pin),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || picked == _method || !mounted) return;
+    final session = ref.read(sessionProvider);
+    try {
+      if (picked == UnlockMethod.device) {
+        if (!await _confirmWithDevice('Confirm to unlock Pitaka with your phone lock')) return;
+        // Order matters if the app is killed midway: the phone copy of the
+        // key and the method are saved before the PIN stops working.
+        await svc.storeDeviceKey(session.dataKey);
+        await svc.saveMethod(UnlockMethod.device);
+        await session.vault.removePassword();
+        await svc.disableBiometric();
+        await svc.clearAttempts();
+        if (mounted) showSnack(context, 'Pitaka now unlocks with your phone lock');
+      } else {
+        if (deviceSupported && !await _confirmWithDevice('Confirm to set an in-app PIN')) return;
+        if (!mounted) return;
+        final done = await Navigator.of(context).push<bool>(MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (ctx) => SignUpScreen(
+            hasExistingData: false,
+            title: 'Set an in-app PIN',
+            message: 'This PIN or password will unlock Pitaka instead of your phone lock.',
+            buttonLabel: 'Save',
+            showRecoveryNote: false,
+            backLabel: 'Cancel',
+            onBack: () => Navigator.pop(ctx, false),
+            onCreate: (pw) async {
+              await session.vault.setPassword(session.dataKey, pw);
+              await svc.saveMethod(UnlockMethod.pin);
+              await svc.deleteDeviceKey();
+              await svc.clearAttempts();
+              if (ctx.mounted) Navigator.pop(ctx, true);
+            },
+          ),
+        ));
+        if ((done ?? false) && mounted) showSnack(context, 'Pitaka now unlocks with your in-app PIN');
+      }
+    } catch (e) {
+      if (mounted) showSnack(context, 'Could not change the unlock method: $e', error: true);
+    }
+    await _loadSecurity();
+  }
+
   Future<void> _newRecoveryKey() async {
     final vault = ref.read(sessionProvider).vault;
     String? newKey;
-    await askPassword(
-      context,
-      title: 'New recovery key',
-      message: 'Enter your password. Your old recovery key will stop working.',
-      confirmLabel: 'Create',
-      check: (pw) async {
-        try {
-          newKey = await vault.replaceRecoveryKey(password: pw);
-          return null;
-        } on WrongSecretException {
-          return 'Wrong password';
-        }
-      },
-    );
+    if (_usesDeviceLock) {
+      if (!await _confirmWithDevice('Confirm to make a new recovery key')) return;
+      try {
+        newKey = await vault.replaceRecoveryKeyWith(ref.read(sessionProvider).dataKey);
+      } catch (e) {
+        if (mounted) showSnack(context, 'Could not make a new recovery key: $e', error: true);
+        return;
+      }
+    } else {
+      await askPassword(
+        context,
+        title: 'New recovery key',
+        message: 'Enter your PIN or password. Your old recovery key will stop working.',
+        label: 'PIN or password',
+        confirmLabel: 'Create',
+        check: (pw) async {
+          try {
+            newKey = await vault.replaceRecoveryKey(password: pw);
+            return null;
+          } on WrongSecretException {
+            return 'Wrong PIN or password';
+          }
+        },
+      );
+    }
     final key = newKey;
     if (key == null || !mounted) return;
     await Navigator.of(context).push(MaterialPageRoute(
@@ -356,7 +511,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
     if (!ok) return;
     try {
-      final file = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: const ['json']);
+      final file = await LockGuard.run(() => FilePicker.pickFile(type: FileType.custom, allowedExtensions: const ['json']));
       if (file == null) return;
       var text = utf8.decode(await file.readAsBytes());
       if (BackupCrypto.isEncrypted(text)) {

@@ -6,7 +6,10 @@ import 'auth_widgets.dart';
 
 /// Sets a new password using the recovery key.
 class ForgotPasswordScreen extends StatefulWidget {
-  const ForgotPasswordScreen({super.key, required this.onReset, required this.onBack});
+  const ForgotPasswordScreen({super.key, required this.onReset, required this.onBack, this.reason});
+
+  /// Why this screen was opened, when it wasn't the user's choice.
+  final String? reason;
 
   /// Throws [WrongSecretException] for a wrong recovery key.
   final Future<void> Function(String recoveryKey, String newPassword) onReset;
@@ -60,7 +63,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       child: AuthLayout(
         icon: Icons.key_rounded,
         title: 'Reset with recovery key',
-        message: 'Enter the recovery key you saved when you created your password, then choose a new password.',
+        message: widget.reason ??
+            'Enter the recovery key you saved when you set up Pitaka, then choose a new in-app PIN or password.',
         children: [
           Form(
             key: _form,
@@ -80,27 +84,27 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 const SizedBox(height: 16),
                 PasswordField(
                   controller: _password,
-                  label: 'New password',
+                  label: 'New PIN or password',
                   autofillHints: const [AutofillHints.newPassword],
                   validator: (v) => Vault.validatePassword(v ?? ''),
                 ),
                 const SizedBox(height: 16),
                 PasswordField(
                   controller: _confirm,
-                  label: 'Confirm new password',
+                  label: 'Enter it again',
                   autofillHints: const [AutofillHints.newPassword],
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _submit(),
-                  validator: (v) => v != _password.text ? 'Passwords don\'t match' : null,
+                  validator: (v) => v != _password.text ? 'They don\'t match' : null,
                 ),
               ],
             ),
           ),
           const SizedBox(height: 24),
-          BusyButton(label: 'Set new password', busy: _busy, onPressed: _submit),
+          BusyButton(label: 'Set new PIN or password', busy: _busy, onPressed: _submit),
           ErrorText(_error),
           const SizedBox(height: 12),
-          TextButton(onPressed: _busy ? null : widget.onBack, child: const Text('Back to login')),
+          TextButton(onPressed: _busy ? null : widget.onBack, child: const Text('Back')),
         ],
       ),
     );

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'domain/services/app_lock_service.dart';
 import 'presentation/providers/app_state_providers.dart';
 import 'presentation/providers/core_providers.dart';
+import 'presentation/screens/auth/auth_widgets.dart';
 import 'presentation/screens/home_shell.dart';
 import 'presentation/screens/legal/legal_gate_screen.dart';
 import 'presentation/theme/app_theme.dart';
@@ -15,14 +17,30 @@ class PitakaApp extends ConsumerStatefulWidget {
 }
 
 class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserver {
-  /// Short grace period so picking a file or answering a call doesn't log out.
-  static const lockAfter = Duration(seconds: 30);
+  /// When leaving the app on purpose (file picker, the phone's unlock
+  /// screen), it stays unlocked, but not for longer than this.
+  static const guardedLockAfter = Duration(minutes: 2);
   DateTime? _backgroundedAt;
+
+  /// Covers the screen while the app isn't in front, so balances don't show
+  /// in the app switcher or for a frame when coming back.
+  bool _covered = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Debt reminders are re-created each time the data is unlocked, so they
+    // survive app updates and anything the OS dropped (the plugin's boot
+    // receiver already restores them after a reboot).
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      try {
+        await ref.read(debtServiceProvider).rescheduleAll(currencySymbol: ref.read(currencyProvider).symbol);
+      } catch (e) {
+        debugPrint('Could not restore debt reminders: $e');
+      }
+    });
   }
 
   @override
@@ -33,16 +51,29 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // Sign out (close the encrypted database) after the app was in the
-    // background for a while.
-    if (state == AppLifecycleState.paused) {
-      _backgroundedAt = DateTime.now();
-    } else if (state == AppLifecycleState.resumed) {
-      final since = _backgroundedAt;
-      _backgroundedAt = null;
-      if (since != null && DateTime.now().difference(since) >= lockAfter) {
-        ref.read(sessionProvider).lock();
-      }
+    switch (state) {
+      case AppLifecycleState.inactive:
+        if (!_covered) setState(() => _covered = true);
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        if (_backgroundedAt != null) return;
+        if (LockGuard.suspended) {
+          _backgroundedAt = DateTime.now();
+        } else {
+          // Lock as soon as the app goes to the background: the database is
+          // closed and the lock screen is what shows when the user returns.
+          ref.read(sessionProvider).lock();
+        }
+      case AppLifecycleState.resumed:
+        final since = _backgroundedAt;
+        _backgroundedAt = null;
+        if (since != null && DateTime.now().difference(since) >= guardedLockAfter) {
+          ref.read(sessionProvider).lock();
+          return;
+        }
+        if (_covered) setState(() => _covered = false);
+      case AppLifecycleState.detached:
+        break;
     }
   }
 
@@ -62,10 +93,25 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: 1.0, maxScaleFactor: 1.6)),
-          child: child!,
+          child: Stack(
+            children: [
+              child!,
+              if (_covered) const Positioned.fill(child: _PrivacyCover()),
+            ],
+          ),
         );
       },
       home: accepted ? const HomeShell() : const LegalGateScreen(),
     );
   }
+}
+
+class _PrivacyCover extends StatelessWidget {
+  const _PrivacyCover();
+
+  @override
+  Widget build(BuildContext context) => ColoredBox(
+        color: Theme.of(context).colorScheme.surface,
+        child: const Center(child: AppLogo(size: 96)),
+      );
 }

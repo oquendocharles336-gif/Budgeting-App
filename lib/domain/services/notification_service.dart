@@ -3,10 +3,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-import '../../data/models/debt.dart';
+import 'debt_service.dart';
 
 /// Local notifications only. Nothing is sent to a server.
-class NotificationService {
+class NotificationService implements DebtReminderScheduler {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
@@ -80,44 +80,43 @@ class NotificationService {
     );
   }
 
-  /// Schedules two reminders at 9:00 AM: one day before and on the due date.
-  /// Existing reminders for the debt are replaced.
-  Future<void> scheduleDebtReminders(DebtStatus status, {required String remainingText}) async {
-    final debt = status.debt;
-    if (debt.id == null) return;
-    await cancelDebtReminders(debt.id!);
-    if (status.isSettled || debt.dueDate == null) return;
+  /// Shows the debt reminder at [at] (local time), replacing any earlier
+  /// one for this debt. A time that is now (or past) shows it right away.
+  /// Scheduled reminders are kept by the plugin across app restarts, and
+  /// its boot receiver (AndroidManifest) restores them after a reboot.
+  @override
+  Future<void> scheduleDebtReminder({
+    required int debtId,
+    required DateTime at,
+    required String title,
+    required String body,
+  }) async {
+    await cancelDebtReminders(debtId);
     await init();
     if (!_ready) return;
-
-    final due = debt.dueDate!;
-    final now = DateTime.now();
-    final reminders = [
-      (which: 0, at: DateTime(due.year, due.month, due.day - 1, 9), text: 'due tomorrow'),
-      (which: 1, at: DateTime(due.year, due.month, due.day, 9), text: 'due today'),
-    ];
-    for (final r in reminders) {
-      if (!r.at.isAfter(now)) continue;
-      await _plugin.zonedSchedule(
-        id: _debtId(debt.id!, r.which),
-        title: '${debt.creditor}: payment ${r.text}',
-        body: '$remainingText remaining.',
-        // tz.local is UTC unless changed; converting the instant keeps the
-        // exact moment, so the reminder still fires at 9:00 local time.
-        scheduledDate: tz.TZDateTime.from(r.at, tz.local),
-        notificationDetails: const NotificationDetails(
-          android: _debtChannel,
-          iOS: DarwinNotificationDetails(),
-        ),
-        // Inexact = no special "exact alarm" permission needed.
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-      );
+    const details = NotificationDetails(android: _debtChannel, iOS: DarwinNotificationDetails());
+    if (at.difference(DateTime.now()) < const Duration(minutes: 1)) {
+      await _plugin.show(id: _debtId(debtId, 0), title: title, body: body, notificationDetails: details);
+      return;
     }
+    await _plugin.zonedSchedule(
+      id: _debtId(debtId, 0),
+      title: title,
+      body: body,
+      // tz.local is UTC unless changed; converting the instant keeps the
+      // exact moment, so the reminder still fires at 9:00 local time.
+      scheduledDate: tz.TZDateTime.from(at, tz.local),
+      notificationDetails: details,
+      // Inexact = no special "exact alarm" permission needed.
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+    );
   }
 
+  @override
   Future<void> cancelDebtReminders(int debtId) async {
     await init();
     if (!_ready) return;
+    // Slot 1 was the old "due today" reminder; cleared for upgrades.
     await _plugin.cancel(id: _debtId(debtId, 0));
     await _plugin.cancel(id: _debtId(debtId, 1));
   }

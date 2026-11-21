@@ -33,6 +33,9 @@ class CategoryRepository {
   }
 
   /// The "Other income" category (where income goes when none is picked).
+  /// The "Debt" expense category (created if missing).
+  Future<int> debtCategoryId() => DefaultData.ensureDebtCategory(_db);
+
   Future<int?> otherIncomeId() async {
     final rows = await _db.query(
       'categories',

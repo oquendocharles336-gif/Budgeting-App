@@ -1,6 +1,7 @@
 import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import '../models/debt.dart';
+import '../models/transaction_entry.dart';
 
 class DebtRepository {
   DebtRepository(this._db);
@@ -30,15 +31,51 @@ class DebtRepository {
     return null;
   }
 
-  Future<int> insert(Debt d) => _db.insert('debts', d.toMap()..remove('id'));
+  /// Saves a debt and, for a new debt, the expense it creates, in one
+  /// SQLite transaction. [linkedExpense] gets the new debt's id.
+  Future<int> insert(Debt d, {TransactionEntry Function(int debtId)? linkedExpense}) =>
+      _db.transaction((txn) async {
+        final id = await txn.insert('debts', d.toMap()..remove('id'));
+        if (linkedExpense != null) {
+          await txn.insert('transactions', linkedExpense(id).toMap()..remove('id'));
+        }
+        return id;
+      });
 
-  Future<void> update(Debt d) async {
-    await _db.update('debts', d.toMap(), where: 'id = ?', whereArgs: [d.id]);
+  /// Saves the edit and keeps the linked expense in step: [linkedExpense]
+  /// receives the current one (or null) and returns what it should be.
+  Future<void> update(Debt d, {TransactionEntry Function(TransactionEntry? current)? linkedExpense}) =>
+      _db.transaction((txn) async {
+        await txn.update('debts', d.toMap(), where: 'id = ?', whereArgs: [d.id]);
+        if (linkedExpense == null) return;
+        final current = await _linked(txn, d.id!);
+        final next = linkedExpense(current);
+        if (current == null) {
+          await txn.insert('transactions', next.toMap()..remove('id'));
+        } else {
+          await txn.update('transactions', next.toMap(), where: 'id = ?', whereArgs: [current.id]);
+        }
+      });
+
+  /// The expense a new debt created, if it still exists.
+  Future<TransactionEntry?> linkedExpense(int debtId) => _linked(_db, debtId);
+
+  static Future<TransactionEntry?> _linked(DatabaseExecutor db, int debtId) async {
+    final rows = await db.query('transactions', where: 'debt_id = ?', whereArgs: [debtId], orderBy: 'id', limit: 1);
+    return rows.isEmpty ? null : TransactionEntry.fromMap(rows.first);
   }
 
-  Future<void> delete(int id) async {
-    await _db.delete('debts', where: 'id = ?', whereArgs: [id]);
-  }
+  /// Deletes the debt (payments go with it). The linked expense is removed
+  /// too if [removeLinkedExpense]; otherwise it stays and is just unlinked.
+  /// Linked expenses never move account balances, so nothing to undo there.
+  Future<void> delete(int id, {bool removeLinkedExpense = false}) => _db.transaction((txn) async {
+        if (removeLinkedExpense) {
+          await txn.delete('transactions', where: 'debt_id = ?', whereArgs: [id]);
+        } else {
+          await txn.update('transactions', {'debt_id': null}, where: 'debt_id = ?', whereArgs: [id]);
+        }
+        await txn.delete('debts', where: 'id = ?', whereArgs: [id]);
+      });
 
   Future<List<DebtPayment>> payments(int debtId) async {
     final rows = await _db.query(

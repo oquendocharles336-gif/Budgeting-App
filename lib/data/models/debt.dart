@@ -72,11 +72,16 @@ class Debt {
     this.termMonths,
     this.notes,
     this.isPaid = false,
+    this.isNew = false,
     required this.createdAt,
     this.paidAt,
   });
 
   final int? id;
+
+  /// True: money just received or spent, so it was also added to expenses
+  /// (a linked transaction). False: an existing debt, only a reminder.
+  final bool isNew;
   final String creditor;
   final DebtType type;
 
@@ -144,6 +149,7 @@ class Debt {
         interestRateBp: interestRateBp != null ? interestRateBp() : this.interestRateBp,
         notes: notes != null ? notes() : this.notes,
         isPaid: isPaid ?? this.isPaid,
+        isNew: isNew,
         createdAt: createdAt,
         paidAt: paidAt != null ? paidAt() : this.paidAt,
       );
@@ -163,6 +169,7 @@ class Debt {
         'interest_rate_bp': interestRateBp,
         'notes': notes,
         'is_paid': isPaid ? 1 : 0,
+        'origin': isNew ? 'new' : 'existing',
         'created_at': createdAt.millisecondsSinceEpoch,
         'paid_at': paidAt?.millisecondsSinceEpoch,
       };
@@ -184,6 +191,7 @@ class Debt {
         interestRateBp: m['interest_rate_bp'] as int?,
         notes: m['notes'] as String?,
         isPaid: (m['is_paid'] as int? ?? 0) == 1,
+        isNew: m['origin'] == 'new',
         createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
         paidAt: m['paid_at'] == null
             ? null

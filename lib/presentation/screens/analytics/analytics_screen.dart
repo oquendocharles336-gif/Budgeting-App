@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/dates.dart';
 import '../../../core/money.dart';
 import '../../../data/models/category.dart';
+import '../../../domain/analytics/data_prep.dart';
 import '../../../domain/analytics/spending_analytics.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
@@ -23,6 +24,9 @@ class AnalyticsScreen extends ConsumerWidget {
     final data = ref.watch(analyticsProvider(Dates.monthKey(month)));
     final cats = ref.watch(categoryMapProvider).asDataOrNull ?? const <int, Category>{};
     final notifier = ref.read(selectedMonthProvider.notifier);
+    ref.listen(selectedMonthProvider, (_, next) {
+      ref.read(analyticsProvider(Dates.monthKey(Dates.previousMonth(next))).future).ignore();
+    });
 
     return Scaffold(
       appBar: AppBar(title: const Text('Insights')),
@@ -45,6 +49,7 @@ class AnalyticsScreen extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   _SummaryGrid(data: a),
+                  _PrepLine(report: a.prep),
                   const SectionHeader('Daily spending'),
                   AppCard(child: _DailyChart(data: a)),
                   const SectionHeader('By category'),
@@ -399,6 +404,28 @@ class _WeeksList extends ConsumerWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// What the cleaning step did, inline under the totals (not a banner).
+class _PrepLine extends StatelessWidget {
+  const _PrepLine({required this.report});
+  final PrepReport report;
+
+  @override
+  Widget build(BuildContext context) {
+    if (report.checked == 0) return const SizedBox.shrink();
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 0),
+      child: Row(
+        children: [
+          Icon(report.changedAnything ? Icons.cleaning_services_rounded : Icons.verified_rounded, size: 16, color: color),
+          const SizedBox(width: 6),
+          Expanded(child: Text(report.summary, style: TextStyle(color: color, fontSize: 12.5))),
+        ],
+      ),
     );
   }
 }

@@ -5,6 +5,7 @@ import '../../../data/models/category.dart';
 import '../../../domain/import/auto_categorizer.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
+import '../../theme/app_palette.dart';
 import '../../widgets/common.dart';
 
 /// Keyword -> category rules used to auto-categorize new transactions.
@@ -67,7 +68,7 @@ class _RulesScreenState extends ConsumerState<RulesScreen> {
                     hit == null
                         ? 'No rule matches → "Other"'
                         : 'Matches "${hit.keyword}" → ${cats[hit.categoryId]?.name ?? '?'}',
-                    style: TextStyle(fontWeight: FontWeight.w600, color: scheme.primary),
+                    style: TextStyle(fontWeight: FontWeight.w600, color: Contrast.ensure(scheme.primary, scheme.surface)),
                   ),
                 ),
               const SizedBox(height: 16),

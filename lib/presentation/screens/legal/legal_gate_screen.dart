@@ -38,7 +38,7 @@ class _LegalGateScreenState extends ConsumerState<LegalGateScreen> {
                       gradient: AppTheme.heroGradient(scheme),
                       borderRadius: BorderRadius.circular(22),
                     ),
-                    child: Icon(Icons.account_balance_wallet_rounded, size: 38, color: scheme.onPrimary),
+                    child: Icon(Icons.account_balance_wallet_rounded, size: 38, color: scheme.onSecondaryContainer),
                   ),
                   const SizedBox(height: 24),
                   Text('Welcome to Pitaka', style: text.headlineMedium),

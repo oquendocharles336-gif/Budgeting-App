@@ -4,6 +4,7 @@ import '../../data/repositories/budget_repository.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
+import '../analytics/data_prep.dart';
 import '../budget/budget_calculator.dart';
 import 'notification_service.dart';
 
@@ -35,7 +36,8 @@ class BudgetAlertService {
 
     final budgets = await _budgets.ensureMonth(month);
     if (budgets.isEmpty) return;
-    final txs = await _transactions.between(Dates.monthStart(date), Dates.monthEnd(date));
+    // Same cleaned data as the Budget screen, so alerts match what's shown.
+    final txs = DataPrep.clean(await _transactions.rawBetween(Dates.monthStart(date), Dates.monthEnd(date))).rows;
 
     final key = SettingsRepository.budgetAlertKey(month);
     final sent = ((await _settings.get(key)) ?? '').split(',').where((s) => s.isNotEmpty).toSet();

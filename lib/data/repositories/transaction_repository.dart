@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import '../models/transaction_entry.dart';
+import 'account_ledger.dart';
 
 class TransactionRepository {
   TransactionRepository(this._db);
@@ -65,6 +66,16 @@ class TransactionRepository {
   Future<List<TransactionEntry>> between(DateTime from, DateTime to) =>
       query(TransactionFilter(from: from, to: to));
 
+  /// Raw rows for [from, to), for the data-prep (cleaning) step that runs
+  /// before charts and totals. Not converted to [TransactionEntry], so bad
+  /// values can be handled instead of throwing.
+  Future<List<Map<String, Object?>>> rawBetween(DateTime from, DateTime to) => _db.query(
+        'transactions',
+        where: 'date >= ? AND date < ?',
+        whereArgs: [from.millisecondsSinceEpoch, to.millisecondsSinceEpoch],
+        orderBy: 'date DESC, id DESC',
+      );
+
   Future<List<TransactionEntry>> recent({int limit = 5}) =>
       query(const TransactionFilter(), limit: limit);
 
@@ -73,7 +84,13 @@ class TransactionRepository {
     return rows.isEmpty ? null : TransactionEntry.fromMap(rows.first);
   }
 
-  Future<int> insert(TransactionEntry tx) => _db.insert('transactions', tx.toMap()..remove('id'));
+  /// Saves [tx] and, if it [TransactionEntry.affectsBalance], moves the
+  /// account balances, in one SQLite transaction.
+  Future<int> insert(TransactionEntry tx) => _db.transaction((txn) async {
+        final id = await txn.insert('transactions', tx.toMap()..remove('id'));
+        await AccountLedger.apply(txn, tx);
+        return id;
+      });
 
   /// Inserts all rows in one database transaction. Returns how many were saved.
   Future<int> insertMany(List<TransactionEntry> txs) async {
@@ -82,18 +99,36 @@ class TransactionRepository {
       var count = 0;
       for (final t in txs) {
         await txn.insert('transactions', t.toMap()..remove('id'));
+        await AccountLedger.apply(txn, t);
         count++;
       }
       return count;
     });
   }
 
-  Future<void> update(TransactionEntry tx) async {
-    await _db.update('transactions', tx.toMap(), where: 'id = ?', whereArgs: [tx.id]);
-  }
+  /// Saves the edit. The old row's balance change is undone and the new one
+  /// applied (amount, kind or account may all have changed), atomically.
+  Future<void> update(TransactionEntry tx) => _db.transaction((txn) async {
+        final old = await _byId(txn, tx.id!);
+        if (old == null) throw StateError('Transaction ${tx.id} no longer exists');
+        await AccountLedger.apply(txn, old, sign: -1);
+        // Whether a row moves balances is fixed when it is created.
+        final next = tx.copyWith(affectsBalance: old.affectsBalance);
+        await txn.update('transactions', next.toMap(), where: 'id = ?', whereArgs: [tx.id]);
+        await AccountLedger.apply(txn, next);
+      });
 
-  Future<void> delete(int id) async {
-    await _db.delete('transactions', where: 'id = ?', whereArgs: [id]);
+  /// Deletes the row and gives its money back to (or takes it from) the account.
+  Future<void> delete(int id) => _db.transaction((txn) async {
+        final old = await _byId(txn, id);
+        if (old == null) return;
+        await AccountLedger.apply(txn, old, sign: -1);
+        await txn.delete('transactions', where: 'id = ?', whereArgs: [id]);
+      });
+
+  static Future<TransactionEntry?> _byId(DatabaseExecutor db, int id) async {
+    final rows = await db.query('transactions', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : TransactionEntry.fromMap(rows.first);
   }
 
   /// Scoped external IDs (`cardId|externalId`, or `cash|externalId`) already saved for

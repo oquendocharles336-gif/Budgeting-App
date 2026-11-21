@@ -81,6 +81,39 @@ void main() {
     expect(() => vault.prepare('short'), throwsArgumentError);
   });
 
+  test('numeric PINs: 6-12 digits, not trivial', () {
+    expect(Vault.validatePassword('48151'), isNotNull); // too short
+    expect(Vault.validatePassword('481516'), isNull);
+    expect(Vault.validatePassword('000000'), isNotNull);
+    expect(Vault.validatePassword('123456'), isNotNull);
+    expect(Vault.validatePassword('987654'), isNotNull);
+    expect(Vault.validatePassword('1234567890123'), isNotNull); // too long
+    expect(Vault.validatePassword('abc12345'), isNull); // 8-char password
+  });
+
+  test('phone-lock vault has no password; one can be added and removed', () async {
+    final draft = await vault.prepareWithoutPassword();
+    await vault.save(draft);
+    expect(await vault.hasPassword(), isFalse);
+    // The recovery key still opens it.
+    expect(
+      await vault.resetPassword(recoveryKey: draft.recoveryKey, newPassword: '481516'),
+      draft.dataKey,
+    );
+    await vault.removePassword();
+    expect(await vault.hasPassword(), isFalse);
+    await vault.setPassword(draft.dataKey, '481516');
+    expect(await vault.hasPassword(), isTrue);
+    expect(await vault.unlockWithPassword('481516'), draft.dataKey);
+    expect(() => vault.setPassword(draft.dataKey, '111111'), throwsArgumentError);
+  });
+
+  test('new recovery key from the open data key', () async {
+    final draft = await create();
+    final newKey = await vault.replaceRecoveryKeyWith(draft.dataKey);
+    expect(await vault.resetPassword(recoveryKey: newKey, newPassword: 'fourth pass'), draft.dataKey);
+  });
+
   test('recovery key format', () {
     final k = Vault.generateRecoveryKey();
     expect(k, matches(RegExp(r'^[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4}){5}$')));

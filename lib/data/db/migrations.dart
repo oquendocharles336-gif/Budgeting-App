@@ -21,6 +21,8 @@ class Migrations {
     2: _v2SmsPatterns,
     3: _v3DebtTypeWalletNumberTransfers,
     4: _v4IncomeCategoriesAndDebtInterest,
+    5: _v5AccountBalances,
+    6: _v6DebtOriginAndLinkedExpense,
   };
 
   static int get latestVersion => _steps.keys.reduce((a, b) => a > b ? a : b);
@@ -235,5 +237,37 @@ class Migrations {
     await db.execute("ALTER TABLE debts ADD COLUMN interest_type TEXT NOT NULL DEFAULT 'simple'");
     await db.execute("ALTER TABLE debts ADD COLUMN interest_period TEXT NOT NULL DEFAULT 'month'");
     await db.execute('ALTER TABLE debts ADD COLUMN term_months INTEGER');
+  }
+
+  // ---------------------------------------------------------------------------
+  // v5: account balances (cards / e-wallets act as accounts; cash has its own
+  // balance in settings) and which transactions moved a balance
+  // ---------------------------------------------------------------------------
+  static Future<void> _v5AccountBalances(DatabaseExecutor db) async {
+    // The `cards` table already is the accounts table (id, nickname = name,
+    // card_type = type), and transactions already point at it through
+    // card_id / to_card_id, so only the balance is new. Existing accounts
+    // start at 0 and the user enters their current amount.
+    await db.execute('ALTER TABLE cards ADD COLUMN balance INTEGER NOT NULL DEFAULT 0');
+
+    // 1 = this row changed an account balance when it was saved, so editing
+    // or deleting it must undo that. Rows saved before v5 (and imports,
+    // which the typed starting balance already includes) stay 0, so
+    // deleting an old expense never adds money that was never taken out.
+    await db.execute('ALTER TABLE transactions ADD COLUMN affects_balance INTEGER NOT NULL DEFAULT 0');
+  }
+
+  // ---------------------------------------------------------------------------
+  // v6: new vs existing debts, and the expense a new debt creates
+  // ---------------------------------------------------------------------------
+  static Future<void> _v6DebtOriginAndLinkedExpense(DatabaseExecutor db) async {
+    // 'new' = money just received/spent: it also has a linked expense.
+    // 'existing' = only a reminder. Debts added before v6 were reminders.
+    await db.execute("ALTER TABLE debts ADD COLUMN origin TEXT NOT NULL DEFAULT 'existing'");
+    // The expense a new debt created. Deleting the debt without removing
+    // the expense just unlinks it.
+    await db.execute('ALTER TABLE transactions ADD COLUMN debt_id INTEGER REFERENCES debts(id) ON DELETE SET NULL');
+    await db.execute('CREATE INDEX ix_transactions_debt ON transactions(debt_id)');
+    await DefaultData.ensureDebtCategory(db);
   }
 }

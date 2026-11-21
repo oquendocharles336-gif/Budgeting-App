@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/app_theme.dart';
+
 /// Palette swatches plus a "custom" option with hue/saturation/brightness
 /// sliders. No extra packages needed.
 class ColorPickerField extends StatelessWidget {
@@ -69,7 +71,7 @@ class _Swatch extends StatelessWidget {
               shape: BoxShape.circle,
               border: selected ? Border.all(color: Theme.of(context).colorScheme.onSurface, width: 3) : null,
             ),
-            child: selected ? const Icon(Icons.check_rounded, color: Colors.white, size: 20) : null,
+            child: selected ? Icon(Icons.check_rounded, color: AppTheme.onColor(color), size: 20) : null,
           ),
         ),
       );

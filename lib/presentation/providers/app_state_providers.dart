@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/money.dart';
 import '../../data/repositories/settings_repository.dart';
+import '../theme/app_palette.dart';
 import 'core_providers.dart';
 
 /// Bump this when the privacy policy or terms change in a way users must
@@ -18,7 +19,8 @@ class ThemeSettings {
   final ThemeMode mode;
   final Color accent;
 
-  static const defaultAccent = Color(0xFF4F46E5);
+  /// Midnight: midnight black / electric blue / sunset orange.
+  static const defaultAccent = AppPalettes.sunsetOrange;
 
   ThemeSettings copyWith({ThemeMode? mode, Color? accent}) =>
       ThemeSettings(mode: mode ?? this.mode, accent: accent ?? this.accent);

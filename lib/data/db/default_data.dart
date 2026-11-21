@@ -70,6 +70,38 @@ class DefaultData {
     }
   }
 
+  static const debtCategory = Category(
+    name: 'Debt',
+    icon: 'handshake',
+    color: 0xFF8D6E63,
+    isDefault: true,
+    sortOrder: 8,
+    role: CategoryRole.debt,
+  );
+
+  /// The expense category new debts are filed under. Reuses a "Debt"
+  /// expense category the user already made; returns its id.
+  static Future<int> ensureDebtCategory(DatabaseExecutor db) async {
+    final tagged = await db.query('categories', columns: ['id'], where: "role = 'debt'", limit: 1);
+    if (tagged.isNotEmpty) return tagged.first['id'] as int;
+    final named = await db.query(
+      'categories',
+      columns: ['id'],
+      where: "name = ? COLLATE NOCASE AND kind = 'expense' AND role IS NULL",
+      whereArgs: [debtCategory.name],
+      limit: 1,
+    );
+    if (named.isNotEmpty) {
+      final id = named.first['id'] as int;
+      await db.update('categories', {'role': 'debt'}, where: 'id = ?', whereArgs: [id]);
+      return id;
+    }
+    var name = debtCategory.name;
+    final clash = await db.query('categories', where: 'name = ? COLLATE NOCASE', whereArgs: [name], limit: 1);
+    if (clash.isNotEmpty) name = 'Debt (expense)';
+    return db.insert('categories', debtCategory.copyWith(name: name).toMap()..remove('id'));
+  }
+
   static const _keywords = <int, List<String>>{
     food: [
       'jollibee', 'mcdonald', 'mang inasal', 'chowking', 'greenwich', 'kfc',

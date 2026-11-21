@@ -9,6 +9,7 @@ import '../../providers/data_providers.dart';
 import '../../theme/category_icons.dart';
 import '../../widgets/color_picker.dart';
 import '../../widgets/common.dart';
+import '../../widgets/motion/cascade.dart';
 
 class CategoriesScreen extends ConsumerWidget {
   const CategoriesScreen({super.key});
@@ -23,7 +24,8 @@ class CategoriesScreen extends ConsumerWidget {
         icon: const Icon(Icons.add_rounded),
         label: const Text('New category'),
       ),
-      body: AsyncView<List<Category>>(
+      body: CascadeScope(
+        child: AsyncView<List<Category>>(
         value: cats,
         data: (list) => ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
@@ -33,14 +35,19 @@ class CategoriesScreen extends ConsumerWidget {
               Card(
                 child: Column(
                   children: [
-                    for (final c in list.where((c) => c.kind == kind))
-                      ListTile(
+                    for (final (i, c) in list.where((c) => c.kind == kind).indexed)
+                      CascadeIn(
+                        key: ValueKey('cat-${c.id}'),
+                        index: i + (kind == TransactionKind.income ? list.where((c) => !c.isIncome).length : 0),
+                        child: ListTile(
                         leading: CategoryAvatar(category: c),
                         title: Text(c.name),
                         subtitle: c.isOther
                             ? const Text('You type the name each time')
                             : c.isLoan
                                 ? const Text('Also adds a debt')
+                                : c.isDebt
+                                ? const Text('Expenses added by new debts')
                                 : c.isDefault
                                     ? const Text('Default')
                                     : null,
@@ -64,12 +71,14 @@ class CategoriesScreen extends ConsumerWidget {
                               ),
                         onTap: () => showCategoryEditor(context, ref, existing: c),
                       ),
+                      ),
                   ],
                 ),
               ),
             ],
           ],
         ),
+      ),
       ),
     );
   }
