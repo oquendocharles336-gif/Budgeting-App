@@ -56,8 +56,8 @@ class BackupService {
     'budgets',
     'sms_patterns',
     'settings',
-    // v7: Pay Later and the business side.
-    'pay_later',
+    // v7: the business side. (A `pay_later` table in an older backup is
+    // ignored: that feature was removed in v9.)
     'capital_entries',
     'inventory_items',
     'products',
@@ -175,6 +175,8 @@ class BackupService {
         await DefaultData.ensureIncomeCategories(txn);
         await DefaultData.ensureDebtCategory(txn);
         await DefaultData.ensureV7Categories(txn);
+        // Backups from before v9 can hold the removed "Delivered / Not Paid" status.
+        await txn.execute("UPDATE orders SET status = 'delivered' WHERE status = 'delivered_unpaid'");
       });
     } on BackupException {
       rethrow;
@@ -260,7 +262,7 @@ class BackupService {
   }
 
 
-  /// Deletes every card, transaction, budget, debt, Pay Later item,
+  /// Deletes every card, transaction, budget, debt,
   /// business record (capital, stock ledger, inventory, recipes, products,
   /// orders), custom category and rule, and puts back the defaults. Photo
   /// files and their key are deleted by `PhotoService.deleteAll`.
@@ -288,6 +290,27 @@ class BackupService {
       for (final p in DefaultData.smsPatterns) {
         await txn.insert('sms_patterns', p.toMap());
       }
+    });
+  }
+
+  /// "Clear history": deletes every transaction (expenses, income,
+  /// transfers, fees, loans and their payments) in one SQLite transaction.
+  ///
+  /// Account balances are NOT changed: they already are the real amounts
+  /// in each account, and only the record of how they got there goes.
+  /// Budgets, debts, cards and business records stay. Business capital
+  /// keeps its history (only its link to the deleted transfer is dropped),
+  /// and orders already added to the budget stay "added", so their sales
+  /// can't be counted a second time.
+  Future<void> clearHistory() async {
+    await _db.transaction((txn) async {
+      await txn.update('capital_entries', {'transaction_id': null}, where: 'transaction_id IS NOT NULL');
+      // 0 = "added, transaction cleared" (no transaction has id 0).
+      await txn.update('orders', {'budget_tx_id': 0}, where: 'budget_tx_id IS NOT NULL');
+      await txn.delete('transactions');
+      await txn.delete('op_keys');
+      // Alerts are counted per month from transactions; let them fire again.
+      await txn.delete('settings', where: "key LIKE 'budget_alerts_%'");
     });
   }
 
@@ -360,11 +383,6 @@ class _BackupMerge {
       if (exists.isNotEmpty) continue;
       await txn.insert('budgets', _copy(r)..['category_id'] = cat);
     }
-    for (final r in _rows('pay_later')) {
-      await txn.insert('pay_later', _copy(r)
-        ..['category_id'] = _map('categories', r['category_id'])
-        ..['expense_tx_id'] = _map('transactions', r['expense_tx_id']));
-    }
     for (final r in _rows('capital_entries')) {
       await txn.insert('capital_entries', _copy(r)..['transaction_id'] = _map('transactions', r['transaction_id']));
     }
@@ -435,11 +453,13 @@ class _BackupMerge {
 
   Future<void> _transactions() async {
     final fees = <int, Object?>{}; // new id -> old fee_of_id
+    final loanPayments = <int, Object?>{}; // new id -> old loan_payment_of_id
     for (final r in _rows('transactions')) {
       final row = _copy(r)
         ..['category_id'] = _map('categories', r['category_id'])
         ..['debt_id'] = _map('debts', r['debt_id'])
         ..['fee_of_id'] = null;
+      if (r.containsKey('loan_payment_of_id')) row['loan_payment_of_id'] = null;
       // An account that wasn't restored: skip rather than move the row to Cash.
       if (r['card_id'] != null && (row['card_id'] = _map('cards', r['card_id'])) == null) continue;
       if (r['to_card_id'] != null && (row['to_card_id'] = _map('cards', r['to_card_id'])) == null) continue;
@@ -463,9 +483,13 @@ class _BackupMerge {
       final id = await txn.insert('transactions', row);
       _put('transactions', r['id'], id);
       if (r['fee_of_id'] != null) fees[id] = r['fee_of_id'];
+      if (r['loan_payment_of_id'] != null) loanPayments[id] = r['loan_payment_of_id'];
     }
     for (final e in fees.entries) {
       await txn.update('transactions', {'fee_of_id': _map('transactions', e.value)}, where: 'id = ?', whereArgs: [e.key]);
+    }
+    for (final e in loanPayments.entries) {
+      await txn.update('transactions', {'loan_payment_of_id': _map('transactions', e.value)}, where: 'id = ?', whereArgs: [e.key]);
     }
   }
 }

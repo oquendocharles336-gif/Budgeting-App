@@ -62,6 +62,7 @@ class ThemeTokens {
     required this.warning,
     required this.danger,
     required this.scrim,
+    required this.glow,
   });
 
   final Brightness brightness;
@@ -97,6 +98,10 @@ class ThemeTokens {
   /// Behind dialogs and sheets: dims everything else so there is one focus.
   final Color scrim;
 
+  /// The 30% hue as light, for the glass background's soft glow and the
+  /// glass edges (electric blue in Midnight dark). Never used for text.
+  final Color glow;
+
   bool get isDark => brightness == Brightness.dark;
 }
 
@@ -120,12 +125,15 @@ class AppPalette {
 class AppPalettes {
   AppPalettes._();
 
-  // Dark mode of the default theme: a calm midnight-navy background,
-  // graphite cards one step lighter (so cards read as raised, not as a
-  // second loud color), and a warm sunset orange as the only bright color.
+  // Dark mode of the default theme, 60/30/10: midnight black background,
+  // electric-blue glass cards and glow (one step lighter, so cards read as
+  // raised), and a warm sunset orange as the only bright color.
   static const midnightBlack = Color(0xFF0B0F17);
-  static const graphite = Color(0xFF161C27);
-  static const graphiteHigh = Color(0xFF212938);
+  static const electricNavy = Color(0xFF101C38);
+  static const electricNavyHigh = Color(0xFF18295A);
+
+  /// The 30% color's light: background glow and glass edges.
+  static const electricBlue = Color(0xFF3B82F6);
 
   /// The palette's id and picker swatch (kept so saved settings still match).
   static const sunsetOrange = Color(0xFFFF6B35);
@@ -143,11 +151,12 @@ class AppPalettes {
       main: midnightBlack,
       onMain: const Color(0xFFEEF1F6),
       onMainMuted: const Color(0xFFA3ACBD),
-      second: graphite,
-      secondHigh: graphiteHigh,
+      second: electricNavy,
+      secondHigh: electricNavyHigh,
       onSecond: const Color(0xFFF1F4F9),
       onSecondMuted: const Color(0xFFB8C0CF),
       accent: sunsetGlow,
+      glow: electricBlue,
     ),
     light: _finish(
       brightness: Brightness.light,
@@ -160,6 +169,7 @@ class AppPalettes {
       onSecondMuted: const Color(0xFF34436A),
       // Sunset orange, deepened so white button text passes AA.
       accent: const Color(0xFFC2410C),
+      glow: const Color(0xFF8FB3FF),
     ),
   );
 
@@ -183,6 +193,7 @@ class AppPalettes {
         onSecond: hsl(0.60, 0.14),
         onSecondMuted: hsl(0.25, 0.32),
         accent: seed,
+        glow: hsl(0.70, 0.80),
       ),
       // Dark: low-saturation tints so the accent is the only loud color,
       // with clear steps between background, cards and raised parts.
@@ -196,6 +207,7 @@ class AppPalettes {
         onSecond: hsl(0.30, 0.94),
         onSecondMuted: hsl(0.18, 0.78),
         accent: _bright(seed),
+        glow: hsl(0.60, 0.45),
       ),
     );
   }
@@ -216,6 +228,7 @@ class AppPalettes {
     required Color onSecond,
     required Color onSecondMuted,
     required Color accent,
+    required Color glow,
   }) {
     final dark = brightness == Brightness.dark;
     // The accent fills buttons: it needs AA for its label, and must stand
@@ -243,10 +256,12 @@ class AppPalettes {
       onAccent: onA,
       accentOnSecond: _ensureAll(a, [second, secondHigh]),
       outline: Color.alphaBlend(onMain.withValues(alpha: 0.16), main),
-      success: Contrast.ensure(success, second),
-      warning: Contrast.ensure(warning, second),
-      danger: Contrast.ensure(danger, second),
+      // Checked on secondHigh too: on glass, cards blend with the glow.
+      success: _ensureAll(success, [second, secondHigh]),
+      warning: _ensureAll(warning, [second, secondHigh]),
+      danger: _ensureAll(danger, [second, secondHigh]),
       scrim: Colors.black.withValues(alpha: dark ? 0.66 : 0.5),
+      glow: glow,
     );
   }
 

@@ -27,9 +27,9 @@ import '../auth/sign_up_screen.dart';
 import '../cards/cards_screen.dart';
 import '../business/business_shell.dart';
 import '../debts/debts_screen.dart';
+import '../import/import_hub_screen.dart';
 import '../legal/legal_document_screen.dart';
 import '../loans/loans_screen.dart';
-import '../pay_later/pay_later_screen.dart';
 import 'categories_screen.dart';
 import 'backup_screen.dart';
 import 'change_password_screen.dart';
@@ -85,23 +85,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// The last "Check now" result, shown under the button.
+  String? _updateLine;
+
   Future<void> _checkNow() async {
+    if (_checking) return;
     final updates = ref.read(updateServiceProvider);
     setState(() => _checking = true);
-    try {
-      final check = await updates.checkNow();
-      if (!mounted) return;
-      if (check.urgency == UpdateUrgency.none) {
-        showSnack(context, 'You have the latest version (${check.installed.version}).');
-      } else {
-        await showUpdateSheet(context, check: check, onSkip: updates.skip);
-      }
-    } on FormatException catch (e) {
-      if (mounted) showSnack(context, 'The version file has a problem: ${e.message}', error: true);
-    } catch (e) {
-      if (mounted) showSnack(context, 'Could not check for updates: $e', error: true);
-    } finally {
-      if (mounted) setState(() => _checking = false);
+    final check = await updates.checkNow(); // never throws
+    if (!mounted) return;
+    setState(() {
+      _checking = false;
+      _updateLine = switch (check.status) {
+        UpdateStatus.upToDate => 'Up to date · ${check.installed?.version ?? ''}',
+        UpdateStatus.available => 'Version ${check.release!.version} is available',
+        UpdateStatus.error => check.errorMessage,
+      };
+    });
+    if (check.status == UpdateStatus.available) {
+      await showUpdateSheet(context, check: check, onSkip: updates.skip);
+    } else {
+      await showUpdateResultDialog(context, check, onRetry: _checkNow);
     }
   }
 
@@ -207,12 +211,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onTap: () => _push(const DebtsScreen()),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.schedule_rounded),
-                  title: const Text('Pay Later'),
-                  subtitle: const Text('Bought now, paid later'),
-                  onTap: () => _push(const PayLaterScreen()),
-                ),
-                ListTile(
                   leading: const Icon(Icons.request_quote_rounded),
                   title: const Text('Loans'),
                   subtitle: const Text('Transactions in the "Loan" category'),
@@ -296,6 +294,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
+                  leading: const Icon(Icons.file_download_rounded),
+                  title: const Text('Import transactions'),
+                  subtitle: const Text('Card statement (CSV) or bank text messages'),
+                  onTap: () => _push(const ImportHubScreen()),
+                ),
+                ListTile(
                   leading: const Icon(Icons.table_view_rounded),
                   title: const Text('Export transactions (CSV)'),
                   subtitle: const Text('Opens in Excel or Google Sheets'),
@@ -314,6 +318,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onTap: _loadSample,
                 ),
                 ListTile(
+                  leading: Icon(Icons.history_toggle_off_rounded, color: Theme.of(context).colorScheme.error),
+                  title: Text('Clear history', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  subtitle: const Text('Remove all transactions and activity. Balances, budgets and debts stay'),
+                  onTap: _clearHistory,
+                ),
+                ListTile(
                   leading: Icon(Icons.delete_forever_rounded, color: Theme.of(context).colorScheme.error),
                   title: Text('Delete all my data', style: TextStyle(color: Theme.of(context).colorScheme.error)),
                   subtitle: const Text('Personal and business data, and saved photos'),
@@ -330,27 +340,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   secondary: const Icon(Icons.system_update_rounded),
                   title: const Text('Check for updates'),
                   subtitle: Text(
-                    ref.read(updateServiceProvider).configured
-                        ? 'Once a day, the app downloads a small version file to see if a newer version exists. '
-                        'Nothing about you or your data is sent.'
-                        : 'Not set up in this build (no update address).',
+                    'Once a day, the app reads the latest release of ${ref.read(updateServiceProvider).repository} on GitHub. '
+                    'Nothing about you or your data is sent.',
                   ),
-                  value: _updatesOn && ref.read(updateServiceProvider).configured,
-                  onChanged: ref.read(updateServiceProvider).configured
-                      ? (on) async {
+                  value: _updatesOn,
+                  onChanged: (on) async {
                     setState(() => _updatesOn = on);
                     await ref.read(updateServiceProvider).setEnabled(on);
-                  }
-                      : null,
+                  },
                 ),
                 ListTile(
                   leading: const Icon(Icons.refresh_rounded),
                   title: const Text('Check now'),
-                  subtitle: Text(_installedVersion == null ? 'Installed version' : 'Installed: $_installedVersion'),
+                  subtitle: Text(_updateLine ?? (_installedVersion == null ? 'Installed version' : 'Installed: $_installedVersion')),
                   trailing: _checking
                       ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
                       : null,
-                  enabled: !_checking && ref.read(updateServiceProvider).configured,
+                  enabled: !_checking,
                   onTap: _checkNow,
                 ),
                 ListTile(
@@ -585,11 +591,31 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _clearHistory() async {
+    final ok = await confirm(
+      context,
+      title: 'Clear history?',
+      message: 'Are you sure you want to clear all transactions/activity? This can\'t be undone.\n\n'
+          'Your account balances, budgets, debts, cards and business records stay as they are.',
+      confirmLabel: 'Clear history',
+    );
+    if (!ok) return;
+    try {
+      await ref.read(backupServiceProvider).clearHistory();
+    } catch (e) {
+      if (mounted) showSnack(context, 'Could not clear history: $e', error: true);
+      return;
+    }
+    // Home, Activity, Budget, Insights, Wallets and Loans all reload.
+    ref.refreshData();
+    if (mounted) showSnack(context, 'History cleared');
+  }
+
   Future<void> _deleteAll() async {
     final ok = await confirm(
       context,
       title: 'Delete all my data?',
-      message: 'This permanently removes every card, transaction, budget, debt, Pay Later item and custom category, '
+      message: 'This permanently removes every card, transaction, budget, debt and custom category, '
           'plus all business data (capital, stock history, inventory, recipes, products, orders), '
           'the photos you added and their encryption key. '
           'Your password, theme and currency are kept. It cannot be undone.',

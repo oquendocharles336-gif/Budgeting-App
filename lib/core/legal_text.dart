@@ -25,13 +25,13 @@ Effective date: $effectiveDate
 Pitaka is an offline budgeting app. All of your data is stored only on this device in a local database. The app has no online accounts, no analytics, no ads, and no server that receives your data. Its only internet use is the optional update check described below. The password you create is a local login that encrypts your data on this phone. Your data is never uploaded or sent to us or to anyone else.
 
 2. What the app stores
-On this device only: the cards you add (a nickname, the last 4 digits, card type and color), your transactions, categories, keyword rules, debts and payments, Pay Later purchases, budgets, SMS patterns, and app settings. If you use the business side, also: business capital entries, inventory items, products, and orders (including the buyer names you type). The app never asks for or stores full card numbers, CVV codes, bank passwords or PINs to your bank.
+On this device only: the cards you add (a nickname, the last 4 digits, card type and color), your transactions, categories, keyword rules, debts and payments, budgets, SMS patterns, and app settings. If you use the business side, also: business capital entries, inventory items, products, and orders (including the buyer names you type). The app never asks for or stores full card numbers, CVV codes, bank passwords or PINs to your bank.
 
 3. SMS access (Android, optional)
 SMS access is off by default. If you turn on "Import from SMS" and grant permission, the app reads messages in your inbox on the device to find bank and card transaction alerts using the patterns shown in Settings. Messages are processed only on your phone. They are not uploaded, stored as a copy, or shared. Only the transactions you review and approve are saved. Messages that look like one-time passwords (OTPs) are skipped. You can revoke the permission at any time in your phone's settings.
 
 4. Notifications
-Budget alerts, debt reminders and Pay Later reminders are local notifications created by the app on your phone. No push service is used.
+Budget alerts and debt reminders are local notifications created by the app on your phone. No push service is used.
 
 4a. Photos (optional)
 You can add a photo to an inventory item or product, from the camera or your gallery. The app opens your phone's own camera or photo picker; on Android it does not ask for camera or storage permission itself. Only the photo you choose is copied, made smaller, encrypted (AES-256-GCM) and saved in the app's private folder on this phone. The photo key is kept in Android's secure key storage (Android Keystore), never in the database or plain app settings. The picker's temporary unencrypted copy is deleted right after encryption, and photos are decrypted only in memory to show them. Photo location data is not kept. Removing a photo, deleting the item, or using "Delete all my data" deletes the file; "Delete all my data" also deletes the photo key. If Android closes the app while the camera is open, the form you were filling in is kept on this phone (in the encrypted database) so the photo can be attached when you return.

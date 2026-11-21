@@ -10,6 +10,7 @@ import '../providers/app_state_providers.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_theme.dart';
 import '../theme/category_icons.dart';
+import '../theme/glass.dart';
 import 'motion/skeleton.dart';
 
 extension AsyncDataOrNull<T> on AsyncValue<T> {
@@ -134,7 +135,8 @@ class SectionHeader extends StatelessWidget {
       );
 }
 
-/// Rounded surface used for most content blocks.
+/// Rounded frosted-glass surface used for most content blocks (see
+/// [GlassSurface]).
 class AppCard extends StatelessWidget {
   const AppCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap});
   final Widget child;
@@ -142,10 +144,7 @@ class AppCard extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Card(
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(onTap: onTap, child: Padding(padding: padding, child: child)),
-      );
+  Widget build(BuildContext context) => GlassSurface(padding: padding, onTap: onTap, blur: Glass.blurCards, child: child);
 }
 
 /// Formats centavos with the user's currency.

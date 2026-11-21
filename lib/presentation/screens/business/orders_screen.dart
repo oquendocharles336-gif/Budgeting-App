@@ -18,7 +18,6 @@ import 'order_form_screen.dart';
 BadgeTone statusTone(OrderStatus s) => switch (s) {
       OrderStatus.complete || OrderStatus.paid => BadgeTone.ok,
       OrderStatus.delivered => BadgeTone.accent,
-      OrderStatus.deliveredNotPaid => BadgeTone.warning,
     };
 
 class OrdersScreen extends ConsumerStatefulWidget {

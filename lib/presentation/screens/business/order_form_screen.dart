@@ -145,8 +145,9 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
     final applied = pay?.applied ?? 0;
     final paidAfter = _locked ? _alreadyPaid : (_alreadyPaid + applied).clamp(0, _total).toInt();
     final owesAfter = _total - paidAfter;
-    // If the user didn't pick a status: paid in full = Complete, else Delivered / Not Paid.
-    final status = _status ?? (owesAfter <= 0 ? OrderStatus.complete : OrderStatus.deliveredNotPaid);
+    // If the user didn't pick a status: paid in full = Complete, else Delivered
+    // (what is still owed shows on the order from the amounts).
+    final status = _status ?? (owesAfter <= 0 ? OrderStatus.complete : OrderStatus.delivered);
     if (status.claimsPaid && owesAfter > 0) {
       showSnack(
         context,
@@ -438,7 +439,7 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    'Not chosen: set to Complete when paid in full, otherwise Delivered / Not Paid.',
+                    'Not chosen: set to Complete when paid in full, otherwise Delivered.',
                     style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                   ),
                 ),

@@ -4,10 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/dates.dart';
 import '../../domain/services/photo_service.dart';
+import '../../domain/services/update_service.dart';
 import '../providers/core_providers.dart';
 import '../providers/data_providers.dart';
+import '../theme/glass.dart';
 import '../widgets/motion/animated_icons.dart';
 import '../widgets/motion/cascade.dart';
+import '../widgets/motion/fade_indexed_stack.dart';
 import '../widgets/update_sheets.dart';
 import 'budget/budget_screen.dart';
 import 'business/inventory_screen.dart';
@@ -63,15 +66,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     await _checkForUpdate();
   }
 
+  /// Shown once per new version: the installed version is saved as seen
+  /// before the sheet opens, so it never comes back for the same version
+  /// (and never on a fresh install).
   Future<void> _showWhatsNew() async {
     try {
       final updates = ref.read(updateServiceProvider);
       final hasData = (await ref.read(transactionRepositoryProvider).recent(limit: 1)).isNotEmpty ||
           (await ref.read(cardRepositoryProvider).all()).isNotEmpty;
-      final entries = await updates.pendingWhatsNew(hasExistingData: hasData);
+      final entries = await updates.takeWhatsNew(hasExistingData: hasData);
       if (entries.isEmpty || !mounted) return;
       await showWhatsNewSheet(context, entries);
-      await updates.markWhatsNewSeen((await updates.installed()).build);
     } catch (e) {
       debugPrint('What\'s new failed: $e');
     }
@@ -79,8 +84,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   Future<void> _checkForUpdate() async {
     final updates = ref.read(updateServiceProvider);
-    final check = await updates.checkIfDue(); // never throws
-    if (check == null || !check.shouldPrompt || !mounted) return;
+    final check = await updates.checkIfDue(); // never throws; null when offline or not due
+    if (check == null || check.status != UpdateStatus.available || !check.shouldPrompt || !mounted) return;
     await showUpdateSheet(context, check: check, onSkip: updates.skip);
   }
 
@@ -212,7 +217,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         if (!didPop) _onBack();
       },
       child: Scaffold(
-        body: IndexedStack(
+        // Tabs stay mounted (state kept, no rebuild); the new one fades and
+        // slides in (300 ms, ease-out).
+        body: FadeIndexedStack(
           index: _index,
           children: [
             for (var i = 0; i < pages.length; i++)
@@ -232,34 +239,38 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           notchMargin: 8,
           height: 68,
           padding: EdgeInsets.zero,
-          child: Row(
-            children: [
-              _NavItem(
-                icon: Icons.home_rounded,
-                label: 'Home',
-                selected: _index == HomeShell.home,
-                onTap: () => _go(HomeShell.home),
-              ),
-              _NavItem(
-                icon: Icons.receipt_long_rounded,
-                label: 'Activity',
-                selected: _index == HomeShell.activity,
-                onTap: () => _go(HomeShell.activity),
-              ),
-              const SizedBox(width: 72),
-              _NavItem(
-                icon: Icons.pie_chart_rounded,
-                label: 'Budget',
-                selected: _index == HomeShell.budget,
-                onTap: () => _go(HomeShell.budget),
-              ),
-              _NavItem(
-                icon: Icons.account_balance_wallet_rounded,
-                label: 'Wallets',
-                selected: _index == HomeShell.wallets,
-                onTap: () => _go(HomeShell.wallets),
-              ),
-            ],
+          // Clips the frosted bar to the notched shape.
+          clipBehavior: Clip.antiAlias,
+          child: GlassBar(
+            child: Row(
+              children: [
+                _NavItem(
+                  icon: Icons.home_rounded,
+                  label: 'Home',
+                  selected: _index == HomeShell.home,
+                  onTap: () => _go(HomeShell.home),
+                ),
+                _NavItem(
+                  icon: Icons.receipt_long_rounded,
+                  label: 'Activity',
+                  selected: _index == HomeShell.activity,
+                  onTap: () => _go(HomeShell.activity),
+                ),
+                const SizedBox(width: 72),
+                _NavItem(
+                  icon: Icons.pie_chart_rounded,
+                  label: 'Budget',
+                  selected: _index == HomeShell.budget,
+                  onTap: () => _go(HomeShell.budget),
+                ),
+                _NavItem(
+                  icon: Icons.account_balance_wallet_rounded,
+                  label: 'Wallets',
+                  selected: _index == HomeShell.wallets,
+                  onTap: () => _go(HomeShell.wallets),
+                ),
+              ],
+            ),
           ),
         ),
       ),

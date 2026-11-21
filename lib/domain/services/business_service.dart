@@ -291,7 +291,7 @@ class BusinessService {
 
   /// Once paid in full: delivered orders become Complete, others Paid.
   static OrderStatus statusAfterFullPayment(OrderStatus s) => switch (s) {
-        OrderStatus.delivered || OrderStatus.deliveredNotPaid || OrderStatus.complete => OrderStatus.complete,
+        OrderStatus.delivered || OrderStatus.complete => OrderStatus.complete,
         OrderStatus.paid => OrderStatus.paid,
       };
 

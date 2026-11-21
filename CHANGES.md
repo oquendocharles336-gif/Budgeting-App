@@ -1,3 +1,30 @@
+# Update 6 (1.2.0): Pay Later removed, GitHub update check, glass theme
+
+`flutter analyze` and `flutter test` were **not** run (no Flutter SDK where this was made). Run first:
+
+```bash
+flutter pub get && flutter analyze && flutter test
+```
+
+- No new packages. `pubspec.yaml` version is now `1.2.0+3`.
+- DB migration **v9**: unpaid Pay Later items become Debts (installment), the `pay_later` table is dropped,
+  `transactions.loan_paid_method` / `transactions.loan_payment_of_id` are added, and order status
+  `delivered_unpaid` becomes `delivered`. Every other row is kept as is.
+- Update check: set `githubRepository` in `lib/core/app_update_config.dart` (see docs/RELEASING.md).
+  `docs/version.json` is no longer read by the app (kept only for reference).
+
+## Manual tests
+1. **Upgrade with Pay Later data:** unpaid items appear in Debts ("Moved from Pay Later"); paid ones stay as expenses.
+2. **What's new:** update from 1.1.0 → shows once; reopen → not again. Fresh install → never.
+3. **Check now:** up to date / update available (Download opens the APK) / airplane mode → "No connection".
+4. **Budget:** add an expense paid with GCash → Home "Left to spend" drops at once, GCash balance drops; edit the amount and delete it → both follow.
+5. **Loans:** Paid → Cash or an e-wallet → a "Loan payment" expense appears, budget and balance drop, history shows "Paid … · Cash". Mark unpaid → it's undone.
+6. **Recent transactions:** tap → floats with details; tap elsewhere → closes; swipe right → Edit / Delete (asks first).
+7. **Clear history:** Settings → Clear history → confirm → Activity empty, balances unchanged.
+8. **Business:** "Personal" is top left (no back arrow); statuses: Complete, Paid, Delivered.
+
+---
+
 # Update 5: "Update available" and "What's new"
 
 - New packages: `package_info_plus ^10.2.2`, `url_launcher ^6.3.3`. Run `flutter pub get`.

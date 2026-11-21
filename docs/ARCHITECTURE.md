@@ -92,7 +92,7 @@ Migrations live in `lib/data/db/migrations.dart` as numbered steps. v1 = core sc
 
 ## Security & privacy
 
-- One network request only: the optional update check (`data/sources/release_feed.dart`, HTTPS GET of a public version.json, no user data). That is the only reason for the `INTERNET` permission. Android auto-backup is off (`allowBackup="false"`).
+- One network request only: the optional update check (`data/sources/release_feed.dart`, HTTPS GET of the public GitHub Releases API for the latest release, no user data, no token). That is the only reason for the `INTERNET` permission. Android auto-backup is off (`allowBackup="false"`).
 - PIN: salted SHA-256 in `settings`, never the PIN itself. Biometrics via `local_auth` (OS-handled).
 - The lock screen is drawn above the navigator, so it covers any open screen. It re-locks after 30 s in the background.
 - SMS: read on device through a small Java `MethodChannel` (no third-party SMS plugin). OTP-looking messages are skipped.
@@ -171,7 +171,7 @@ Migration v7 only adds columns and tables (no rebuilds), so existing rows are un
 - `transactions.loan_paid_at`: the Loans section's "Paid" state for rows in the "Loan" category (`CategoryRole.loanRecord`). Marking paid changes only that column: no new expense, so nothing is counted twice. Undo resets it.
 - `pay_later`: purchases paid later. Unpaid items are not spending. `PayLaterRepository.markPaid` re-reads the row inside the SQLite transaction and creates the expense only if it is still unpaid (plus a unique index on `expense_tx_id`). Reminders reuse `DebtReminders.scheduleTime` (2 days before, 9:00 AM) through `PayLaterReminderScheduler`, implemented by `NotificationService` (ids 10,000,000 + item id).
 - Business: `capital_entries`, `inventory_items`, `products`, `orders`, `order_items`. Order items copy the product's name and price. `orders.budget_tx_id` links a sale to the income "Add to Budget" created; `OrderRepository.addToBudget` picks eligible orders (fully paid, not yet added) inside the transaction and flags them only where the flag is still empty.
-- `data/repositories/linked_records.dart`: when transactions are deleted, removes their fee rows (undoing balances), their capital entries, unlinks Pay Later expenses and clears the "added to budget" flag on orders.
+- `data/repositories/linked_records.dart`: when transactions are deleted, removes their fee rows and loan payments (undoing balances), their capital entries, marks a loan unpaid when its payment is deleted, and clears the "added to budget" flag on orders.
 - New built-in categories (`DefaultData.ensureV7Categories`): "Fees", "Loan" and the "Business / sales" income category (an existing one with the same name is tagged, not duplicated).
 - Photos: `data/sources/photo_store.dart` uses `image_picker` (system camera and photo picker, so no CAMERA or storage permission on Android), max 1080 px, JPEG quality 70, saved under `<app documents>/business_photos`. `PhotoService.pick` runs inside `LockGuard.run`. Photos are not in backups; "Delete all my data" deletes the folder.
 - Sales analytics: `BusinessDataPrep.clean` applies the existing data-prep rules (and `PrepReport`) to orders before `SalesAnalytics`.
@@ -190,8 +190,18 @@ Migration v7 only adds columns and tables (no rebuilds), so existing rows are un
 
 ## App updates (APK shared directly)
 
-- `core/app_update_config.dart`: the version.json URL (or `--dart-define=PITAKA_UPDATE_URL=...`). Unset = no request is ever made.
+- `core/app_update_config.dart`: `githubRepository` ("OWNER/REPO", or `--dart-define=PITAKA_GITHUB_REPO=...`); the app reads `https://api.github.com/repos/OWNER/REPO/releases/latest`.
 - `ReleaseFeed` downloads it (HTTPS only, 10 s timeout, 64 KB cap, no cookies or ids). `ReleaseInfo.parse` validates every field; a bad file is ignored.
 - `UpdatePolicy`: compare build numbers (pubspec `+N` = Android versionCode); `minSupportedBuild` makes it "required" (no Skip, but the app keeps working). Skipped builds aren't shown again. Automatic check at most once per 24 h, only if Settings > "Check for updates" is on.
 - `core/changelog.dart`: built-in notes. After an update, `HomeShell` shows "What's new" once for every build newer than `whats_new_seen_build`.
 - The download opens in the browser (`url_launcher`). Android only installs it over the current app if it is signed with the same key, so users keep their data and a tampered APK can't replace the app.
+
+## v9: Pay Later removed, loan payments, glass theme
+
+- The `pay_later` table is dropped; unpaid items were moved to `debts` (installment, "Moved from Pay Later"). Old reminders (ids from 10,000,000) are cancelled at start-up (`NotificationService.cancelRetiredReminders`). A `pay_later` table inside an old backup is ignored.
+- Loans: "Paid" asks Cash or an e-wallet. `TransactionRepository.markLoanPaid` saves a payment expense (`loan_payment_of_id` = the loan) on that account and sets `loan_paid_at` / `loan_paid_method`, in one SQLite transaction, so the money leaves the account and counts in the budget. `markLoanUnpaid` deletes it again. `loans()` leaves payments out.
+- Orders: status `delivered_unpaid` is mapped to `delivered` (migration, restore, and `OrderStatus.fromDb`).
+- Budget: `monthSummaryProvider` lays transactions still being saved over the database rows, so "Left to spend" changes the moment one is added, edited or deleted; `spentByAccount` feeds the "Paid with" line on Home.
+- "Clear history" (`BackupService.clearHistory`) deletes every transaction without moving balances; capital history and "added to budget" orders are kept.
+- Updates: `GitHubReleaseFeed` + `ReleaseInfo.parseGitHub` + `AppVersion` (SemVer, leading "v" ignored). `UpdateService.checkNow` never throws and returns up to date / available / error. "What's new" compares the installed version name with `whats_new_seen_version`, saved before the sheet opens.
+- Glass theme: `presentation/theme/glass.dart` (`Glass` constants, `GlassBackground`, `GlassSurface`, `GlassBar`, `GlassPageTransitionsBuilder`, which gives every page route the gradient background so Scaffolds are transparent). `AppCard` is a `GlassSurface`. Tabs switch with `FadeIndexedStack` (fade + slight slide, 300 ms, state kept).

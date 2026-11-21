@@ -340,8 +340,7 @@ enum PaymentMethod {
 enum OrderStatus {
   complete('complete', 'Complete'),
   paid('paid', 'Paid'),
-  delivered('delivered', 'Delivered'),
-  deliveredNotPaid('delivered_unpaid', 'Delivered / Not Paid');
+  delivered('delivered', 'Delivered');
 
   const OrderStatus(this.dbValue, this.label);
   final String dbValue;
@@ -350,8 +349,11 @@ enum OrderStatus {
   /// Statuses that say the buyer has paid.
   bool get claimsPaid => this == OrderStatus.complete || this == OrderStatus.paid;
 
-  static OrderStatus fromDb(String? v) =>
-      OrderStatus.values.firstWhere((s) => s.dbValue == v, orElse: () => OrderStatus.complete);
+  /// 'delivered_unpaid' (removed in v9; may still be in an old backup)
+  /// reads as Delivered.
+  static OrderStatus fromDb(String? v) => v == 'delivered_unpaid'
+      ? OrderStatus.delivered
+      : OrderStatus.values.firstWhere((s) => s.dbValue == v, orElse: () => OrderStatus.complete);
 }
 
 class OrderItem {

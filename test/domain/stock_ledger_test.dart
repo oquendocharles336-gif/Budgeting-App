@@ -123,7 +123,7 @@ void main() {
   StockMovement restock(int item, double qty) =>
       StockMovement(itemId: item, change: qty, reason: StockReason.restock, date: now, createdAt: now);
 
-  BusinessOrder order({int? id, int cakes = 2, int waters = 0, OrderStatus status = OrderStatus.deliveredNotPaid}) => BusinessOrder(
+  BusinessOrder order({int? id, int cakes = 2, int waters = 0, OrderStatus status = OrderStatus.delivered}) => BusinessOrder(
         id: id,
         buyer: 'Ana',
         orderDate: now,

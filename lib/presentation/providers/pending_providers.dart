@@ -1,9 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/business.dart';
-import '../../data/models/pay_later.dart';
 
-/// Optimistic UI for Pay Later and the business screens: a save shows up
+/// Optimistic UI for the business screens: a save shows up
 /// at once (keyed by its operation key) and is dropped when the database
 /// write finishes (the list then shows the saved row) or fails (rolled back).
 class PendingMap<T> extends Notifier<Map<String, T>> {
@@ -18,8 +17,6 @@ class PendingMap<T> extends Notifier<Map<String, T>> {
   }
 }
 
-final pendingPayLaterProvider =
-    NotifierProvider<PendingMap<PayLaterItem>, Map<String, PayLaterItem>>(PendingMap<PayLaterItem>.new);
 final pendingOrdersProvider =
     NotifierProvider<PendingMap<BusinessOrder>, Map<String, BusinessOrder>>(PendingMap<BusinessOrder>.new);
 final pendingInventoryProvider =

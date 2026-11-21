@@ -4,78 +4,107 @@ import 'package:budgeting_app/domain/update/app_update.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  String feed({
-    Object? version = '1.2.0',
-    Object? build = 3,
-    Object? min,
-    Object? url = 'https://github.com/me/r/releases/download/v1.2.0/pitaka.apk',
-    Object? notes,
-    Object? sha,
+  String release({
+    Object? tag = 'v1.2.0',
+    Object? page = 'https://github.com/me/r/releases/tag/v1.2.0',
+    List<Map<String, Object?>>? assets,
+    Object? body = '## Changes\n- Faster charts\n*   Fixed   a **crash**  \n\n- [Link](https://x.y) text',
+    bool draft = false,
+    bool pre = false,
   }) =>
       jsonEncode({
-        'latestVersion': version,
-        'latestBuild': build,
-        'minSupportedBuild': ?min,
-        'apkUrl': url,
-        'notes': notes ?? ['Faster charts', '  Fixed   a crash  '],
-        'sha256': ?sha,
-        'releasedAt': '2026-12-01',
+        'tag_name': tag,
+        'name': 'Pitaka 1.2.0',
+        'html_url': page,
+        'draft': draft,
+        'prerelease': pre,
+        'published_at': '2026-12-01T08:00:00Z',
+        'body': body,
+        'assets': assets ??
+            [
+              {'name': 'notes.txt', 'browser_download_url': 'https://github.com/me/r/releases/download/v1.2.0/notes.txt'},
+              {'name': 'pitaka-1.2.0.apk', 'browser_download_url': 'https://github.com/me/r/releases/download/v1.2.0/pitaka-1.2.0.apk'},
+            ],
       });
 
-  group('version file', () {
-    test('reads a good file and cleans the notes', () {
-      final r = ReleaseInfo.parse(feed());
-      expect(r.version, '1.2.0');
-      expect(r.build, 3);
-      expect(r.apkUrl.host, 'github.com');
-      expect(r.notes, ['Faster charts', 'Fixed a crash']);
-      expect(r.releasedAt, DateTime(2026, 12, 1));
+  AppVersion v(String s) => AppVersion.tryParse(s)!;
+
+  group('semantic versions', () {
+    test('a leading v is ignored', () {
+      expect(v('v1.2.0'), v('1.2.0'));
+      expect(v('V2'), v('2.0.0'));
+    });
+
+    test('compared part by part, as numbers', () {
+      expect(v('1.10.0') > v('1.9.9'), isTrue);
+      expect(v('2.0.0') > v('1.99.99'), isTrue);
+      expect(v('1.2.1') > v('1.2.0'), isTrue);
+    });
+
+    test('pre-releases are older than the release; build metadata is ignored', () {
+      expect(v('1.2.0-beta.2') < v('1.2.0'), isTrue);
+      expect(v('1.2.0-beta.2') > v('1.2.0-beta.1'), isTrue);
+      expect(v('1.2.0-alpha') < v('1.2.0-beta'), isTrue);
+      expect(v('1.2.0+7'), v('1.2.0+3'));
+    });
+
+    test('rejects text that is not a version', () {
+      expect(AppVersion.tryParse('latest'), isNull);
+      expect(AppVersion.tryParse(''), isNull);
+      expect(AppVersion.tryParse(null), isNull);
+    });
+  });
+
+  group('GitHub release', () {
+    test('reads the tag, the APK asset and the notes', () {
+      final r = ReleaseInfo.parseGitHub(release());
+      expect(r.version, v('1.2.0'));
+      expect(r.tag, 'v1.2.0');
+      expect(r.isApk, isTrue);
+      expect(r.downloadUrl.path, endsWith('pitaka-1.2.0.apk'));
+      expect(r.notes, ['Changes', 'Faster charts', 'Fixed a crash', 'Link text']);
+      expect(r.releasedAt, DateTime.utc(2026, 12, 1, 8).toLocal());
+    });
+
+    test('no APK: the download link is the release page', () {
+      final r = ReleaseInfo.parseGitHub(release(assets: const []));
+      expect(r.isApk, isFalse);
+      expect(r.downloadUrl.toString(), 'https://github.com/me/r/releases/tag/v1.2.0');
     });
 
     test('rejects anything unexpected instead of showing it', () {
-      expect(() => ReleaseInfo.parse('not json'), throwsFormatException);
-      expect(() => ReleaseInfo.parse(feed(version: 'v1.2')), throwsFormatException);
-      expect(() => ReleaseInfo.parse(feed(build: 0)), throwsFormatException);
-      expect(() => ReleaseInfo.parse(feed(build: '3')), throwsFormatException);
-      expect(() => ReleaseInfo.parse(feed(url: 'http://insecure.example/app.apk')), throwsFormatException);
-      expect(() => ReleaseInfo.parse(feed(url: 'javascript:alert(1)')), throwsFormatException);
-      expect(() => ReleaseInfo.parse(feed(notes: 'one string')), throwsFormatException);
+      expect(() => ReleaseInfo.parseGitHub('not json'), throwsFormatException);
+      expect(() => ReleaseInfo.parseGitHub('[]'), throwsFormatException);
+      expect(() => ReleaseInfo.parseGitHub(release(tag: 'latest')), throwsFormatException);
+      expect(() => ReleaseInfo.parseGitHub(release(tag: null)), throwsFormatException);
+      expect(() => ReleaseInfo.parseGitHub(release(page: 'http://insecure.example')), throwsFormatException);
+      expect(() => ReleaseInfo.parseGitHub(release(draft: true)), throwsFormatException);
+      expect(() => ReleaseInfo.parseGitHub(release(pre: true)), throwsFormatException);
     });
 
     test('long notes are cut, and at most 30 are kept', () {
-      final r = ReleaseInfo.parse(feed(notes: [for (var i = 0; i < 40; i++) 'x' * 400]));
+      final r = ReleaseInfo.parseGitHub(release(body: List.filled(40, '- ${'x' * 400}').join('\n')));
       expect(r.notes, hasLength(ReleaseInfo.maxNotes));
       expect(r.notes.first.length, ReleaseInfo.maxNoteLength + 1);
-    });
-
-    test('a bad checksum is dropped, a good one kept', () {
-      expect(ReleaseInfo.parse(feed(sha: 'abc')).sha256, isNull);
-      expect(ReleaseInfo.parse(feed(sha: 'A' * 64)).sha256, 'a' * 64);
     });
   });
 
   group('when to prompt', () {
-    final release = ReleaseInfo.parse(feed(build: 3));
+    final r = ReleaseInfo.parseGitHub(release(tag: 'v1.2.0'));
 
-    test('newer build: optional update', () {
-      expect(UpdatePolicy.urgency(currentBuild: 2, release: release), UpdateUrgency.optional);
-      expect(UpdatePolicy.shouldPrompt(currentBuild: 2, release: release), isTrue);
+    test('newer release: update available', () {
+      expect(UpdatePolicy.isNewer(installed: '1.1.0', release: r), isTrue);
+      expect(UpdatePolicy.shouldPrompt(installed: '1.1.0', release: r), isTrue);
     });
 
-    test('same or newer installed: nothing', () {
-      expect(UpdatePolicy.urgency(currentBuild: 3, release: release), UpdateUrgency.none);
-      expect(UpdatePolicy.shouldPrompt(currentBuild: 4, release: release), isFalse);
+    test('same or newer installed: up to date', () {
+      expect(UpdatePolicy.isNewer(installed: '1.2.0', release: r), isFalse);
+      expect(UpdatePolicy.isNewer(installed: '1.3.0', release: r), isFalse);
     });
 
     test('a skipped version isn\'t shown again, a later one is', () {
-      expect(UpdatePolicy.shouldPrompt(currentBuild: 2, release: release, skippedBuild: 3), isFalse);
-      expect(UpdatePolicy.shouldPrompt(currentBuild: 2, release: release, skippedBuild: 2), isTrue);
-    });
-
-    test('below minSupportedBuild: required, even if skipped', () {
-      final r = ReleaseInfo.parse(feed(build: 5, min: 4));
-      expect(UpdatePolicy.urgency(currentBuild: 3, release: r), UpdateUrgency.required);
-      expect(UpdatePolicy.shouldPrompt(currentBuild: 3, release: r, skippedBuild: 5), isTrue);
+      expect(UpdatePolicy.shouldPrompt(installed: '1.1.0', release: r, skippedVersion: '1.2.0'), isFalse);
+      expect(UpdatePolicy.shouldPrompt(installed: '1.1.0', release: r, skippedVersion: '1.1.5'), isTrue);
     });
 
     test('automatic check at most once a day', () {
@@ -97,17 +126,22 @@ void main() {
     ];
 
     test('shows every version since the last one seen, newest first', () {
-      expect(WhatsNew.since(all, lastSeenBuild: 1, currentBuild: 3).map((e) => e.build), [3, 2]);
+      expect(WhatsNew.since(all, lastSeen: '1.0.0', current: '1.2.0').map((e) => e.version), ['1.2.0', '1.1.0']);
     });
 
-    test('nothing on a fresh install or when already seen', () {
-      expect(WhatsNew.since(all, lastSeenBuild: null, currentBuild: 3), isEmpty);
-      expect(WhatsNew.since(all, lastSeenBuild: 3, currentBuild: 3), isEmpty);
+    test('only when the installed version is higher than the one seen', () {
+      expect(WhatsNew.shouldShow(lastSeen: '1.1.0', current: '1.2.0'), isTrue);
+      expect(WhatsNew.shouldShow(lastSeen: '1.2.0', current: '1.2.0'), isFalse);
+      expect(WhatsNew.shouldShow(lastSeen: '1.3.0', current: '1.2.0'), isFalse);
     });
 
-    test('versions compare part by part', () {
-      expect(AppVersion.tryParse('1.10.0')!.compareTo(AppVersion.tryParse('1.9.9')!), greaterThan(0));
-      expect(AppVersion.tryParse('1.2'), isNull);
+    test('nothing on a fresh install', () {
+      expect(WhatsNew.since(all, lastSeen: null, current: '1.2.0'), isEmpty);
+    });
+
+    test('old build-number records map to their version', () {
+      expect(WhatsNew.versionForBuild(all, 2), '1.1.0');
+      expect(WhatsNew.versionForBuild(all, 9), isNull);
     });
   });
 }

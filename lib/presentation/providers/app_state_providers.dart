@@ -8,7 +8,7 @@ import 'core_providers.dart';
 
 /// Bump this when the privacy policy or terms change in a way users must
 /// accept again.
-const currentTermsVersion = '5'; // 2: password + encryption; 3: Pay Later, business side, photos; 4: encrypted photos in backups; 5: optional update check (internet)
+const currentTermsVersion = '5'; // 2: password + encryption; 3: business side, photos; 4: encrypted photos in backups; 5: optional update check (internet)
 
 // -----------------------------------------------------------------------------
 // Theme
@@ -19,7 +19,7 @@ class ThemeSettings {
   final ThemeMode mode;
   final Color accent;
 
-  /// Midnight: midnight navy / graphite / sunset orange.
+  /// Midnight: midnight black / electric blue / sunset orange.
   static const defaultAccent = AppPalettes.sunsetOrange;
 
   ThemeSettings copyWith({ThemeMode? mode, Color? accent}) =>

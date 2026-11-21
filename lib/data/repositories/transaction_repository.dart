@@ -237,27 +237,74 @@ class TransactionRepository {
   }
 
   /// Transactions filed under the "Loan" category (or any category the user
-  /// named "Loan"): unpaid first, newest first.
+  /// named "Loan"): unpaid first, newest first. The payment expenses made
+  /// when a loan was marked paid are not loans themselves, so they're left out.
   Future<List<TransactionEntry>> loans() async {
     final rows = await _db.rawQuery('''
       SELECT t.* FROM transactions t
       JOIN categories c ON c.id = t.category_id
-      WHERE c.role = 'loanRecord' OR c.name = 'Loan' COLLATE NOCASE
+      WHERE (c.role = 'loanRecord' OR c.name = 'Loan' COLLATE NOCASE)
+        AND t.loan_payment_of_id IS NULL
       ORDER BY t.loan_paid_at IS NOT NULL, t.date DESC, t.id DESC
     ''');
     return rows.map(TransactionEntry.fromMap).toList();
   }
 
-  /// Marks a "Loan" row paid at [paidAt], or unpaid when null. Only this
-  /// column changes: no expense is added and no balance moves.
-  Future<void> setLoanPaid(int id, DateTime? paidAt) async {
-    await _db.update(
-      'transactions',
-      {'loan_paid_at': paidAt?.millisecondsSinceEpoch, 'updated_at': DateTime.now().millisecondsSinceEpoch},
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+  /// Every loan payment expense, by the loan it pays.
+  Future<Map<int, TransactionEntry>> loanPayments() async {
+    final rows = await _db.query('transactions', where: 'loan_payment_of_id IS NOT NULL', orderBy: 'id');
+    return {for (final r in rows) r['loan_payment_of_id'] as int: TransactionEntry.fromMap(r)};
   }
+
+  /// The payment expense saved when [loanId] was marked paid, if any.
+  Future<TransactionEntry?> loanPaymentOf(int loanId) async {
+    final rows = await _db.query('transactions', where: 'loan_payment_of_id = ?', whereArgs: [loanId], orderBy: 'id', limit: 1);
+    return rows.isEmpty ? null : TransactionEntry.fromMap(rows.first);
+  }
+
+  /// Marks a loan paid with [method], and saves [payment] (an expense on
+  /// the paying account) linked to it, in one SQLite transaction: the
+  /// account goes down and the payment counts in that month's budget.
+  /// Marking a loan that is already paid does nothing (double taps are safe).
+  /// Returns the payment's id, or null when nothing was written.
+  Future<int?> markLoanPaid(int loanId, {required LoanPayMethod method, required TransactionEntry payment}) =>
+      _db.transaction((txn) async {
+        final loan = await _byId(txn, loanId);
+        if (loan == null) throw StateError('This loan no longer exists');
+        if (loan.isLoanPaid) return null;
+        final linked = payment.copyWith(loanPaymentOfId: () => loanId);
+        final id = await txn.insert('transactions', linked.toMap()..remove('id'));
+        await AccountLedger.apply(txn, linked);
+        await txn.update(
+          'transactions',
+          {
+            'loan_paid_at': payment.date.millisecondsSinceEpoch,
+            'loan_paid_method': method.dbValue,
+            'updated_at': DateTime.now().millisecondsSinceEpoch,
+          },
+          where: 'id = ?',
+          whereArgs: [loanId],
+        );
+        return id;
+      });
+
+  /// Marks a loan unpaid: its payment expense is deleted and the money goes
+  /// back to the account it was paid from, atomically.
+  Future<void> markLoanUnpaid(int loanId) => _db.transaction((txn) async {
+        final rows = await txn.query('transactions', where: 'loan_payment_of_id = ?', whereArgs: [loanId]);
+        for (final row in rows) {
+          final payment = TransactionEntry.fromMap(row);
+          await LinkedRecords.beforeTransactionsDeleted(txn, [payment.id!]);
+          await AccountLedger.apply(txn, payment, sign: -1);
+          await txn.delete('transactions', where: 'id = ?', whereArgs: [payment.id]);
+        }
+        await txn.update(
+          'transactions',
+          {'loan_paid_at': null, 'loan_paid_method': null, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+          where: 'id = ?',
+          whereArgs: [loanId],
+        );
+      });
 
   /// The earliest day with spending to chart (Insights shows expenses only).
   Future<DateTime?> earliestExpenseDate() async {

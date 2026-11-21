@@ -11,3 +11,8 @@ flutter test
 ```bash
 flutter run --release
 ```
+
+Generate the  apk
+```bash
+flutter build apk --release
+```

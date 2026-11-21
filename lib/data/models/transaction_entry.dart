@@ -28,6 +28,24 @@ enum TransactionSourceType {
       .firstWhere((s) => s.dbValue == v, orElse: () => TransactionSourceType.manual);
 }
 
+/// How a loan was paid: from Cash or from an e-wallet. Stored in
+/// `transactions.loan_paid_method`.
+enum LoanPayMethod {
+  cash('cash', 'Cash'),
+  ewallet('ewallet', 'E-wallet');
+
+  const LoanPayMethod(this.dbValue, this.label);
+  final String dbValue;
+  final String label;
+
+  static LoanPayMethod? fromDb(String? v) {
+    for (final m in LoanPayMethod.values) {
+      if (m.dbValue == v) return m;
+    }
+    return null;
+  }
+}
+
 /// One saved transaction. Named `TransactionEntry` to avoid clashing with
 /// sqflite's `Transaction` class.
 class TransactionEntry {
@@ -51,6 +69,8 @@ class TransactionEntry {
     this.toCapital = false,
     this.fromCapital = false,
     this.loanPaidAt,
+    this.loanPaidMethod,
+    this.loanPaymentOfId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -99,6 +119,15 @@ class TransactionEntry {
 
   /// "Loan" transactions: when the user marked it paid (null = unpaid).
   final DateTime? loanPaidAt;
+
+  /// "Loan" transactions: how it was paid (null for loans marked paid
+  /// before the method was recorded, and for unpaid loans).
+  final LoanPayMethod? loanPaidMethod;
+
+  /// Set on the expense created when a loan was marked paid: the loan's
+  /// id. It counts in the budget like any expense, and is removed when the
+  /// loan is marked unpaid or deleted.
+  final int? loanPaymentOfId;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -109,6 +138,7 @@ class TransactionEntry {
   bool get isCapitalTransfer => isTransfer && (toCapital || fromCapital);
   bool get isFee => feeOfId != null;
   bool get isLoanPaid => loanPaidAt != null;
+  bool get isLoanPayment => loanPaymentOfId != null;
 
   /// Signed amount: negative for expenses, zero for transfers (net worth
   /// doesn't change when money moves between your own accounts).
@@ -138,6 +168,8 @@ class TransactionEntry {
     bool? toCapital,
     bool? fromCapital,
     DateTime? Function()? loanPaidAt,
+    LoanPayMethod? Function()? loanPaidMethod,
+    int? Function()? loanPaymentOfId,
     DateTime? updatedAt,
   }) =>
       TransactionEntry(
@@ -160,6 +192,8 @@ class TransactionEntry {
         toCapital: toCapital ?? this.toCapital,
         fromCapital: fromCapital ?? this.fromCapital,
         loanPaidAt: loanPaidAt != null ? loanPaidAt() : this.loanPaidAt,
+        loanPaidMethod: loanPaidMethod != null ? loanPaidMethod() : this.loanPaidMethod,
+        loanPaymentOfId: loanPaymentOfId != null ? loanPaymentOfId() : this.loanPaymentOfId,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -184,6 +218,8 @@ class TransactionEntry {
         'to_capital': toCapital ? 1 : 0,
         'from_capital': fromCapital ? 1 : 0,
         'loan_paid_at': loanPaidAt?.millisecondsSinceEpoch,
+        'loan_paid_method': loanPaidMethod?.dbValue,
+        'loan_payment_of_id': loanPaymentOfId,
         'created_at': createdAt.millisecondsSinceEpoch,
         'updated_at': updatedAt.millisecondsSinceEpoch,
       };
@@ -208,6 +244,8 @@ class TransactionEntry {
         toCapital: (m['to_capital'] as int? ?? 0) == 1,
         fromCapital: (m['from_capital'] as int? ?? 0) == 1,
         loanPaidAt: m['loan_paid_at'] == null ? null : DateTime.fromMillisecondsSinceEpoch(m['loan_paid_at'] as int),
+        loanPaidMethod: LoanPayMethod.fromDb(m['loan_paid_method'] as String?),
+        loanPaymentOfId: m['loan_payment_of_id'] as int?,
         createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
         updatedAt: DateTime.fromMillisecondsSinceEpoch(m['updated_at'] as int),
       );

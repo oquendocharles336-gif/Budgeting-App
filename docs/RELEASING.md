@@ -1,45 +1,53 @@
-# Releasing a new version (APK shared directly)
+# Releasing a new version (APK shared through GitHub Releases)
 
-Users see "Update available" (with your notes) from a small `version.json`
-you host, and "What's new" after they install the update.
+Users see "Update available" (with your release notes) from the latest
+release of your GitHub repository, and "What's new" once after they install
+the update.
 
 ## One-time setup
 
-1. Create a **public** GitHub repository, e.g. `pitaka-releases`.
-2. Put `docs/version.json` in it (root, branch `main`).
-3. Set the address in `lib/core/app_update_config.dart`:
-   `https://raw.githubusercontent.com/<your-name>/pitaka-releases/main/version.json`
-   (or build with `--dart-define=PITAKA_UPDATE_URL=<that address>`).
-4. **Keep your release signing key safe and always use the same one.** Android
+1. Open `lib/core/app_update_config.dart` and set `githubRepository` to
+   `"OWNER/REPO"` (the part after `github.com/` in your repository's address).
+   It is prefilled with `oquendocharles336-gif/Budgeting-App`.
+   Or build with `--dart-define=PITAKA_GITHUB_REPO=OWNER/REPO`.
+2. The repository must be **public**: the app reads
+   `https://api.github.com/repos/OWNER/REPO/releases/latest` without a token.
+3. **Keep your release signing key safe and always use the same one.** Android
    only installs an update over the app (keeping users' data) when it's signed
    with the same key. A different key means users must uninstall first and
    lose their data unless they made a backup.
 
 ## Every release
 
-1. `pubspec.yaml`: raise the version, e.g. `1.1.0+2` -> `1.2.0+3`.
+1. `pubspec.yaml`: raise the version, e.g. `1.2.0+3` -> `1.3.0+4`.
    The number after `+` must always go up.
 2. `lib/core/changelog.dart`: add an entry at the top with the same version
    and build number, and the notes users will see after updating.
 3. Build: `flutter build apk --release`
    (file: `build/app/outputs/flutter-apk/app-release.apk`).
-4. Optional checksum (PowerShell): `Get-FileHash app-release.apk -Algorithm SHA256`
-5. On GitHub: create a Release tagged `v1.2.0` and attach the APK
-   (rename it e.g. `pitaka-1.2.0.apk`).
-6. Edit `version.json` in the releases repo:
-   - `latestVersion`: "1.2.0", `latestBuild`: 3
-   - `apkUrl`: the release asset link (must start with https://)
-   - `notes`: the same notes as the changelog (max 30 lines, 300 characters each)
-   - `sha256`: the checksum from step 4 (64 hex characters), or leave empty
-   - `minSupportedBuild`: only raise it if old versions must update
-     (they then see "Update needed" with no "Skip")
-7. Commit. Phones see it at their next daily check, or right away with
-   Settings > App updates > Check now (GitHub may cache the file for ~5 minutes).
+4. On GitHub: Releases > Draft a new release.
+   - Tag: `v1.3.0` (same version as pubspec; the leading `v` is optional).
+   - Notes: the same notes as the changelog. Markdown bullets are shown as
+     plain lines (max 30 lines, 300 characters each).
+   - Attach the APK (e.g. `pitaka-1.3.0.apk`). Without an `.apk` asset the
+     Download button opens the release page instead.
+   - Publish it. Drafts and pre-releases are ignored by `/releases/latest`.
+5. Phones see it at their next daily check, or right away with
+   Settings > App updates > Check now.
+
+## What users can see
+
+- **Up to date**: the installed version is the same or newer than the tag.
+- **Update available**: notes, Download (the APK) / Later / Skip this version.
+- **Error**: no internet, GitHub's hourly limit for unauthenticated requests
+  (60 per network), or no published release (also shown when the repository
+  is private or the name is wrong). "Try again" is offered.
 
 ## Test it
 
-- Install the old APK, set `latestBuild` higher than its build, open the app:
+- Install the old APK, publish a release with a higher tag, open the app:
   "Update available" with your notes. Tap "Skip this version": it doesn't come
-  back until a higher `latestBuild`.
+  back automatically until a higher tag ("Check now" still shows it).
 - Install the new APK over it: "What's new" shows once; data is still there.
-- Airplane mode: the app works normally and shows nothing.
+  Open the app again: it doesn't show again.
+- Airplane mode: the app works normally; "Check now" says "No connection".

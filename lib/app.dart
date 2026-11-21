@@ -43,9 +43,10 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
         debugPrint('Could not restore debt reminders: $e');
       }
       try {
-        await ref.read(payLaterServiceProvider).rescheduleAll(currencySymbol: ref.read(currencyProvider).symbol);
+        // Reminders left by a feature removed in this version.
+        await ref.read(notificationServiceProvider).cancelRetiredReminders();
       } catch (e) {
-        debugPrint('Could not restore Pay Later reminders: $e');
+        debugPrint('Could not cancel retired reminders: $e');
       }
       try {
         // Retry keys are only needed for minutes; keep the table small.

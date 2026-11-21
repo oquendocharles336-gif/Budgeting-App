@@ -25,6 +25,7 @@ class Migrations {
     6: _v6DebtOriginAndLinkedExpense,
     7: _v7PayLaterLoansFeesBusiness,
     8: _v8StockLedgerCapitalWithdrawIdempotency,
+    9: _v9RemovePayLaterLoanPaymentMethod,
   };
 
   static int get latestVersion => _steps.keys.reduce((a, b) => a > b ? a : b);
@@ -464,5 +465,44 @@ class Migrations {
 
     // Cancelled orders return their stock and leave sales totals.
     await db.execute('ALTER TABLE orders ADD COLUMN cancelled_at INTEGER');
+  }
+
+  // ---------------------------------------------------------------------------
+  // v9: Pay Later removed, loan payments with a method, one "Delivered" status
+  // ---------------------------------------------------------------------------
+  static Future<void> _v9RemovePayLaterLoanPaymentMethod(DatabaseExecutor db) async {
+    // 1. The Pay Later feature is gone. Paid items already created a normal
+    //    expense, which stays in Activity. Unpaid items are still money owed,
+    //    so they move to Debts (installment, same amount and due date)
+    //    instead of disappearing. A fresh install has an empty table here.
+    if (await _tableExists(db, 'pay_later')) {
+      await db.execute('''
+        INSERT INTO debts (creditor, total_amount, initial_paid, due_date, notes, is_paid, created_at, debt_type, origin)
+        SELECT item, amount, 0, due_date,
+               'Moved from Pay Later' || CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE ': ' || notes END,
+               0, purchase_date, 'installment', 'existing'
+        FROM pay_later
+        WHERE status = 'unpaid' AND amount > 0''');
+      await db.execute('DROP INDEX IF EXISTS ux_pay_later_expense');
+      await db.execute('DROP INDEX IF EXISTS ix_pay_later_due');
+      await db.execute('DROP TABLE pay_later');
+    }
+
+    // 2. Loans: how a loan was paid ('cash' or 'ewallet') on the loan row,
+    //    and on the payment expense the loan it pays (so the payment counts
+    //    in the budget like any other expense, and is removed with the loan).
+    await db.execute('ALTER TABLE transactions ADD COLUMN loan_paid_method TEXT');
+    await db.execute('ALTER TABLE transactions ADD COLUMN loan_payment_of_id INTEGER');
+    await db.execute('CREATE INDEX ix_transactions_loan_payment ON transactions(loan_payment_of_id)');
+
+    // 3. Orders: "Delivered / Not Paid" is merged into "Delivered" (what is
+    //    still owed is shown from the amounts, not the status). The old value
+    //    stays allowed by the CHECK so old backups still restore.
+    await db.execute("UPDATE orders SET status = 'delivered' WHERE status = 'delivered_unpaid'");
+  }
+
+  static Future<bool> _tableExists(DatabaseExecutor db, String name) async {
+    final rows = await db.rawQuery("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?", [name]);
+    return rows.isNotEmpty;
   }
 }

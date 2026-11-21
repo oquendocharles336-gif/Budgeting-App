@@ -3,8 +3,9 @@ description: "Pitaka - an offline-first personal budget and expense tracker."
 publish_to: 'none'
 
 # Release: bump this (name+build), add a matching entry in lib/core/changelog.dart
-# and update your hosted version.json (see docs/RELEASING.md).
-version: 1.1.0+2
+# and publish a GitHub release tagged with the same version, e.g. v1.2.0
+# (see docs/RELEASING.md).
+version: 1.2.0+3
 
 environment:
   sdk: ^3.12.0

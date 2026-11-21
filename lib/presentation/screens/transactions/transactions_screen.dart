@@ -10,12 +10,11 @@ import '../../../data/models/payment_card.dart';
 import '../../../data/models/transaction_entry.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
+import '../../widgets/activity_row.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/animated_icons.dart';
 import '../../widgets/motion/cascade.dart';
-import '../../widgets/transaction_tile.dart';
 import '../import/import_hub_screen.dart';
-import 'transaction_form_screen.dart';
 
 class TransactionsScreen extends ConsumerStatefulWidget {
   const TransactionsScreen({super.key});
@@ -291,9 +290,17 @@ class _GroupedList extends ConsumerStatefulWidget {
 }
 
 class _GroupedListState extends ConsumerState<_GroupedList> {
-  /// Rows swiped away but not yet gone from the provider. A dismissed
-  /// Dismissible must leave the tree immediately.
+  /// Rows deleted but not yet gone from the provider (hidden at once).
   final _removed = <int>{};
+
+  /// Which row floats (tap) or shows Edit / Delete (swipe right).
+  final _selection = ActivitySelection();
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -344,32 +351,19 @@ class _GroupedListState extends ConsumerState<_GroupedList> {
         return CascadeIn(
           key: ValueKey('row-${t.id}'),
           index: i,
-          child: Dismissible(
-          key: ValueKey('tx-${t.id}'),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 24),
-            color: Theme.of(context).colorScheme.errorContainer,
-            child: Icon(Icons.delete_rounded, color: Theme.of(context).colorScheme.onErrorContainer),
-          ),
-          confirmDismiss: (_) => confirm(context, title: 'Delete transaction?', message: '"${t.description}" will be removed.'),
-          onDismissed: (_) async {
-            setState(() => _removed.add(t.id!));
-            await ref.read(transactionServiceProvider).delete(t.id!);
-            ref.refreshData();
-            if (context.mounted) showSnack(context, 'Transaction deleted');
-          },
-          child: TransactionTile(
-            tx: t,
-            category: categories[t.categoryId],
-            card: cards[t.cardId],
-            toCard: cards[t.toCardId],
-            showDate: false,
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => TransactionFormScreen(existing: t)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: ActivityRow(
+              tx: t,
+              selection: _selection,
+              category: categories[t.categoryId],
+              card: cards[t.cardId],
+              toCard: cards[t.toCardId],
+              showDate: false,
+              onDeleted: () {
+                if (mounted) setState(() => _removed.add(t.id!));
+              },
             ),
-          ),
           ),
         );
       },

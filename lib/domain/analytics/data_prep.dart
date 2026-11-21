@@ -122,6 +122,8 @@ class DataPrep {
         toCapital: _asInt(row['to_capital']) == 1,
         fromCapital: _asInt(row['from_capital']) == 1,
         loanPaidAt: parseDate(row['loan_paid_at']),
+        loanPaidMethod: LoanPayMethod.fromDb(_text(row['loan_paid_method'])),
+        loanPaymentOfId: _asInt(row['loan_payment_of_id']),
         createdAt: created,
         updatedAt: parseDate(row['updated_at']) ?? created,
       ));

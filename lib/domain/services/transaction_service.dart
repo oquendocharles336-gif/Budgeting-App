@@ -179,9 +179,49 @@ class TransactionService {
   /// Transactions in the "Loan" category, for the Loans section.
   Future<List<TransactionEntry>> loans() => _repo.loans();
 
-  /// Marks a loan row paid (or unpaid with null). Changes only that row:
-  /// no new expense, no balance change.
-  Future<void> setLoanPaid(int id, DateTime? paidAt) => _repo.setLoanPaid(id, paidAt);
+  /// Marks [loan] paid from Cash ([accountId] null) or an e-wallet: a
+  /// payment expense in the loan's category is saved on that account, so
+  /// the money leaves the account and counts in the month's budget, like
+  /// any expense with "Paid with". Returns the payment id (null when the
+  /// loan was already paid).
+  Future<int?> payLoan(
+    TransactionEntry loan, {
+    required LoanPayMethod method,
+    required int? accountId,
+    DateTime? paidAt,
+  }) async {
+    if (loan.id == null) throw ArgumentError('Loan has no id');
+    if (method == LoanPayMethod.cash && accountId != null) throw ArgumentError('Cash has no account');
+    if (method == LoanPayMethod.ewallet && accountId == null) throw ArgumentError('Pick an e-wallet');
+    final now = _clock();
+    final date = paidAt ?? now;
+    final payment = TransactionEntry(
+      amount: loan.amount,
+      kind: TransactionKind.expense,
+      description: 'Loan payment: ${loan.description}',
+      categoryId: loan.categoryId,
+      cardId: accountId,
+      date: date,
+      notes: 'Paid with ${method.label}',
+      source: TransactionSourceType.manual,
+      affectsBalance: true,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final id = await _repo.markLoanPaid(loan.id!, method: method, payment: payment);
+    if (id != null) await _alerts.checkMonth(date);
+    return id;
+  }
+
+  /// Marks a loan unpaid: its payment expense is removed and the money goes
+  /// back to the account (and out of the budget).
+  Future<void> unpayLoan(int loanId) => _repo.markLoanUnpaid(loanId);
+
+  /// The payment expense of a paid loan (for its history line).
+  Future<TransactionEntry?> loanPaymentOf(int loanId) => _repo.loanPaymentOf(loanId);
+
+  /// Every loan payment expense, by loan id.
+  Future<Map<int, TransactionEntry>> loanPayments() => _repo.loanPayments();
 
   /// Undoes the row's balance change (if any) and deletes it, atomically.
   Future<void> delete(int id) => _repo.delete(id);

@@ -8,18 +8,16 @@ import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../theme/app_palette.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/activity_row.dart';
 import '../../widgets/available_balance_card.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/skeleton.dart';
 import '../../widgets/payment_card_view.dart';
-import '../../widgets/transaction_tile.dart';
 import '../analytics/analytics_screen.dart';
 import '../business/business_shell.dart';
 import '../cards/card_detail_screen.dart';
 import '../debts/debts_screen.dart';
-import '../import/import_hub_screen.dart';
 import '../loans/loans_screen.dart';
-import '../pay_later/pay_later_screen.dart';
 import '../settings/settings_screen.dart';
 import '../transactions/transaction_form_screen.dart';
 
@@ -71,11 +69,10 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 12),
               AvailableBalanceCard(onTap: onOpenWallets),
               const SizedBox(height: 20),
+              // Import lives in Settings > Your data.
               _QuickActions(
-                onImport: () => _push(context, const ImportHubScreen()),
                 onDebts: () => _push(context, const DebtsScreen()),
                 onInsights: () => _push(context, const AnalyticsScreen()),
-                onPayLater: () => _push(context, const PayLaterScreen()),
                 onLoans: () => _push(context, const LoansScreen()),
                 onBusiness: () => _push(context, const BusinessShell()),
               ),
@@ -186,6 +183,10 @@ class _HeroBudgetCard extends ConsumerWidget {
                           ),
                       ],
                     ),
+                    if (summary.spentByAccount.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _PaidWithLine(spent: summary.spentByAccount),
+                    ],
                     // Inline, in context (no banner box): only at 80% / 100%.
                     if (p.level == BudgetLevel.warning || p.level == BudgetLevel.exceeded) ...[
                       const SizedBox(height: 8),
@@ -228,42 +229,26 @@ class _HeroBudgetCard extends ConsumerWidget {
 
 class _QuickActions extends StatelessWidget {
   const _QuickActions({
-    required this.onImport,
     required this.onDebts,
     required this.onInsights,
-    required this.onPayLater,
     required this.onLoans,
     required this.onBusiness,
   });
-  final VoidCallback onImport;
   final VoidCallback onDebts;
   final VoidCallback onInsights;
-  final VoidCallback onPayLater;
   final VoidCallback onLoans;
   final VoidCallback onBusiness;
 
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) => Row(
         children: [
-          Row(
-            children: [
-              Expanded(child: _Action(icon: Icons.file_download_rounded, label: 'Import', onTap: onImport)),
-              const SizedBox(width: 12),
-              Expanded(child: _Action(icon: Icons.insights_rounded, label: 'Insights', onTap: onInsights)),
-              const SizedBox(width: 12),
-              Expanded(child: _Action(icon: Icons.handshake_rounded, label: 'Debts', onTap: onDebts)),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _Action(icon: Icons.schedule_rounded, label: 'Pay Later', onTap: onPayLater)),
-              const SizedBox(width: 12),
-              Expanded(child: _Action(icon: Icons.request_quote_rounded, label: 'Loans', onTap: onLoans)),
-              const SizedBox(width: 12),
-              Expanded(child: _Action(icon: Icons.storefront_rounded, label: 'Business', onTap: onBusiness)),
-            ],
-          ),
+          Expanded(child: _Action(icon: Icons.insights_rounded, label: 'Insights', onTap: onInsights)),
+          const SizedBox(width: 10),
+          Expanded(child: _Action(icon: Icons.handshake_rounded, label: 'Debts', onTap: onDebts)),
+          const SizedBox(width: 10),
+          Expanded(child: _Action(icon: Icons.request_quote_rounded, label: 'Loans', onTap: onLoans)),
+          const SizedBox(width: 10),
+          Expanded(child: _Action(icon: Icons.storefront_rounded, label: 'Business', onTap: onBusiness)),
         ],
       );
 }
@@ -284,7 +269,7 @@ class _Action extends StatelessWidget {
         children: [
           ExcludeSemantics(child: Icon(icon, color: scheme.primary)),
           const SizedBox(height: 6),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
         ],
       ),
     );
@@ -396,11 +381,48 @@ class _DebtSummary extends ConsumerWidget {
   }
 }
 
-class _RecentTransactions extends ConsumerWidget {
-  const _RecentTransactions();
+/// "Paid with: Cash ₱1,200 · GCash ₱300": every expense counts in the
+/// monthly budget, whatever it was paid with.
+class _PaidWithLine extends ConsumerWidget {
+  const _PaidWithLine({required this.spent});
+  final Map<int?, int> spent;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cards = ref.watch(cardMapProvider).asDataOrNull ?? const {};
+    final parts = [
+      for (final e in spent.entries.take(3))
+        '${e.key == null ? 'Cash' : (cards[e.key]?.nickname ?? 'Card')} ${formatMoney(ref, e.value)}',
+      if (spent.length > 3) '+${spent.length - 3} more',
+    ];
+    return Text(
+      'Paid with: ${parts.join(' · ')}',
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(color: context.tokens.onSecondMuted, fontSize: 12.5),
+    );
+  }
+}
+
+class _RecentTransactions extends ConsumerStatefulWidget {
+  const _RecentTransactions();
+
+  @override
+  ConsumerState<_RecentTransactions> createState() => _RecentTransactionsState();
+}
+
+class _RecentTransactionsState extends ConsumerState<_RecentTransactions> {
+  /// Which row floats / has its actions open (tap / swipe right).
+  final _selection = ActivitySelection();
+
+  @override
+  void dispose() {
+    _selection.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final txs = ref.watch(recentTransactionsProvider);
     final cats = ref.watch(categoryMapProvider).asDataOrNull ?? const {};
     final cards = ref.watch(cardMapProvider).asDataOrNull ?? const {};
@@ -412,7 +434,7 @@ class _RecentTransactions extends ConsumerWidget {
             child: EmptyState(
               icon: Icons.receipt_long_rounded,
               title: 'No transactions yet',
-              message: 'Tap + to add your first expense, or import a card statement.',
+              message: 'Tap + to add your first expense, or import a card statement from Settings.',
               action: FilledButton.tonal(
                 style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
                 onPressed: () => Navigator.of(context).push(
@@ -423,20 +445,24 @@ class _RecentTransactions extends ConsumerWidget {
             ),
           );
         }
+        // A plain glass Card (no clipping blur) so a floating row's
+        // shadow and scale can rise above it.
         return Card(
-          child: Column(
-            children: [
-              for (final t in list)
-                TransactionTile(
-                  tx: t,
-                  category: cats[t.categoryId],
-                  card: cards[t.cardId],
-                  toCard: cards[t.toCardId],
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => TransactionFormScreen(existing: t)),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                for (final t in list)
+                  ActivityRow(
+                    key: ValueKey('recent-${t.id}'),
+                    tx: t,
+                    selection: _selection,
+                    category: cats[t.categoryId],
+                    card: cards[t.cardId],
+                    toCard: cards[t.toCardId],
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         );
       },

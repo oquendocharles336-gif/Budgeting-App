@@ -8,7 +8,6 @@ import '../../data/repositories/business_repositories.dart';
 import '../../data/repositories/card_repository.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/debt_repository.dart';
-import '../../data/repositories/pay_later_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/sms_pattern_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
@@ -26,7 +25,6 @@ import '../../domain/services/budget_alert_service.dart';
 import '../../domain/services/business_service.dart';
 import '../../domain/services/debt_service.dart';
 import '../../domain/services/notification_service.dart';
-import '../../domain/services/pay_later_service.dart';
 import '../../domain/services/photo_service.dart';
 import '../../domain/services/transaction_service.dart';
 import '../../domain/services/update_service.dart';
@@ -75,7 +73,6 @@ final ruleRepositoryProvider = Provider((ref) => RuleRepository(ref.watch(databa
 final debtRepositoryProvider = Provider((ref) => DebtRepository(ref.watch(databaseProvider).db));
 final budgetRepositoryProvider = Provider((ref) => BudgetRepository(ref.watch(databaseProvider).db));
 final smsPatternRepositoryProvider = Provider((ref) => SmsPatternRepository(ref.watch(databaseProvider).db));
-final payLaterRepositoryProvider = Provider((ref) => PayLaterRepository(ref.watch(databaseProvider).db));
 final capitalRepositoryProvider = Provider((ref) => CapitalRepository(ref.watch(databaseProvider).db));
 final inventoryRepositoryProvider = Provider((ref) => InventoryRepository(ref.watch(databaseProvider).db));
 final productRepositoryProvider = Provider((ref) => ProductRepository(ref.watch(databaseProvider).db));
@@ -127,14 +124,6 @@ final debtServiceProvider = Provider(
   ),
 );
 
-final payLaterServiceProvider = Provider(
-  (ref) => PayLaterService(
-    repository: ref.watch(payLaterRepositoryProvider),
-    notifications: ref.watch(notificationServiceProvider),
-    alerts: ref.watch(budgetAlertServiceProvider),
-  ),
-);
-
 final photoServiceProvider = Provider(
   (ref) => PhotoService(
     store: ref.watch(photoStoreProvider),
@@ -169,7 +158,10 @@ final appLockServiceProvider = Provider((ref) => AppLockService());
 final updateServiceProvider = Provider(
   (ref) => UpdateService(
     settings: ref.watch(settingsRepositoryProvider),
-    fetchFeed: ReleaseFeed(AppUpdateConfig.feedUrl).fetch,
+    fetchRelease: GitHubReleaseFeed(
+      AppUpdateConfig.latestReleaseUri,
+      repository: AppUpdateConfig.githubRepository,
+    ).fetch,
     installed: readInstalledVersion,
   ),
 );

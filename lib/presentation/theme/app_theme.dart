@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'app_palette.dart';
+import 'glass.dart';
 
-/// Visual style: soft rounded cards on a calm background, generous
-/// 16-20px spacing and a clear type hierarchy, built on Material 3.
+/// Visual style: frosted glass cards on a soft gradient background
+/// (glassmorphism, see glass.dart), generous 16-20px spacing and a clear
+/// type hierarchy, built on Material 3.
 ///
 /// All colors come from [ThemeTokens] (see app_palette.dart), split
 /// 60 / 30 / 10: main (backgrounds) / second (cards, containers) /
@@ -63,9 +65,18 @@ class AppTheme {
     );
     final text = base.textTheme.apply(bodyColor: t.onMain, displayColor: t.onMain);
 
+    final glassFill = Glass.fill(t);
+    final glassShape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius), side: Glass.side(t));
+    // Every page route paints the glass background behind its Scaffold.
+    final glassPages = PageTransitionsTheme(builders: {
+      for (final p in TargetPlatform.values) p: const GlassPageTransitionsBuilder(),
+    });
+
     return base.copyWith(
-      scaffoldBackgroundColor: t.main,
+      // Transparent: the gradient comes from each page route (glass.dart).
+      scaffoldBackgroundColor: Colors.transparent,
       canvasColor: t.main,
+      pageTransitionsTheme: glassPages,
       textTheme: text.copyWith(
         headlineLarge: text.headlineLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5),
         headlineMedium: text.headlineMedium?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.5),
@@ -75,7 +86,7 @@ class AppTheme {
         bodyMedium: text.bodyMedium?.copyWith(fontSize: 15),
       ),
       appBarTheme: AppBarThemeData(
-        backgroundColor: t.main,
+        backgroundColor: Colors.transparent,
         foregroundColor: t.onMain,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
@@ -83,12 +94,14 @@ class AppTheme {
         centerTitle: false,
         titleTextStyle: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
       ),
+      // Plain Cards are glass too (translucent fill, light edge); AppCard
+      // adds the backdrop blur and shadow.
       cardTheme: CardThemeData(
-        color: t.second,
+        color: glassFill,
         elevation: 0,
         margin: EdgeInsets.zero,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius)),
+        shape: glassShape,
       ),
       // Cards are "second"; text on them uses onSecond via DefaultTextStyle
       // in AppCard. List tiles inside cards pick it up from here.
@@ -98,7 +111,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationThemeData(
         filled: true,
-        fillColor: t.second,
+        fillColor: Glass.fill(t, strong: true),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         labelStyle: TextStyle(color: t.onSecondMuted),
         hintStyle: TextStyle(color: t.onSecondMuted),
@@ -135,7 +148,7 @@ class AppTheme {
         style: TextButton.styleFrom(foregroundColor: Contrast.ensure(t.accent, t.main)),
       ),
       chipTheme: base.chipTheme.copyWith(
-        backgroundColor: t.second,
+        backgroundColor: glassFill,
         selectedColor: t.secondHigh,
         labelStyle: TextStyle(color: t.onSecond),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -149,7 +162,14 @@ class AppTheme {
         foregroundColor: t.onAccent,
         elevation: 4,
       ),
-      bottomAppBarTheme: BottomAppBarThemeData(color: t.second, surfaceTintColor: Colors.transparent),
+      // Bars are drawn inside GlassBar (blur + translucent fill).
+      bottomAppBarTheme: const BottomAppBarThemeData(color: Colors.transparent, surfaceTintColor: Colors.transparent, elevation: 0),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        indicatorColor: t.secondHigh,
+      ),
       progressIndicatorTheme: ProgressIndicatorThemeData(color: t.accent, linearTrackColor: t.secondHigh),
       dividerTheme: DividerThemeData(color: t.outline, space: 1),
       // Dim what's behind dialogs and sheets so there is one focus.

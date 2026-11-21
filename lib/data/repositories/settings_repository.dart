@@ -26,11 +26,19 @@ class SettingsRepository {
   static const updateCheckEnabled = 'update_check_enabled';
   static const updateLastCheck = 'update_last_check';
 
-  /// Build number the user chose to skip.
+  /// Build number the user chose to skip (before v1.2: read for upgrades).
   static const updateSkippedBuild = 'update_skipped_build';
 
-  /// Last build whose "What's new" was shown.
+  /// Version name ("1.2.0") the user chose to skip.
+  static const updateSkippedVersion = 'update_skipped_version';
+
+  /// Last build whose "What's new" was shown (before v1.2: read once to
+  /// carry it over to [whatsNewSeenVersion]).
   static const whatsNewSeenBuild = 'whats_new_seen_build';
+
+  /// Last app version ("1.2.0") the user has seen "What's new" for (or
+  /// that was installed fresh). "What's new" shows only for a higher one.
+  static const whatsNewSeenVersion = 'whats_new_seen_version';
 
   /// Keys that are device-specific and never exported in backups.
   static const privateKeys = {
@@ -41,7 +49,9 @@ class SettingsRepository {
     photosEncrypted,
     updateLastCheck,
     updateSkippedBuild,
+    updateSkippedVersion,
     whatsNewSeenBuild,
+    whatsNewSeenVersion,
   };
 
   static String budgetAlertKey(String month) => 'budget_alerts_$month';

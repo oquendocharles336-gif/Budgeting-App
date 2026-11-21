@@ -154,7 +154,6 @@ class _BackupScreenState extends ConsumerState<BackupScreen> {
       final symbol = ref.read(currencyProvider).symbol;
       await ref.read(notificationServiceProvider).cancelAll();
       await ref.read(debtServiceProvider).rescheduleAll(currencySymbol: symbol);
-      await ref.read(payLaterServiceProvider).rescheduleAll(currencySymbol: symbol);
       ref.refreshData();
       if (mounted) showSnack(context, mode == RestoreMode.replace ? 'Backup restored' : 'Backup merged');
     } catch (e) {

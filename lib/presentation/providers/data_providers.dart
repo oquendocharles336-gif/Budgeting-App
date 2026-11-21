@@ -4,7 +4,6 @@ import '../../core/dates.dart';
 import '../../data/models/budget.dart';
 import '../../data/models/category.dart';
 import '../../data/models/debt.dart';
-import '../../data/models/pay_later.dart';
 import '../../data/models/payment_card.dart';
 import '../../data/models/sms_pattern.dart';
 import '../../data/models/transaction_entry.dart';
@@ -14,7 +13,6 @@ import '../../domain/analytics/spending_analytics.dart';
 import '../../domain/budget/budget_calculator.dart';
 import 'core_providers.dart';
 import 'optimistic_providers.dart';
-import 'pending_providers.dart';
 
 // Every provider below watches dataRevisionProvider, so a single bump()
 // after a write refreshes everything on screen.
@@ -137,26 +135,20 @@ final debtPaymentsProvider = FutureProvider.family<List<DebtPayment>, int>((ref,
 });
 
 // -----------------------------------------------------------------------------
-// Pay Later and Loans
+// Loans
 // -----------------------------------------------------------------------------
-
-final _payLaterBaseProvider = FutureProvider<List<PayLaterItem>>((ref) {
-  ref.watch(dataRevisionProvider);
-  return ref.watch(payLaterRepositoryProvider).all();
-});
-
-/// Pay Later items, with saves still in progress shown at once.
-final payLaterProvider = FutureProvider<List<PayLaterItem>>((ref) async {
-  final base = await ref.watch(_payLaterBaseProvider.future);
-  final list = overlay(base, ref.watch(pendingPayLaterProvider).values, (i) => i.id);
-  // Same order as the database: unpaid (soonest due) first, then paid.
-  return [...list.where((i) => !i.isPaid), ...list.where((i) => i.isPaid)];
-});
 
 /// Transactions in the "Loan" category, unpaid first.
 final loansProvider = FutureProvider<List<TransactionEntry>>((ref) {
   ref.watch(dataRevisionProvider);
   return ref.watch(transactionServiceProvider).loans();
+});
+
+/// The payment expense of each paid loan (loan id -> payment), for the
+/// "Paid with" line in the loan history.
+final loanPaymentsProvider = FutureProvider<Map<int, TransactionEntry>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(transactionServiceProvider).loanPayments();
 });
 
 // -----------------------------------------------------------------------------
@@ -191,11 +183,16 @@ class MonthSummary {
     required this.overall,
     required this.categoryRows,
     required this.income,
+    this.spentByAccount = const {},
     this.prep = PrepReport.empty,
   });
 
   /// What the data-prep step cleaned for these totals.
   final PrepReport prep;
+
+  /// This month's spending by "Paid with" account (null = Cash), biggest
+  /// first. Every expense counts in the budget whatever it was paid with.
+  final Map<int?, int> spentByAccount;
 
   final DateTime month;
   final List<TransactionEntry> transactions;
@@ -230,15 +227,22 @@ final _monthBaseProvider = FutureProvider.family<_MonthBase, String>((ref, month
   return (budgets: budgets, categories: categories, prepared: prepared);
 });
 
-/// Budget vs spending for one month. Budget edits still being saved
-/// (optimistic UI) are applied on top, so the screen updates at once.
+/// Budget vs spending for one month. Budget edits and transactions still
+/// being saved (optimistic UI) are applied on top, so the budget and the
+/// remaining amount change the moment a transaction is added, edited or
+/// deleted, whatever account it was paid with.
 final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, monthKey) async {
   final base = await ref.watch(_monthBaseProvider(monthKey).future);
   final pending = ref.watch(pendingBudgetsProvider);
   final month = Dates.parseMonthKey(monthKey);
+  final monthEnd = Dates.monthEnd(month);
   final categories = base.categories;
   final prepared = base.prepared;
-  final txs = prepared.rows;
+  final txs = withPending(
+    prepared.rows,
+    ref.watch(pendingTransactionsProvider),
+    matches: (t) => !t.date.isBefore(month) && t.date.isBefore(monthEnd),
+  );
 
   var overallBudget = base.budgets.where((b) => b.isOverall).fold<int>(0, (a, b) => a + b.amount);
   final byCat = {for (final b in base.budgets.where((b) => !b.isOverall)) b.categoryId!: b.amount};
@@ -280,9 +284,20 @@ final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, m
     overall: BudgetProgress(budget: overallBudget, spent: BudgetCalculator.spent(txs)),
     categoryRows: rows,
     income: txs.where((t) => t.isIncome).fold<int>(0, (a, t) => a + t.amount),
+    spentByAccount: _spentByAccount(txs),
     prep: prepared.report,
   );
 });
+
+Map<int?, int> _spentByAccount(List<TransactionEntry> txs) {
+  final totals = <int?, int>{};
+  for (final t in txs) {
+    if (!t.isExpense) continue;
+    totals[t.cardId] = (totals[t.cardId] ?? 0) + t.amount;
+  }
+  final sorted = totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+  return {for (final e in sorted) e.key: e.value};
+}
 
 class BudgetHistoryItem {
   const BudgetHistoryItem({required this.month, required this.progress});

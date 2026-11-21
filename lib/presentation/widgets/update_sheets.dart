@@ -37,15 +37,13 @@ class _Notes extends StatelessWidget {
 }
 
 /// "Update available": the new version, its notes, and Download / Later /
-/// Skip. A required update has no Skip, but "Later" still works: the app
-/// keeps working offline either way.
+/// Skip. The app keeps working offline either way.
 Future<void> showUpdateSheet(
   BuildContext context, {
   required UpdateCheck check,
-  required Future<void> Function(int build) onSkip,
+  required Future<void> Function(AppVersion version) onSkip,
 }) {
   final release = check.release!;
-  final mustUpdate = check.urgency == UpdateUrgency.required;
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
@@ -61,26 +59,20 @@ Future<void> showUpdateSheet(
             shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             children: [
-              Semantics(
-                header: true,
-                child: Text(mustUpdate ? 'Update needed' : 'Update available', style: text.headlineSmall),
-              ),
+              Semantics(header: true, child: Text('Update available', style: text.headlineSmall)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 children: [
                   StatusBadge(label: 'New: ${release.version}', tone: BadgeTone.accent, icon: Icons.system_update_rounded),
-                  StatusBadge(label: 'You have ${check.installed.version}'),
+                  if (check.installed != null) StatusBadge(label: 'You have ${check.installed!.version}'),
                   if (release.releasedAt != null) StatusBadge(label: DateFormat('MMM d, yyyy').format(release.releasedAt!)),
                 ],
               ),
-              if (mustUpdate) ...[
+              if (release.name != null && release.name != release.tag) ...[
                 const SizedBox(height: 12),
-                Text(
-                  'This version is no longer supported. Please update to keep getting fixes.',
-                  style: TextStyle(color: t.onSecond, fontWeight: FontWeight.w600),
-                ),
+                Text(release.name!, style: text.titleMedium?.copyWith(color: t.onSecond)),
               ],
               const SizedBox(height: 16),
               Text('What\'s new', style: text.titleMedium),
@@ -91,44 +83,89 @@ Future<void> showUpdateSheet(
                 _Notes(release.notes),
               const SizedBox(height: 8),
               Text(
-                'Your data stays on this phone: installing the update over this app keeps everything. '
-                'After the download, open the file and tap Install (Android may ask you to allow installs from your browser).',
+                release.isApk
+                    ? 'Your data stays on this phone: installing the update over this app keeps everything. '
+                        'After the download, open the file and tap Install (Android may ask you to allow installs from your browser).'
+                    : 'This opens the release page on GitHub. Download the APK there and install it over this app; your data stays.',
                 style: TextStyle(color: t.onSecondMuted, fontSize: 13),
               ),
-              if (release.sha256 != null) ...[
-                const SizedBox(height: 8),
-                SelectableText('SHA-256: ${release.sha256}', style: TextStyle(color: t.onSecondMuted, fontSize: 11)),
-              ],
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: () async {
-                  final ok = await launchUrl(release.apkUrl, mode: LaunchMode.externalApplication);
-                  if (!ok && ctx.mounted) {
-                    await Clipboard.setData(ClipboardData(text: release.apkUrl.toString()));
-                    if (ctx.mounted) showSnack(ctx, 'Couldn\'t open the browser. The download link was copied.');
-                    return;
-                  }
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                icon: const Icon(Icons.download_rounded),
-                label: Text('Download ${release.version}'),
+                onPressed: () => _open(ctx, release.downloadUrl),
+                icon: Icon(release.isApk ? Icons.download_rounded : Icons.open_in_new_rounded),
+                label: Text(release.isApk ? 'Download ${release.version}' : 'Open release page'),
               ),
               const SizedBox(height: 8),
               OutlinedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Later')),
-              if (!mustUpdate)
-                TextButton(
-                  style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                  onPressed: () async {
-                    await onSkip(release.build);
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  },
-                  child: const Text('Skip this version'),
-                ),
+              TextButton(
+                style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                onPressed: () async {
+                  await onSkip(release.version);
+                  if (ctx.mounted) Navigator.pop(ctx);
+                },
+                child: const Text('Skip this version'),
+              ),
             ],
           ),
         ),
       );
     },
+  );
+}
+
+Future<void> _open(BuildContext ctx, Uri url) async {
+  var ok = false;
+  try {
+    ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    ok = false;
+  }
+  if (!ok && ctx.mounted) {
+    await Clipboard.setData(ClipboardData(text: url.toString()));
+    if (ctx.mounted) showSnack(ctx, 'Couldn\'t open the browser. The download link was copied.');
+    return;
+  }
+  if (ctx.mounted) Navigator.pop(ctx);
+}
+
+/// Result of "Check now" that isn't "update available": up to date, or
+/// what went wrong (no internet, rate limit, no releases...) with Retry.
+Future<void> showUpdateResultDialog(BuildContext context, UpdateCheck check, {VoidCallback? onRetry}) {
+  final upToDate = check.status == UpdateStatus.upToDate;
+  final (IconData icon, String title) = upToDate
+      ? (Icons.verified_rounded, 'You\'re up to date')
+      : switch (check.errorKind) {
+          UpdateErrorKind.offline || UpdateErrorKind.timeout => (Icons.wifi_off_rounded, 'No connection'),
+          UpdateErrorKind.rateLimited => (Icons.hourglass_top_rounded, 'Too many checks'),
+          UpdateErrorKind.noReleases => (Icons.inventory_2_outlined, 'No releases found'),
+          _ => (Icons.error_outline_rounded, 'Couldn\'t check for updates'),
+        };
+  final message = upToDate
+      ? 'Pitaka ${check.installed?.version ?? ''} is the newest version'
+          '${check.release == null ? '' : ' (latest release: ${check.release!.tag})'}.'
+      : check.errorMessage ?? 'Something went wrong.';
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: Icon(icon),
+      title: Text(title),
+      content: Text(message),
+      actions: [
+        if (!upToDate && onRetry != null)
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              onRetry();
+            },
+            child: const Text('Try again'),
+          ),
+        FilledButton(
+          style: FilledButton.styleFrom(minimumSize: const Size(88, 44)),
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
   );
 }
 
