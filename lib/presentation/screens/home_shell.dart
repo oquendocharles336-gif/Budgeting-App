@@ -3,10 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/dates.dart';
+import '../../domain/services/photo_service.dart';
+import '../providers/core_providers.dart';
 import '../providers/data_providers.dart';
 import '../widgets/motion/animated_icons.dart';
 import '../widgets/motion/cascade.dart';
 import 'budget/budget_screen.dart';
+import 'business/inventory_screen.dart';
+import 'business/products_screen.dart';
 import 'cards/cards_screen.dart';
 import 'dashboard/dashboard_screen.dart';
 import 'transactions/transaction_form_screen.dart';
@@ -44,7 +48,44 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     super.initState();
     // Start the work early: while Home is showing, load what the other
     // tabs will most likely need next, so they open with data ready.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _prefetch());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _prefetch();
+      _recoverPhoto();
+    });
+  }
+
+  /// Android may close the app while the camera is open (low memory). If
+  /// that happened, reopen the form that was being filled in, with the
+  /// photo (ImagePicker.retrieveLostData) and what was typed.
+  Future<void> _recoverPhoto() async {
+    final RecoveredForm? r;
+    try {
+      r = await ref.read(photoServiceProvider).recoverLost();
+    } catch (e) {
+      debugPrint('Photo recovery failed: $e');
+      return;
+    }
+    if (r == null || !mounted) return;
+    final photos = ref.read(photoServiceProvider);
+    final draft = r.draft;
+    final taken = photos.takeRecovery(draft.form, draft.recordId);
+    if (taken == null) return;
+    Widget? form;
+    try {
+      if (draft.form == PhotoDraft.inventoryForm) {
+        final existing = draft.recordId == null ? null : await ref.read(inventoryRepositoryProvider).byId(draft.recordId!);
+        form = InventoryFormScreen(existing: existing, recovered: taken);
+      } else if (draft.form == PhotoDraft.productForm) {
+        final products = await ref.read(productRepositoryProvider).all();
+        final existing = products.where((p) => p.id == draft.recordId).firstOrNull;
+        form = ProductFormScreen(existing: existing, recovered: taken);
+      }
+    } catch (e) {
+      debugPrint('Could not reopen the form: $e');
+    }
+    if (form == null || !mounted) return;
+    final page = form;
+    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
   }
 
   void _prefetch() {

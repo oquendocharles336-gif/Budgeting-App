@@ -23,7 +23,7 @@ class LegalDocumentScreen extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(
                     line,
-                    style: RegExp(r'^\d+\. ').hasMatch(line) || line == lines.first
+                    style: RegExp(r'^\d+[a-z]?\. ').hasMatch(line) || line == lines.first
                         ? text.titleMedium
                         : text.bodyMedium?.copyWith(height: 1.5),
                   ),

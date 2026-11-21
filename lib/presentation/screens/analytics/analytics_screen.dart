@@ -8,12 +8,14 @@ import '../../../core/dates.dart';
 import '../../../core/money.dart';
 import '../../../data/models/category.dart';
 import '../../../domain/analytics/data_prep.dart';
+import '../../../domain/analytics/insights_range.dart';
 import '../../../domain/analytics/spending_analytics.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/motion/skeleton.dart';
 
 class AnalyticsScreen extends ConsumerWidget {
   const AnalyticsScreen({super.key});
@@ -21,49 +23,115 @@ class AnalyticsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final month = ref.watch(selectedMonthProvider);
-    final data = ref.watch(analyticsProvider(Dates.monthKey(month)));
+    final loadedRange = ref.watch(insightsRangeProvider).asDataOrNull;
+    // Until the range loads, stay on the selected month with "previous" off.
+    final range = loadedRange ?? InsightsRange.from(month, DateTime.now());
+    final shown = range.clamp(month);
+    final data = ref.watch(analyticsProvider(Dates.monthKey(shown)));
     final cats = ref.watch(categoryMapProvider).asDataOrNull ?? const <int, Category>{};
     final notifier = ref.read(selectedMonthProvider.notifier);
+    if (loadedRange != null && shown != Dates.monthStart(month)) {
+      // Budget can browse further back; Insights stops at the first month
+      // with chart data.
+      WidgetsBinding.instance.addPostFrameCallback((_) => notifier.set(shown));
+    }
     ref.listen(selectedMonthProvider, (_, next) {
-      ref.read(analyticsProvider(Dates.monthKey(Dates.previousMonth(next))).future).ignore();
+      final r = ref.read(insightsRangeProvider).asDataOrNull;
+      if (r != null && r.canGoBack(next)) {
+        ref.read(analyticsProvider(Dates.monthKey(Dates.previousMonth(next))).future).ignore();
+      }
     });
+
+    void previous() {
+      if (range.canGoBack(shown)) notifier.set(Dates.previousMonth(shown));
+    }
+
+    void next() {
+      if (range.canGoForward(shown)) notifier.set(Dates.nextMonth(shown));
+    }
+
+    Future<void> pickMonth() async {
+      final now = DateTime.now();
+      final picked = await showDatePicker(
+        context: context,
+        helpText: 'Choose a month',
+        initialDatePickerMode: DatePickerMode.year,
+        initialDate: shown,
+        // Dates before the first month with data can't be picked.
+        firstDate: range.firstPickable,
+        lastDate: range.lastPickable(now),
+      );
+      if (picked != null) notifier.set(range.clamp(picked));
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Insights')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-        children: [
-          MonthSwitcher(month: month, onPrevious: notifier.previous, onNext: notifier.next),
-          AsyncView<AnalyticsData>(
-            value: data,
-            onRetry: () => ref.refreshData(),
-            data: (a) {
-              if (a.total == 0) {
-                return const EmptyState(
-                  icon: Icons.insights_rounded,
-                  title: 'No spending this month',
-                  message: 'Charts appear once you add expenses.',
+      // Swipe left / right to change month, within the same limits.
+      body: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onHorizontalDragEnd: (d) {
+          final v = d.primaryVelocity ?? 0;
+          if (v > 300) previous();
+          if (v < -300) next();
+        },
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+          children: [
+            MonthSwitcher(
+              month: shown,
+              onPrevious: previous,
+              onNext: next,
+              canGoPrevious: range.canGoBack(shown),
+              canGoNext: range.canGoForward(shown),
+              onPickMonth: pickMonth,
+            ),
+            AsyncView<AnalyticsData>(
+              value: data,
+              onRetry: () => ref.refreshData(),
+              loading: const _InsightsSkeleton(),
+              data: (a) {
+                if (a.total == 0) {
+                  return const EmptyState(
+                    icon: Icons.insights_rounded,
+                    title: 'No spending this month',
+                    message: 'Charts appear once you add expenses.',
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _SummaryGrid(data: a),
+                    _PrepLine(report: a.prep),
+                    const SectionHeader('Daily spending'),
+                    AppCard(child: _DailyChart(data: a)),
+                    const SectionHeader('By category'),
+                    AppCard(child: _CategoryDonut(data: a, categories: cats)),
+                    const SectionHeader('Weeks of the month'),
+                    AppCard(child: _WeeksList(data: a)),
+                  ],
                 );
-              }
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _SummaryGrid(data: a),
-                  _PrepLine(report: a.prep),
-                  const SectionHeader('Daily spending'),
-                  AppCard(child: _DailyChart(data: a)),
-                  const SectionHeader('By category'),
-                  AppCard(child: _CategoryDonut(data: a, categories: cats)),
-                  const SectionHeader('Weeks of the month'),
-                  AppCard(child: _WeeksList(data: a)),
-                ],
-              );
-            },
-          ),
-        ],
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
+}
+
+/// Insights loading state in the layout of the real screen.
+class _InsightsSkeleton extends StatelessWidget {
+  const _InsightsSkeleton();
+
+  @override
+  Widget build(BuildContext context) => const Column(
+        children: [
+          SizedBox(height: 8),
+          SkeletonCard(height: 150),
+          SizedBox(height: 16),
+          SkeletonCard(height: 240),
+        ],
+      );
 }
 
 class _SummaryGrid extends ConsumerWidget {

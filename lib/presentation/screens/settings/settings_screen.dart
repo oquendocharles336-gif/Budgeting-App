@@ -11,9 +11,7 @@ import '../../../core/legal_text.dart';
 import '../../../core/money.dart';
 import '../../../data/db/seed_data.dart';
 import '../../../domain/security/password_crypto.dart';
-import '../../../domain/security/vault.dart';
 import '../../../domain/services/app_lock_service.dart';
-import '../../../domain/services/backup_crypto.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../theme/app_theme.dart';
@@ -21,12 +19,17 @@ import '../../widgets/color_picker.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/animated_icons.dart';
 import '../../widgets/password_dialog.dart';
+import '../../widgets/photo_migration_line.dart';
 import '../auth/recovery_key_screen.dart';
 import '../auth/sign_up_screen.dart';
 import '../cards/cards_screen.dart';
+import '../business/business_shell.dart';
 import '../debts/debts_screen.dart';
 import '../legal/legal_document_screen.dart';
+import '../loans/loans_screen.dart';
+import '../pay_later/pay_later_screen.dart';
 import 'categories_screen.dart';
+import 'backup_screen.dart';
 import 'change_password_screen.dart';
 import 'rules_screen.dart';
 import 'sms_patterns_screen.dart';
@@ -149,6 +152,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: const Text('Debts'),
                   onTap: () => _push(const DebtsScreen()),
                 ),
+                ListTile(
+                  leading: const Icon(Icons.schedule_rounded),
+                  title: const Text('Pay Later'),
+                  subtitle: const Text('Bought now, paid later'),
+                  onTap: () => _push(const PayLaterScreen()),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.request_quote_rounded),
+                  title: const Text('Loans'),
+                  subtitle: const Text('Transactions in the "Loan" category'),
+                  onTap: () => _push(const LoansScreen()),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.storefront_rounded),
+                  title: const Text('Business'),
+                  subtitle: const Text('Capital, inventory, products, orders and sales'),
+                  onTap: () => _push(const BusinessShell()),
+                ),
                 if (Platform.isAndroid)
                   ListTile(
                     leading: const Icon(Icons.sms_rounded),
@@ -216,6 +237,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const SectionHeader('Your data'),
+          const PhotoMigrationLine(),
           Card(
             child: Column(
               children: [
@@ -227,15 +249,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.backup_rounded),
-                  title: const Text('Back up everything (encrypted)'),
-                  subtitle: const Text('A backup file that only opens with your password'),
-                  onTap: _exportJson,
-                ),
-                ListTile(
-                  leading: const Icon(Icons.settings_backup_restore_rounded),
-                  title: const Text('Restore from backup'),
-                  subtitle: const Text('Replaces all current data'),
-                  onTap: _restore,
+                  title: const Text('Backup & restore'),
+                  subtitle: const Text('All data and photos in one password-encrypted file'),
+                  onTap: () => _push(const BackupScreen()),
                 ),
                 ListTile(
                   leading: const Icon(Icons.science_rounded),
@@ -245,7 +261,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 ListTile(
                   leading: Icon(Icons.delete_forever_rounded, color: Theme.of(context).colorScheme.error),
-                  title: Text('Delete all data', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  title: Text('Delete all my data', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  subtitle: const Text('Personal and business data, and saved photos'),
                   onTap: _deleteAll,
                 ),
               ],
@@ -333,50 +350,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (!ok) return;
     final csv = await ref.read(backupServiceProvider).exportTransactionsCsv();
     await _save('pitaka_transactions_$_stamp.csv', csv, 'text/csv');
-  }
-
-  Future<void> _exportJson() async {
-    final vault = ref.read(sessionProvider).vault;
-    final String? password;
-    if (_usesDeviceLock) {
-      // There is no in-app password to reuse, so the backup gets its own.
-      password = await _askNewBackupPassword();
-    } else {
-      password = await askPassword(
-        context,
-        title: 'Encrypt backup',
-        message: 'Enter your PIN or password. The backup can only be opened with it.',
-        label: 'PIN or password',
-        confirmLabel: 'Back up',
-        check: (pw) async => await vault.verifyPassword(pw) ? null : 'Wrong PIN or password',
-      );
-    }
-    if (password == null || !mounted) return;
-    try {
-      final json = await ref.read(backupServiceProvider).exportJson();
-      final encrypted = await BackupCrypto.encrypt(json, password);
-      await _save('pitaka_backup_$_stamp.json', encrypted, 'application/json');
-    } catch (e) {
-      if (mounted) showSnack(context, 'Could not create backup: $e', error: true);
-    }
-  }
-
-  Future<String?> _askNewBackupPassword() async {
-    final first = await askPassword(
-      context,
-      title: 'Backup password',
-      message: 'Choose a password for this backup file. You\'ll need it to restore; nobody can recover it.',
-      confirmLabel: 'Next',
-      check: (pw) async => Vault.validatePassword(pw),
-    );
-    if (first == null || !mounted) return null;
-    return askPassword(
-      context,
-      title: 'Confirm backup password',
-      message: 'Type the backup password again.',
-      confirmLabel: 'Back up',
-      check: (pw) async => pw == first ? null : 'That doesn\'t match',
-    );
   }
 
   /// Device-lock method: the phone confirms it's the owner.
@@ -501,53 +474,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     ));
   }
 
-  Future<void> _restore() async {
-    final ok = await confirm(
-      context,
-      title: 'Restore a backup?',
-      message: 'Everything currently in the app will be replaced by the backup. Make a backup first if unsure.',
-      confirmLabel: 'Choose file',
-      destructive: false,
-    );
-    if (!ok) return;
-    try {
-      final file = await LockGuard.run(() => FilePicker.pickFile(type: FileType.custom, allowedExtensions: const ['json']));
-      if (file == null) return;
-      var text = utf8.decode(await file.readAsBytes());
-      if (BackupCrypto.isEncrypted(text)) {
-        final encrypted = text;
-        String? plain;
-        if (!mounted) return;
-        await askPassword(
-          context,
-          title: 'Backup password',
-          message: 'Enter the password this backup was made with.',
-          confirmLabel: 'Restore',
-          check: (pw) async {
-            try {
-              plain = await BackupCrypto.decrypt(encrypted, pw);
-              return null;
-            } on WrongSecretException catch (e) {
-              return e.message;
-            }
-          },
-        );
-        if (plain == null) return;
-        text = plain!;
-      }
-      await ref.read(backupServiceProvider).restoreJson(text);
-      final restored = await ref.read(settingsRepositoryProvider).all();
-      ref.read(themeControllerProvider.notifier).reloadFrom(restored);
-      ref.read(currencyProvider.notifier).reloadFrom(restored);
-      await ref.read(notificationServiceProvider).cancelAll();
-      await ref.read(debtServiceProvider).rescheduleAll(currencySymbol: ref.read(currencyProvider).symbol);
-      ref.refreshData();
-      if (mounted) showSnack(context, 'Backup restored');
-    } catch (e) {
-      if (mounted) showSnack(context, '$e', error: true);
-    }
-  }
-
   Future<void> _loadSample() async {
     final ok = await confirm(
       context,
@@ -569,14 +495,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _deleteAll() async {
     final ok = await confirm(
       context,
-      title: 'Delete all data?',
-      message: 'This permanently removes every card, transaction, budget, debt and custom category on this phone. '
+      title: 'Delete all my data?',
+      message: 'This permanently removes every card, transaction, budget, debt, Pay Later item and custom category, '
+          'plus all business data (capital, stock history, inventory, recipes, products, orders), '
+          'the photos you added and their encryption key. '
           'Your password, theme and currency are kept. It cannot be undone.',
       confirmLabel: 'Delete everything',
     );
     if (!ok) return;
-    await ref.read(notificationServiceProvider).cancelAll();
-    await ref.read(backupServiceProvider).deleteAllData();
+    try {
+      await ref.read(notificationServiceProvider).cancelAll();
+      await ref.read(backupServiceProvider).deleteAllData();
+      await ref.read(photoServiceProvider).deleteAll();
+    } catch (e) {
+      ref.refreshData();
+      if (mounted) showSnack(context, 'Could not delete everything: $e', error: true);
+      return;
+    }
     ref.refreshData();
     if (mounted) showSnack(context, 'All data deleted');
   }

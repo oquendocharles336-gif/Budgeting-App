@@ -237,29 +237,63 @@ class CategoryAvatar extends StatelessWidget {
 }
 
 class MonthSwitcher extends StatelessWidget {
-  const MonthSwitcher({super.key, required this.month, required this.onPrevious, required this.onNext});
+  const MonthSwitcher({
+    super.key,
+    required this.month,
+    required this.onPrevious,
+    required this.onNext,
+    this.canGoPrevious = true,
+    this.canGoNext,
+    this.onPickMonth,
+  });
   final DateTime month;
   final VoidCallback onPrevious;
   final VoidCallback onNext;
+
+  /// False at the earliest month with data (Insights): the button is
+  /// greyed out and does nothing.
+  final bool canGoPrevious;
+
+  /// Defaults to "not the current month".
+  final bool? canGoNext;
+
+  /// When set, tapping the month name opens a picker.
+  final VoidCallback? onPickMonth;
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final isCurrent = month.year == now.year && month.month == now.month;
+    final label = DateFormat('MMMM yyyy').format(month);
+    final title = Text(label, textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium);
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        IconButton(onPressed: onPrevious, icon: const Icon(Icons.chevron_left_rounded), tooltip: 'Previous month'),
+        IconButton(
+          onPressed: canGoPrevious ? onPrevious : null,
+          icon: const Icon(Icons.chevron_left_rounded),
+          tooltip: canGoPrevious ? 'Previous month' : 'No earlier data',
+        ),
         SizedBox(
           width: 150,
-          child: Text(
-            DateFormat('MMMM yyyy').format(month),
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
+          child: onPickMonth == null
+              ? title
+              : Semantics(
+                  button: true,
+                  label: 'Choose month, $label',
+                  excludeSemantics: true,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: onPickMonth,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      child: Center(child: title),
+                    ),
+                  ),
+                ),
         ),
         IconButton(
-          onPressed: isCurrent ? null : onNext,
+          onPressed: (canGoNext ?? !isCurrent) ? onNext : null,
           icon: const Icon(Icons.chevron_right_rounded),
           tooltip: 'Next month',
         ),

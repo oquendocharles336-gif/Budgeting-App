@@ -23,6 +23,8 @@ class Migrations {
     4: _v4IncomeCategoriesAndDebtInterest,
     5: _v5AccountBalances,
     6: _v6DebtOriginAndLinkedExpense,
+    7: _v7PayLaterLoansFeesBusiness,
+    8: _v8StockLedgerCapitalWithdrawIdempotency,
   };
 
   static int get latestVersion => _steps.keys.reduce((a, b) => a > b ? a : b);
@@ -269,5 +271,198 @@ class Migrations {
     await db.execute('ALTER TABLE transactions ADD COLUMN debt_id INTEGER REFERENCES debts(id) ON DELETE SET NULL');
     await db.execute('CREATE INDEX ix_transactions_debt ON transactions(debt_id)');
     await DefaultData.ensureDebtCategory(db);
+  }
+
+  // ---------------------------------------------------------------------------
+  // v7: Pay Later, Loans "paid" state, transfer fees, business side
+  // ---------------------------------------------------------------------------
+  static Future<void> _v7PayLaterLoansFeesBusiness(DatabaseExecutor db) async {
+    // Only new columns (ALTER TABLE ... ADD COLUMN) and new tables, so
+    // every existing row is kept as it is.
+
+    // The "Fees" expense a transfer fee created points at its transfer.
+    // No REFERENCES: the repository removes it together with the transfer
+    // (so its balance change is undone too).
+    await db.execute('ALTER TABLE transactions ADD COLUMN fee_of_id INTEGER');
+    await db.execute('CREATE INDEX ix_transactions_fee_of ON transactions(fee_of_id)');
+    // 1 = a transfer into business capital: money leaves the personal
+    // account and does not arrive in another personal account.
+    await db.execute('ALTER TABLE transactions ADD COLUMN to_capital INTEGER NOT NULL DEFAULT 0');
+    // Loans section: when the user marked a "Loan" transaction as paid.
+    await db.execute('ALTER TABLE transactions ADD COLUMN loan_paid_at INTEGER');
+
+    await db.execute('''
+      CREATE TABLE pay_later (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        item           TEXT    NOT NULL,
+        amount         INTEGER NOT NULL CHECK (amount > 0),
+        category_id    INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+        purchase_date  INTEGER NOT NULL,
+        due_date       INTEGER NOT NULL,
+        status         TEXT    NOT NULL DEFAULT 'unpaid' CHECK (status IN ('unpaid', 'paid')),
+        paid_at        INTEGER,
+        expense_tx_id  INTEGER,
+        notes          TEXT,
+        created_at     INTEGER NOT NULL,
+        updated_at     INTEGER NOT NULL
+      )''');
+    await db.execute('CREATE INDEX ix_pay_later_due ON pay_later(status, due_date)');
+    // One expense per Pay Later item, ever.
+    await db.execute('''
+      CREATE UNIQUE INDEX ux_pay_later_expense
+      ON pay_later(expense_tx_id) WHERE expense_tx_id IS NOT NULL''');
+
+    // Business capital: + money moved in from the personal budget.
+    await db.execute('''
+      CREATE TABLE capital_entries (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount          INTEGER NOT NULL CHECK (amount != 0),
+        kind            TEXT    NOT NULL DEFAULT 'deposit',
+        note            TEXT,
+        date            INTEGER NOT NULL,
+        transaction_id  INTEGER,
+        created_at      INTEGER NOT NULL
+      )''');
+    await db.execute('CREATE INDEX ix_capital_date ON capital_entries(date)');
+    await db.execute('CREATE INDEX ix_capital_tx ON capital_entries(transaction_id)');
+
+    await db.execute('''
+      CREATE TABLE inventory_items (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL,
+        quantity    REAL    NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+        unit        TEXT    NOT NULL,
+        low_stock   REAL,
+        photo_path  TEXT,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      )''');
+
+    await db.execute('''
+      CREATE TABLE products (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL,
+        price       INTEGER NOT NULL CHECK (price >= 0),
+        photo_path  TEXT,
+        created_at  INTEGER NOT NULL,
+        updated_at  INTEGER NOT NULL
+      )''');
+
+    await db.execute('''
+      CREATE TABLE orders (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        buyer             TEXT    NOT NULL,
+        order_date        INTEGER NOT NULL,
+        total             INTEGER NOT NULL CHECK (total >= 0),
+        paid_amount       INTEGER NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
+        tendered          INTEGER,
+        change_given      INTEGER,
+        method            TEXT    NOT NULL DEFAULT 'cash'
+                          CHECK (method IN ('cash', 'maya', 'maribank', 'bdo')),
+        status            TEXT    NOT NULL DEFAULT 'complete'
+                          CHECK (status IN ('complete', 'paid', 'delivered', 'delivered_unpaid')),
+        notes             TEXT,
+        budget_tx_id      INTEGER,
+        added_to_budget_at INTEGER,
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
+      )''');
+    await db.execute('CREATE INDEX ix_orders_date ON orders(order_date)');
+    await db.execute('CREATE INDEX ix_orders_budget_tx ON orders(budget_tx_id)');
+
+    // Product name and price are copied, so old orders keep their history
+    // after a product is renamed, repriced or deleted.
+    await db.execute('''
+      CREATE TABLE order_items (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id    INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+        product_id  INTEGER REFERENCES products(id) ON DELETE SET NULL,
+        name        TEXT    NOT NULL,
+        unit_price  INTEGER NOT NULL CHECK (unit_price >= 0),
+        quantity    INTEGER NOT NULL CHECK (quantity > 0)
+      )''');
+    await db.execute('CREATE INDEX ix_order_items_order ON order_items(order_id)');
+
+    await DefaultData.ensureV7Categories(db);
+  }
+
+  // ---------------------------------------------------------------------------
+  // v8: stock ledger + recipes, capital withdrawals, safe retries
+  // ---------------------------------------------------------------------------
+  static Future<void> _v8StockLedgerCapitalWithdrawIdempotency(DatabaseExecutor db) async {
+    // One row per user action that must happen once (a save, a payment, a
+    // transfer). A retry or double tap with the same key finds the row and
+    // returns the first result instead of writing again.
+    await db.execute('''
+      CREATE TABLE op_keys (
+        key         TEXT    PRIMARY KEY,
+        result      INTEGER,
+        created_at  INTEGER NOT NULL
+      )''');
+
+    // A transfer out of business capital into a personal account.
+    await db.execute('ALTER TABLE transactions ADD COLUMN from_capital INTEGER NOT NULL DEFAULT 0');
+
+    // Capital ledger: deposit, withdrawal, fee, sales_added. v7's table
+    // didn't allow amount 0 (needed for "sales added" history rows, which
+    // don't change capital), so it is rebuilt. Nothing references it.
+    await db.execute('''
+      CREATE TABLE capital_entries_v8 (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount          INTEGER NOT NULL,
+        kind            TEXT    NOT NULL DEFAULT 'deposit'
+                        CHECK (kind IN ('deposit', 'withdrawal', 'fee', 'sales_added')),
+        memo_amount     INTEGER,
+        note            TEXT,
+        date            INTEGER NOT NULL,
+        transaction_id  INTEGER,
+        created_at      INTEGER NOT NULL
+      )''');
+    await db.execute('''
+      INSERT INTO capital_entries_v8 (id, amount, kind, note, date, transaction_id, created_at)
+      SELECT id, amount,
+             CASE WHEN kind IN ('deposit', 'withdrawal', 'fee', 'sales_added') THEN kind ELSE 'deposit' END,
+             note, date, transaction_id, created_at
+      FROM capital_entries''');
+    await db.execute('DROP TABLE capital_entries');
+    await db.execute('ALTER TABLE capital_entries_v8 RENAME TO capital_entries');
+    await db.execute('CREATE INDEX ix_capital_date ON capital_entries(date)');
+    await db.execute('CREATE INDEX ix_capital_tx ON capital_entries(transaction_id)');
+
+    // Stock ledger: the stock shown is always SUM(change) per item.
+    await db.execute('''
+      CREATE TABLE stock_movements (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id     INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+        change      REAL    NOT NULL,
+        reason      TEXT    NOT NULL
+                    CHECK (reason IN ('restock', 'order', 'adjustment', 'order_cancelled')),
+        order_id    INTEGER,
+        note        TEXT,
+        date        INTEGER NOT NULL,
+        created_at  INTEGER NOT NULL
+      )''');
+    await db.execute('CREATE INDEX ix_stock_item ON stock_movements(item_id)');
+    await db.execute('CREATE INDEX ix_stock_order ON stock_movements(order_id)');
+    // Existing stock becomes each item's first ledger row, so nothing changes on screen.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await db.execute('''
+      INSERT INTO stock_movements (item_id, change, reason, note, date, created_at)
+      SELECT id, quantity, 'adjustment', 'Starting stock', $now, $now
+      FROM inventory_items WHERE quantity > 0''');
+
+    // Recipe: how much of each ingredient one unit of a product uses.
+    await db.execute('''
+      CREATE TABLE product_ingredients (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        item_id     INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+        quantity    REAL    NOT NULL CHECK (quantity > 0),
+        UNIQUE (product_id, item_id)
+      )''');
+    await db.execute('CREATE INDEX ix_ingredients_item ON product_ingredients(item_id)');
+
+    // Cancelled orders return their stock and leave sales totals.
+    await db.execute('ALTER TABLE orders ADD COLUMN cancelled_at INTEGER');
   }
 }

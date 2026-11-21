@@ -15,8 +15,15 @@ class SettingsRepository {
   static const smsEnabled = 'sms_enabled';
   static const cardOnboardingSeen = 'card_onboarding_seen';
 
+  /// Form being filled in when the camera opened (restored if Android
+  /// closes the app meanwhile).
+  static const photoDraft = 'photo_draft';
+
+  /// Set once every old plain photo has been encrypted.
+  static const photosEncrypted = 'photos_encrypted_v1';
+
   /// Keys that are device-specific and never exported in backups.
-  static const privateKeys = {pinHash, pinSalt, biometricEnabled};
+  static const privateKeys = {pinHash, pinSalt, biometricEnabled, photoDraft, photosEncrypted};
 
   static String budgetAlertKey(String month) => 'budget_alerts_$month';
 

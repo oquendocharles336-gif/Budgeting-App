@@ -45,7 +45,7 @@ bool matchesFilter(TransactionEntry t, TransactionFilter f) {
   if (f.cardId != null) {
     if (t.cardId != f.cardId && t.toCardId != f.cardId) return false;
   } else if (f.cashOnly) {
-    if (!(t.cardId == null || (t.isTransfer && t.toCardId == null))) return false;
+    if (!((t.cardId == null && !t.fromCapital) || (t.isTransfer && t.toCardId == null && !t.toCapital))) return false;
   }
   if (f.categoryId != null && t.categoryId != f.categoryId) return false;
   if (f.kind != null && t.kind != f.kind) return false;

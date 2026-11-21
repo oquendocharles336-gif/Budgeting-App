@@ -34,12 +34,14 @@ class TransactionTile extends StatelessWidget {
     final parts = [
       if (showDate) DateFormat('MMM d').format(tx.date),
       if (tx.isTransfer) ...[
-        'Transfer',
-        '${account(tx.cardId, card)} → ${account(tx.toCardId, toCard)}',
+        tx.toCapital ? 'To business' : (tx.fromCapital ? 'From business' : 'Transfer'),
+        '${tx.fromCapital ? 'Business capital' : account(tx.cardId, card)} → '
+            '${tx.toCapital ? 'Business capital' : account(tx.toCardId, toCard)}',
       ] else ...[
         // "Other" shows what the user typed, e.g. "Pet food".
         (tx.customCategory?.trim().isNotEmpty ?? false) ? tx.customCategory!.trim() : (category?.name ?? 'Uncategorized'),
         account(tx.cardId, card),
+        if (tx.isLoanPaid) 'Paid ${DateFormat('MMM d').format(tx.loanPaidAt!)}',
       ],
     ];
     return ListTile(

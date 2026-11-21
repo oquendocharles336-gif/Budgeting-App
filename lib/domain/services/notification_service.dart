@@ -4,9 +4,10 @@ import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 import 'debt_service.dart';
+import 'pay_later_service.dart';
 
 /// Local notifications only. Nothing is sent to a server.
-class NotificationService implements DebtReminderScheduler {
+class NotificationService implements DebtReminderScheduler, PayLaterReminderScheduler {
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
 
@@ -29,10 +30,22 @@ class NotificationService implements DebtReminderScheduler {
     visibility: NotificationVisibility.private,
   );
 
-  /// Budget alerts use ids 1000..; debt reminders use 100000 + debtId * 2.
+  static const _payLaterChannel = AndroidNotificationDetails(
+    'pay_later_reminders',
+    'Pay Later reminders',
+    channelDescription: 'Reminders before a Pay Later purchase is due',
+    importance: Importance.high,
+    priority: Priority.high,
+    visibility: NotificationVisibility.private,
+  );
+
+  /// Budget alerts use ids 1000..; debt reminders use 100000 + debtId * 2;
+  /// Pay Later reminders use 10000000 + itemId (no overlap below
+  /// ~4.9 million debts).
   static int budgetAlertId(int? categoryId, int threshold) =>
       1000 + (categoryId ?? 0) * 2 + (threshold >= 100 ? 1 : 0);
   static int _debtId(int debtId, int which) => 100000 + debtId * 2 + which;
+  static int payLaterId(int itemId) => 10000000 + itemId;
 
   Future<void> init() async {
     if (_ready) return;
@@ -119,6 +132,39 @@ class NotificationService implements DebtReminderScheduler {
     // Slot 1 was the old "due today" reminder; cleared for upgrades.
     await _plugin.cancel(id: _debtId(debtId, 0));
     await _plugin.cancel(id: _debtId(debtId, 1));
+  }
+
+  /// Same timing rules as debt reminders (deadline minus 2 days, 9:00 AM).
+  @override
+  Future<void> schedulePayLaterReminder({
+    required int itemId,
+    required DateTime at,
+    required String title,
+    required String body,
+  }) async {
+    await cancelPayLaterReminder(itemId);
+    await init();
+    if (!_ready) return;
+    const details = NotificationDetails(android: _payLaterChannel, iOS: DarwinNotificationDetails());
+    if (at.difference(DateTime.now()) < const Duration(minutes: 1)) {
+      await _plugin.show(id: payLaterId(itemId), title: title, body: body, notificationDetails: details);
+      return;
+    }
+    await _plugin.zonedSchedule(
+      id: payLaterId(itemId),
+      title: title,
+      body: body,
+      scheduledDate: tz.TZDateTime.from(at, tz.local),
+      notificationDetails: details,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+    );
+  }
+
+  @override
+  Future<void> cancelPayLaterReminder(int itemId) async {
+    await init();
+    if (!_ready) return;
+    await _plugin.cancel(id: payLaterId(itemId));
   }
 
   Future<void> cancelAll() async {

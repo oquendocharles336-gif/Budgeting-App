@@ -36,6 +36,15 @@ class CategoryRepository {
   /// The "Debt" expense category (created if missing).
   Future<int> debtCategoryId() => DefaultData.ensureDebtCategory(_db);
 
+  /// The "Fees" expense category for transfer fees (created if missing).
+  Future<int> feesCategoryId() => DefaultData.ensureFeesCategory(_db);
+
+  /// The "Loan" expense category listed in the Loans section.
+  Future<int> loanCategoryId() => DefaultData.ensureLoanCategory(_db);
+
+  /// The "Business / sales" income category for sales added to the budget.
+  Future<int> salesCategoryId() => DefaultData.ensureSalesCategory(_db);
+
   Future<int?> otherIncomeId() async {
     final rows = await _db.query(
       'categories',

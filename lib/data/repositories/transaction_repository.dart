@@ -4,6 +4,8 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 
 import '../models/transaction_entry.dart';
 import 'account_ledger.dart';
+import 'linked_records.dart';
+import 'op_guard.dart';
 
 class TransactionRepository {
   TransactionRepository(this._db);
@@ -26,7 +28,11 @@ class TransactionRepository {
         ..add(filter.cardId)
         ..add(filter.cardId);
     } else if (filter.cashOnly) {
-      where.add("(card_id IS NULL OR (kind = 'transfer' AND to_card_id IS NULL))");
+      // A transfer into business capital has no destination account, so a
+      // NULL to_card_id there doesn't mean Cash.
+      // Transfers to/from business capital have no personal account on that
+      // side, so a NULL there doesn't mean Cash.
+      where.add("((card_id IS NULL AND from_capital = 0) OR (kind = 'transfer' AND to_card_id IS NULL AND to_capital = 0))");
     }
     if (filter.categoryId != null) {
       where.add('category_id = ?');
@@ -92,6 +98,30 @@ class TransactionRepository {
         return id;
       });
 
+  /// Saves a transfer and, when there is one, its fee as a separate
+  /// "Fees" expense (linked by `fee_of_id`), in one SQLite transaction.
+  /// [afterInsert] runs in the same transaction with the transfer's id
+  /// (used to record business capital; throwing there undoes everything).
+  /// With an [opKey], a retry or double tap returns the first transfer's id
+  /// and writes nothing, so a transfer is never saved twice.
+  Future<int> insertTransfer(
+    TransactionEntry transfer, {
+    TransactionEntry? fee,
+    Future<void> Function(DatabaseExecutor txn, int transferId)? afterInsert,
+    String? opKey,
+  }) =>
+      _db.transaction((txn) => OpGuard.once(txn, opKey, () async {
+        final id = await txn.insert('transactions', transfer.toMap()..remove('id'));
+        await AccountLedger.apply(txn, transfer);
+        if (fee != null) {
+          final linked = fee.copyWith(feeOfId: () => id);
+          await txn.insert('transactions', linked.toMap()..remove('id'));
+          await AccountLedger.apply(txn, linked);
+        }
+        if (afterInsert != null) await afterInsert(txn, id);
+        return id;
+      }));
+
   /// Inserts all rows in one database transaction. Returns how many were saved.
   Future<int> insertMany(List<TransactionEntry> txs) async {
     if (txs.isEmpty) return 0;
@@ -112,16 +142,29 @@ class TransactionRepository {
         final old = await _byId(txn, tx.id!);
         if (old == null) throw StateError('Transaction ${tx.id} no longer exists');
         await AccountLedger.apply(txn, old, sign: -1);
-        // Whether a row moves balances is fixed when it is created.
-        final next = tx.copyWith(affectsBalance: old.affectsBalance);
+        // Whether a row moves balances, and whether a transfer went into
+        // business capital, are fixed when it is created.
+        final next = tx.copyWith(affectsBalance: old.affectsBalance, toCapital: old.toCapital, fromCapital: old.fromCapital);
         await txn.update('transactions', next.toMap(), where: 'id = ?', whereArgs: [tx.id]);
         await AccountLedger.apply(txn, next);
+        // A transfer's fee is paid from the same account: follow a change.
+        if (old.isTransfer && next.isTransfer && old.cardId != next.cardId) {
+          final fees = await txn.query('transactions', where: 'fee_of_id = ?', whereArgs: [tx.id]);
+          for (final row in fees) {
+            final fee = TransactionEntry.fromMap(row);
+            await AccountLedger.apply(txn, fee, sign: -1);
+            final moved = fee.copyWith(cardId: () => next.cardId, updatedAt: DateTime.now());
+            await txn.update('transactions', moved.toMap(), where: 'id = ?', whereArgs: [fee.id]);
+            await AccountLedger.apply(txn, moved);
+          }
+        }
       });
 
   /// Deletes the row and gives its money back to (or takes it from) the account.
   Future<void> delete(int id) => _db.transaction((txn) async {
         final old = await _byId(txn, id);
         if (old == null) return;
+        await LinkedRecords.beforeTransactionsDeleted(txn, [id]);
         await AccountLedger.apply(txn, old, sign: -1);
         await txn.delete('transactions', where: 'id = ?', whereArgs: [id]);
       });
@@ -185,6 +228,44 @@ class TransactionRepository {
       where: 'category_id = ?',
       whereArgs: [fromCategoryId],
     );
+  }
+
+  /// Fee expenses saved for [transferId] (normally zero or one).
+  Future<List<TransactionEntry>> feesOf(int transferId) async {
+    final rows = await _db.query('transactions', where: 'fee_of_id = ?', whereArgs: [transferId], orderBy: 'id');
+    return rows.map(TransactionEntry.fromMap).toList();
+  }
+
+  /// Transactions filed under the "Loan" category (or any category the user
+  /// named "Loan"): unpaid first, newest first.
+  Future<List<TransactionEntry>> loans() async {
+    final rows = await _db.rawQuery('''
+      SELECT t.* FROM transactions t
+      JOIN categories c ON c.id = t.category_id
+      WHERE c.role = 'loanRecord' OR c.name = 'Loan' COLLATE NOCASE
+      ORDER BY t.loan_paid_at IS NOT NULL, t.date DESC, t.id DESC
+    ''');
+    return rows.map(TransactionEntry.fromMap).toList();
+  }
+
+  /// Marks a "Loan" row paid at [paidAt], or unpaid when null. Only this
+  /// column changes: no expense is added and no balance moves.
+  Future<void> setLoanPaid(int id, DateTime? paidAt) async {
+    await _db.update(
+      'transactions',
+      {'loan_paid_at': paidAt?.millisecondsSinceEpoch, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// The earliest day with spending to chart (Insights shows expenses only).
+  Future<DateTime?> earliestExpenseDate() async {
+    final r = await _db.rawQuery(
+      "SELECT MIN(date) AS d FROM transactions WHERE kind = 'expense' AND amount > 0 AND date > 0",
+    );
+    final v = r.first['d'] as int?;
+    return v == null ? null : DateTime.fromMillisecondsSinceEpoch(v);
   }
 
   Future<DateTime?> earliestDate() async {

@@ -102,6 +102,72 @@ class DefaultData {
     return db.insert('categories', debtCategory.copyWith(name: name).toMap()..remove('id'));
   }
 
+  static const feesCategory = Category(
+    name: 'Fees',
+    icon: 'fees',
+    color: 0xFF78909C,
+    isDefault: true,
+    sortOrder: 9,
+    role: CategoryRole.fees,
+  );
+
+  static const loanCategory = Category(
+    name: 'Loan',
+    icon: 'loan',
+    color: 0xFF8D6E63,
+    isDefault: true,
+    sortOrder: 10,
+    role: CategoryRole.loanRecord,
+  );
+
+  static const salesCategory = Category(
+    name: 'Business / sales',
+    icon: 'store',
+    color: 0xFF7E57C2,
+    isDefault: true,
+    sortOrder: 104,
+    kind: TransactionKind.income,
+    role: CategoryRole.sales,
+  );
+
+  /// Finds the category with [role], else tags an untagged one of the same
+  /// name and kind the user already has, else creates it. Returns its id.
+  /// Same approach as [ensureDebtCategory], so nothing the user made is
+  /// duplicated or renamed.
+  static Future<int> ensureRoleCategory(DatabaseExecutor db, Category c) async {
+    final role = c.role!.name;
+    final kind = c.isIncome ? 'income' : 'expense';
+    final tagged = await db.query('categories', columns: ['id'], where: 'role = ?', whereArgs: [role], limit: 1);
+    if (tagged.isNotEmpty) return tagged.first['id'] as int;
+    final named = await db.query(
+      'categories',
+      columns: ['id'],
+      where: 'name = ? COLLATE NOCASE AND kind = ? AND role IS NULL',
+      whereArgs: [c.name, kind],
+      limit: 1,
+    );
+    if (named.isNotEmpty) {
+      final id = named.first['id'] as int;
+      await db.update('categories', {'role': role}, where: 'id = ?', whereArgs: [id]);
+      return id;
+    }
+    var name = c.name;
+    final clash = await db.query('categories', where: 'name = ? COLLATE NOCASE', whereArgs: [name], limit: 1);
+    if (clash.isNotEmpty) name = '${c.name} ($kind)';
+    return db.insert('categories', c.copyWith(name: name).toMap()..remove('id'));
+  }
+
+  static Future<int> ensureFeesCategory(DatabaseExecutor db) => ensureRoleCategory(db, feesCategory);
+  static Future<int> ensureLoanCategory(DatabaseExecutor db) => ensureRoleCategory(db, loanCategory);
+  static Future<int> ensureSalesCategory(DatabaseExecutor db) => ensureRoleCategory(db, salesCategory);
+
+  /// Categories added in v7 (also run after a restore and "Delete all").
+  static Future<void> ensureV7Categories(DatabaseExecutor db) async {
+    await ensureFeesCategory(db);
+    await ensureLoanCategory(db);
+    await ensureSalesCategory(db);
+  }
+
   static const _keywords = <int, List<String>>{
     food: [
       'jollibee', 'mcdonald', 'mang inasal', 'chowking', 'greenwich', 'kfc',

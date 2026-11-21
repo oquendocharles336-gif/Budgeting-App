@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../../core/money.dart';
+import '../../../core/op_key.dart';
 import '../../../data/models/category.dart';
 import '../../../data/models/debt.dart';
 import '../../../data/models/payment_card.dart';
@@ -18,6 +19,7 @@ import '../../providers/data_providers.dart';
 import '../../providers/optimistic_providers.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/animated_icons.dart';
+import '../../widgets/optimistic.dart';
 import '../cards/card_form_screen.dart';
 import '../debts/debt_form_screen.dart';
 
@@ -42,6 +44,12 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
   late final TextEditingController _description;
   late final TextEditingController _notes;
   late final TextEditingController _customCategory;
+
+  /// Optional transfer fee (new transfers only).
+  final _fee = TextEditingController();
+
+  /// Fee already saved with the transfer being edited.
+  Future<int>? _existingFee;
   late TransactionKind _kind;
   late DateTime _date;
   int? _categoryId;
@@ -80,6 +88,10 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     _cardId = e?.cardId ?? widget.initialCardId;
     _toCardId = e?.toCardId;
     _categoryTouched = e != null;
+    final existing = widget.existing;
+    if (existing != null && existing.isTransfer && existing.id != null) {
+      _existingFee = ref.read(transactionServiceProvider).feeOf(existing.id!);
+    }
   }
 
   @override
@@ -89,6 +101,7 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     _description.dispose();
     _notes.dispose();
     _customCategory.dispose();
+    _fee.dispose();
     super.dispose();
   }
 
@@ -146,10 +159,102 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     );
   }
 
+  /// The optional fee typed for a new transfer (0 when empty).
+  int get _feeValue {
+    if (_kind != TransactionKind.transfer || _isEdit) return 0;
+    final text = _fee.text.trim();
+    if (text.isEmpty) return 0;
+    return (Money.parse(text) ?? 0).abs();
+  }
+
+  String _accountName(int? id) {
+    if (id == null) return 'Cash';
+    return (ref.read(cardMapProvider).asDataOrNull ?? const {})[id]?.nickname ?? 'Account';
+  }
+
+  /// The fee is always spelled out before a transfer with a fee is saved.
+  Future<bool> _confirmFee(int amount, int fee) {
+    final symbol = ref.read(currencyProvider).symbol;
+    String m(int v) => Money.format(v, symbol: symbol);
+    return confirm(
+      context,
+      title: 'Transfer with a fee',
+      message: '${_accountName(_cardId)}: -${m(amount + fee)} (amount ${m(amount)} + fee ${m(fee)})\n'
+          '${_accountName(_toCardId)}: +${m(amount)}\n\n'
+          'The fee of ${m(fee)} is saved as a separate expense in "Fees".',
+      confirmLabel: 'Transfer',
+      destructive: false,
+    );
+  }
+
+  /// One key per transfer on this form: a double tap or "Try again" can't
+  /// save the transfer (or its fee) twice.
+  final _transferKey = newOpKey('transfer');
+
+  /// Transfer + fee, optimistic: both rows show at once with "Saved", then
+  /// are written together in one SQLite transaction. On failure they're
+  /// taken back out and "Try again" repeats the same write.
+  void _saveTransferWithFee({
+    required int amount,
+    required int fee,
+    required String description,
+    required String? notes,
+  }) {
+    final service = ref.read(transactionServiceProvider);
+    final from = _cardId;
+    final to = _toCardId;
+    final date = _date;
+    final key = _transferKey;
+    final now = DateTime.now();
+    TransactionEntry row(TransactionKind kind, int value, String text, {int? toCard}) => TransactionEntry(
+          amount: value,
+          kind: kind,
+          description: text,
+          cardId: from,
+          toCardId: toCard,
+          date: date,
+          notes: notes,
+          source: TransactionSourceType.manual,
+          affectsBalance: true,
+          createdAt: now,
+          updatedAt: now,
+        );
+    OptimisticWrite.run(
+      context,
+      savedText: 'Saved transfer and fee',
+      what: 'the transfer',
+      show: (c) {
+        final pending = c.read(pendingTransactionsProvider.notifier);
+        final ids = [
+          pending.add(row(TransactionKind.transfer, amount, description, toCard: to)),
+          pending.add(row(TransactionKind.expense, fee, 'Transfer fee')),
+        ];
+        return () {
+          for (final id in ids) {
+            pending.clear(id);
+          }
+        };
+      },
+      write: () => service.createTransfer(
+        amount: amount,
+        fee: fee,
+        fromAccountId: from,
+        toAccountId: to,
+        date: date,
+        description: description,
+        notes: notes,
+        opKey: key,
+      ),
+    );
+    Navigator.of(context).pop();
+  }
+
   Future<void> _save() async {
     if (_saving || !_form.currentState!.validate()) return;
     final amount = Money.parse(_amount.text)!.abs();
-    if (!await _confirmBalance(amount) || !mounted) return;
+    final fee = _feeValue;
+    if (!await _confirmBalance(amount + fee) || !mounted) return;
+    if (fee > 0 && (!await _confirmFee(amount, fee) || !mounted)) return;
     // No category picked: the keyword rules decide, falling back to "Other".
     setState(() => _saving = true);
     final notes = _notes.text.trim().isEmpty ? null : _notes.text.trim();
@@ -163,6 +268,10 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     // New income from "Borrowed money" is also added to Debts.
     final addDebt = !_isEdit && _kind == TransactionKind.income && (selected?.isLoan ?? false);
     final service = ref.read(transactionServiceProvider);
+    if (fee > 0) {
+      _saveTransferWithFee(amount: amount, fee: fee, description: description, notes: notes);
+      return;
+    }
     if (!addDebt) {
       _saveOptimistically(
         service: service,
@@ -405,6 +514,8 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
       );
     } else if (sources.any((v) => !v.hasValue)) {
       body = const LoadingView();
+    } else if (widget.existing?.isCapitalTransfer ?? false) {
+      body = _CapitalTransferInfo(tx: widget.existing!, onDelete: _delete);
     } else {
       body = _buildForm(context, categories.requireValue, cards.requireValue, cardMap.requireValue);
     }
@@ -514,6 +625,9 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
               prefixStyle: Theme.of(context).textTheme.headlineMedium?.copyWith(color: scheme.onSurfaceVariant),
             ),
             validator: validateAmount,
+            onChanged: (_) {
+              if (isTransfer && _fee.text.isNotEmpty) setState(() {});
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -620,6 +734,52 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
               onChanged: (v) => setState(() => _toCardId = v),
               validator: (v) => v == _cardId ? 'Pick a different account to transfer to' : null,
             ),
+            if (!_isEdit) ...[
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _fee,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                decoration: InputDecoration(
+                  labelText: 'Fee (optional)',
+                  prefixText: '$symbol ',
+                  helperText: 'Charged by the bank or e-wallet. Saved as a separate expense in "Fees".',
+                  helperMaxLines: 2,
+                ),
+                onChanged: (_) => setState(() {}),
+                validator: (v) => (v == null || v.trim().isEmpty) ? null : validateAmount(v, allowZero: true),
+              ),
+              if (_feeValue > 0) ...[
+                const SizedBox(height: 8),
+                Builder(builder: (context) {
+                  final amount = Money.parse(_amount.text)?.abs() ?? 0;
+                  final fee = _feeValue;
+                  return Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      '${_accountName(_cardId)} goes down by ${Money.format(amount + fee, symbol: symbol)} · '
+                      '${_accountName(_toCardId)} gets ${Money.format(amount, symbol: symbol)}',
+                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  );
+                }),
+              ],
+            ] else if (_existingFee != null)
+              FutureBuilder<int>(
+                future: _existingFee,
+                builder: (context, snap) {
+                  final fee = snap.data ?? 0;
+                  if (fee == 0) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Fee of ${Money.format(fee, symbol: symbol)} is saved separately in "Fees". '
+                      'Deleting this transfer deletes the fee too.',
+                      style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                    ),
+                  );
+                },
+              ),
           ],
           if (cards.isEmpty)
             Align(
@@ -670,6 +830,59 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Money moved into or out of business capital: shown read-only here, because it is
+/// tied to the capital history. Delete it here or in Business > Capital.
+class _CapitalTransferInfo extends ConsumerWidget {
+  const _CapitalTransferInfo({required this.tx, required this.onDelete});
+  final TransactionEntry tx;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    final cards = ref.watch(cardMapProvider).asDataOrNull ?? const {};
+    String name(int? id) => id == null ? 'Cash' : (cards[id]?.nickname ?? 'Account');
+    final out = tx.fromCapital;
+    final personal = out ? name(tx.toCardId) : name(tx.cardId);
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(out ? 'Taken out of business capital' : 'Moved to business capital', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 8),
+              AmountText(tx.amount, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 4),
+              Text(
+                '${out ? 'To' : 'From'} $personal · ${DateFormat('MMM d, yyyy').format(tx.date)}',
+                style: TextStyle(color: scheme.onSurfaceVariant),
+              ),
+              if (tx.notes != null) ...[const SizedBox(height: 8), Text(tx.notes!)],
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          out
+              ? 'This is part of your business capital history, so it can\'t be edited. '
+                  'Deleting it takes the money back out of $personal and returns it (and any fee) to capital.'
+              : 'This is part of your business capital history, so it can\'t be edited. '
+                  'Deleting it returns the money (and any fee) to $personal and removes it from capital.',
+          style: TextStyle(color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: onDelete,
+          icon: const Icon(Icons.delete_outline_rounded),
+          label: const Text('Delete'),
+        ),
+      ],
     );
   }
 }

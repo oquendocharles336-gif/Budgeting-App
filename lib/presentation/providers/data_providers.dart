@@ -4,14 +4,17 @@ import '../../core/dates.dart';
 import '../../data/models/budget.dart';
 import '../../data/models/category.dart';
 import '../../data/models/debt.dart';
+import '../../data/models/pay_later.dart';
 import '../../data/models/payment_card.dart';
 import '../../data/models/sms_pattern.dart';
 import '../../data/models/transaction_entry.dart';
 import '../../domain/analytics/data_prep.dart';
+import '../../domain/analytics/insights_range.dart';
 import '../../domain/analytics/spending_analytics.dart';
 import '../../domain/budget/budget_calculator.dart';
 import 'core_providers.dart';
 import 'optimistic_providers.dart';
+import 'pending_providers.dart';
 
 // Every provider below watches dataRevisionProvider, so a single bump()
 // after a write refreshes everything on screen.
@@ -131,6 +134,29 @@ final debtsProvider = FutureProvider<List<DebtStatus>>((ref) {
 final debtPaymentsProvider = FutureProvider.family<List<DebtPayment>, int>((ref, debtId) {
   ref.watch(dataRevisionProvider);
   return ref.watch(debtRepositoryProvider).payments(debtId);
+});
+
+// -----------------------------------------------------------------------------
+// Pay Later and Loans
+// -----------------------------------------------------------------------------
+
+final _payLaterBaseProvider = FutureProvider<List<PayLaterItem>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(payLaterRepositoryProvider).all();
+});
+
+/// Pay Later items, with saves still in progress shown at once.
+final payLaterProvider = FutureProvider<List<PayLaterItem>>((ref) async {
+  final base = await ref.watch(_payLaterBaseProvider.future);
+  final list = overlay(base, ref.watch(pendingPayLaterProvider).values, (i) => i.id);
+  // Same order as the database: unpaid (soonest due) first, then paid.
+  return [...list.where((i) => !i.isPaid), ...list.where((i) => i.isPaid)];
+});
+
+/// Transactions in the "Loan" category, unpaid first.
+final loansProvider = FutureProvider<List<TransactionEntry>>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(transactionServiceProvider).loans();
 });
 
 // -----------------------------------------------------------------------------
@@ -315,6 +341,13 @@ class AnalyticsData {
 
   PeriodComparison get monthComparison => PeriodComparison(current: total, previous: previousMonthTotal);
 }
+
+/// Months Insights may show: from the first month with spending to now.
+final insightsRangeProvider = FutureProvider<InsightsRange>((ref) async {
+  ref.watch(dataRevisionProvider);
+  final earliest = await ref.watch(transactionRepositoryProvider).earliestExpenseDate();
+  return InsightsRange.from(earliest, DateTime.now());
+});
 
 final analyticsProvider = FutureProvider.family<AnalyticsData, String>((ref, monthKey) async {
   ref.watch(dataRevisionProvider);

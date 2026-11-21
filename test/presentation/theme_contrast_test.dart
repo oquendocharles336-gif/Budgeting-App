@@ -1,5 +1,6 @@
 import 'package:budgeting_app/presentation/theme/app_palette.dart';
 import 'package:budgeting_app/presentation/theme/app_theme.dart';
+import 'package:budgeting_app/presentation/widgets/status_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -34,6 +35,15 @@ void main() {
         aa('warning on cards', t.warning, t.second);
         aa('danger on cards', t.danger, t.second);
         aa('accent button vs background', t.accent, t.main, Contrast.aaLarge);
+
+        // Colors used by Pay Later, Loans and the business screens.
+        aa('muted labels on cards (tiles, hero cards)', t.onSecondMuted, t.second);
+        aa('photo placeholder icon on secondHigh', t.onSecondMuted, t.secondHigh, Contrast.aaLarge);
+        for (final tone in BadgeTone.values) {
+          final c = BadgeColors.of(t, tone);
+          aa('${tone.name} badge text', c.foreground, c.background);
+          aa('${tone.name} badge icon', c.icon, c.background, Contrast.aaLarge);
+        }
       });
     }
   }

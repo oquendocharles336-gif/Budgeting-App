@@ -47,6 +47,10 @@ class TransactionEntry {
     this.dedupHash,
     this.affectsBalance = false,
     this.debtId,
+    this.feeOfId,
+    this.toCapital = false,
+    this.fromCapital = false,
+    this.loanPaidAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -80,6 +84,21 @@ class TransactionEntry {
   /// Set on the expense a new debt created, so editing or deleting the
   /// debt keeps it in sync.
   final int? debtId;
+
+  /// Set on a "Fees" expense: the transfer whose fee it is. Deleting the
+  /// transfer deletes the fee too.
+  final int? feeOfId;
+
+  /// Transfers only: the money went into business capital, not into
+  /// another personal account ([toCardId] is then unused).
+  final bool toCapital;
+
+  /// Transfers only: the money came out of business capital into the
+  /// personal account [toCardId] ([cardId] is then unused).
+  final bool fromCapital;
+
+  /// "Loan" transactions: when the user marked it paid (null = unpaid).
+  final DateTime? loanPaidAt;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -87,6 +106,9 @@ class TransactionEntry {
   bool get isExpense => kind == TransactionKind.expense;
   bool get isIncome => kind == TransactionKind.income;
   bool get isTransfer => kind == TransactionKind.transfer;
+  bool get isCapitalTransfer => isTransfer && (toCapital || fromCapital);
+  bool get isFee => feeOfId != null;
+  bool get isLoanPaid => loanPaidAt != null;
 
   /// Signed amount: negative for expenses, zero for transfers (net worth
   /// doesn't change when money moves between your own accounts).
@@ -112,6 +134,10 @@ class TransactionEntry {
     String? Function()? dedupHash,
     bool? affectsBalance,
     int? Function()? debtId,
+    int? Function()? feeOfId,
+    bool? toCapital,
+    bool? fromCapital,
+    DateTime? Function()? loanPaidAt,
     DateTime? updatedAt,
   }) =>
       TransactionEntry(
@@ -130,6 +156,10 @@ class TransactionEntry {
         dedupHash: dedupHash != null ? dedupHash() : this.dedupHash,
         affectsBalance: affectsBalance ?? this.affectsBalance,
         debtId: debtId != null ? debtId() : this.debtId,
+        feeOfId: feeOfId != null ? feeOfId() : this.feeOfId,
+        toCapital: toCapital ?? this.toCapital,
+        fromCapital: fromCapital ?? this.fromCapital,
+        loanPaidAt: loanPaidAt != null ? loanPaidAt() : this.loanPaidAt,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -150,6 +180,10 @@ class TransactionEntry {
         'dedup_hash': dedupHash,
         'affects_balance': affectsBalance ? 1 : 0,
         'debt_id': debtId,
+        'fee_of_id': feeOfId,
+        'to_capital': toCapital ? 1 : 0,
+        'from_capital': fromCapital ? 1 : 0,
+        'loan_paid_at': loanPaidAt?.millisecondsSinceEpoch,
         'created_at': createdAt.millisecondsSinceEpoch,
         'updated_at': updatedAt.millisecondsSinceEpoch,
       };
@@ -170,6 +204,10 @@ class TransactionEntry {
         dedupHash: m['dedup_hash'] as String?,
         affectsBalance: (m['affects_balance'] as int? ?? 0) == 1,
         debtId: m['debt_id'] as int?,
+        feeOfId: m['fee_of_id'] as int?,
+        toCapital: (m['to_capital'] as int? ?? 0) == 1,
+        fromCapital: (m['from_capital'] as int? ?? 0) == 1,
+        loanPaidAt: m['loan_paid_at'] == null ? null : DateTime.fromMillisecondsSinceEpoch(m['loan_paid_at'] as int),
         createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
         updatedAt: DateTime.fromMillisecondsSinceEpoch(m['updated_at'] as int),
       );

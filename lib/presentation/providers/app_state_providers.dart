@@ -8,7 +8,7 @@ import 'core_providers.dart';
 
 /// Bump this when the privacy policy or terms change in a way users must
 /// accept again.
-const currentTermsVersion = '2'; // 2: password + encryption
+const currentTermsVersion = '4'; // 2: password + encryption; 3: Pay Later, business side, photos; 4: encrypted photos in backups
 
 // -----------------------------------------------------------------------------
 // Theme

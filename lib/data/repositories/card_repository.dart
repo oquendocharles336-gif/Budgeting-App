@@ -3,6 +3,7 @@ import 'package:sqflite_sqlcipher/sqflite.dart';
 import '../models/payment_card.dart';
 import '../models/transaction_entry.dart';
 import 'account_ledger.dart';
+import 'linked_records.dart';
 
 class CardRepository {
   CardRepository(this._db);
@@ -60,6 +61,8 @@ class CardRepository {
       for (final r in rows) {
         await AccountLedger.apply(txn, TransactionEntry.fromMap(r), sign: -1);
       }
+      final ids = await txn.query('transactions', columns: ['id'], where: 'card_id = ? OR to_card_id = ?', whereArgs: [cardId, cardId]);
+      await LinkedRecords.beforeTransactionsDeleted(txn, [for (final r in ids) r['id'] as int]);
       await txn.delete('transactions', where: 'card_id = ? OR to_card_id = ?', whereArgs: [cardId, cardId]);
       await txn.delete('cards', where: 'id = ?', whereArgs: [cardId]);
     });

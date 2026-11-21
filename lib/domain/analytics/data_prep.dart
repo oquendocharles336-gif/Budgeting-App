@@ -36,8 +36,11 @@ class PrepReport {
   bool get changedAnything => dropped > 0 || duplicatesRemoved > 0 || uncategorized > 0;
 
   /// One short line, e.g. "Checked 120 transactions · removed 6 duplicates".
-  String get summary {
-    final parts = <String>['Checked $checked transaction${checked == 1 ? '' : 's'}'];
+  String get summary => summaryOf('transaction');
+
+  /// The same line for other rows, e.g. `summaryOf('order')`.
+  String summaryOf(String noun) {
+    final parts = <String>['Checked $checked $noun${checked == 1 ? '' : 's'}'];
     if (duplicatesRemoved > 0) parts.add('removed $duplicatesRemoved duplicate${duplicatesRemoved == 1 ? '' : 's'}');
     if (dropped > 0) parts.add('skipped $dropped with no amount or date');
     if (uncategorized > 0) parts.add('$uncategorized uncategorized');
@@ -115,6 +118,10 @@ class DataPrep {
         dedupHash: _text(row['dedup_hash']),
         affectsBalance: _asInt(row['affects_balance']) == 1,
         debtId: _asInt(row['debt_id']),
+        feeOfId: _asInt(row['fee_of_id']),
+        toCapital: _asInt(row['to_capital']) == 1,
+        fromCapital: _asInt(row['from_capital']) == 1,
+        loanPaidAt: parseDate(row['loan_paid_at']),
         createdAt: created,
         updatedAt: parseDate(row['updated_at']) ?? created,
       ));

@@ -4,20 +4,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/db/app_database.dart';
 import '../../data/repositories/budget_repository.dart';
+import '../../data/repositories/business_repositories.dart';
 import '../../data/repositories/card_repository.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/debt_repository.dart';
+import '../../data/repositories/pay_later_repository.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/repositories/sms_pattern_repository.dart';
 import '../../data/repositories/transaction_repository.dart';
+import '../../data/sources/photo_store.dart';
 import '../../data/sources/sms_inbox.dart';
 import '../../domain/import/transaction_import_service.dart';
+import '../../domain/security/photo_crypto.dart';
 import '../../domain/security/vault.dart';
 import '../../domain/services/app_lock_service.dart';
+import '../../domain/services/backup_bundle_service.dart';
 import '../../domain/services/backup_service.dart';
 import '../../domain/services/budget_alert_service.dart';
+import '../../domain/services/business_service.dart';
 import '../../domain/services/debt_service.dart';
 import '../../domain/services/notification_service.dart';
+import '../../domain/services/pay_later_service.dart';
+import '../../domain/services/photo_service.dart';
 import '../../domain/services/transaction_service.dart';
 
 // -----------------------------------------------------------------------------
@@ -64,8 +72,16 @@ final ruleRepositoryProvider = Provider((ref) => RuleRepository(ref.watch(databa
 final debtRepositoryProvider = Provider((ref) => DebtRepository(ref.watch(databaseProvider).db));
 final budgetRepositoryProvider = Provider((ref) => BudgetRepository(ref.watch(databaseProvider).db));
 final smsPatternRepositoryProvider = Provider((ref) => SmsPatternRepository(ref.watch(databaseProvider).db));
+final payLaterRepositoryProvider = Provider((ref) => PayLaterRepository(ref.watch(databaseProvider).db));
+final capitalRepositoryProvider = Provider((ref) => CapitalRepository(ref.watch(databaseProvider).db));
+final inventoryRepositoryProvider = Provider((ref) => InventoryRepository(ref.watch(databaseProvider).db));
+final productRepositoryProvider = Provider((ref) => ProductRepository(ref.watch(databaseProvider).db));
+final orderRepositoryProvider = Provider((ref) => OrderRepository(ref.watch(databaseProvider).db));
 
 final smsInboxProvider = Provider<SmsInbox>((ref) => AndroidSmsInbox());
+final photoStoreProvider = Provider((ref) => PhotoStore());
+final photoKeyStoreProvider = Provider<PhotoKeyStore>((ref) => SecurePhotoKeyStore());
+final photoCryptoProvider = Provider((ref) => PhotoCrypto(ref.watch(photoKeyStoreProvider)));
 
 // -----------------------------------------------------------------------------
 // Services (domain layer)
@@ -96,6 +112,7 @@ final transactionServiceProvider = Provider(
     cards: ref.watch(cardRepositoryProvider),
     importer: ref.watch(importServiceProvider),
     alerts: ref.watch(budgetAlertServiceProvider),
+    categories: ref.watch(categoryRepositoryProvider),
   ),
 );
 
@@ -107,7 +124,42 @@ final debtServiceProvider = Provider(
   ),
 );
 
+final payLaterServiceProvider = Provider(
+  (ref) => PayLaterService(
+    repository: ref.watch(payLaterRepositoryProvider),
+    notifications: ref.watch(notificationServiceProvider),
+    alerts: ref.watch(budgetAlertServiceProvider),
+  ),
+);
+
+final photoServiceProvider = Provider(
+  (ref) => PhotoService(
+    store: ref.watch(photoStoreProvider),
+    crypto: ref.watch(photoCryptoProvider),
+    keys: ref.watch(photoKeyStoreProvider),
+    inventory: ref.watch(inventoryRepositoryProvider),
+    products: ref.watch(productRepositoryProvider),
+    settings: ref.watch(settingsRepositoryProvider),
+  ),
+);
+
+final businessServiceProvider = Provider(
+  (ref) => BusinessService(
+    capital: ref.watch(capitalRepositoryProvider),
+    inventory: ref.watch(inventoryRepositoryProvider),
+    products: ref.watch(productRepositoryProvider),
+    orders: ref.watch(orderRepositoryProvider),
+    transactions: ref.watch(transactionServiceProvider),
+    categories: ref.watch(categoryRepositoryProvider),
+    photos: ref.watch(photoServiceProvider),
+  ),
+);
+
 final backupServiceProvider = Provider((ref) => BackupService(ref.watch(databaseProvider).db));
+
+final backupBundleServiceProvider = Provider(
+  (ref) => BackupBundleService(backup: ref.watch(backupServiceProvider), photos: ref.watch(photoServiceProvider)),
+);
 
 final appLockServiceProvider = Provider((ref) => AppLockService());
 

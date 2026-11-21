@@ -37,6 +37,8 @@ class CategoryIcons {
     'handshake': Icons.handshake_rounded,
     'payback': Icons.currency_exchange_rounded,
     'store': Icons.storefront_rounded,
+    'fees': Icons.percent_rounded,
+    'loan': Icons.request_quote_rounded,
   };
 
   static IconData of(String key) => all[key] ?? Icons.category_rounded;

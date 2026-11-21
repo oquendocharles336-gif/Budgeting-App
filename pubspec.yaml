@@ -33,6 +33,12 @@ dependencies:
   cryptography_flutter: ^2.3.4
   flutter_secure_storage: ^11.2.0
 
+  # Business photos: camera / gallery through the system picker (no CAMERA
+  # or storage permission on Android), compressed on device, saved in the
+  # app's private documents folder.
+  image_picker: ^1.2.4
+  path_provider: ^2.1.6
+
   cupertino_icons: ^2.0.0
 
 dev_dependencies:
@@ -47,6 +53,9 @@ flutter:
   uses-material-design: true
   assets:
     - assets/logo/
+    # Payment QR placeholders: replace maya.png, maribank.png and bdo.png
+    # with your own QR images (same file names).
+    - assets/qr/
 
 # `dart run flutter_launcher_icons`
 # To use your own logo: replace assets/logo/logo.png (1024x1024, transparent)

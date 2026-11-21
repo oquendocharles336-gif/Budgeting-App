@@ -17,10 +17,16 @@ class AccountLedger {
   static const cashKey = 'cash_balance';
 
   /// How [tx] moves money, as (account id, delta) pairs. Expenses take money
-  /// out of the account, income puts it in, a transfer does both.
+  /// out of the account, income puts it in, a transfer does both (a
+  /// transfer into business capital only takes it out).
   static List<(int?, int)> effects(TransactionEntry tx) => switch (tx.kind) {
         TransactionKind.expense => [(tx.cardId, -tx.amount)],
         TransactionKind.income => [(tx.cardId, tx.amount)],
+        // Into business capital: it leaves the personal account and doesn't
+        // land in another one (toCardId null must not mean Cash here).
+        TransactionKind.transfer when tx.toCapital => [(tx.cardId, -tx.amount)],
+        // Out of business capital: only the personal destination changes.
+        TransactionKind.transfer when tx.fromCapital => [(tx.toCardId, tx.amount)],
         TransactionKind.transfer => [(tx.cardId, -tx.amount), (tx.toCardId, tx.amount)],
       };
 

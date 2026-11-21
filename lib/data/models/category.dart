@@ -9,7 +9,16 @@ enum CategoryRole {
   loan,
 
   /// "Debt": the expense category for new debts.
-  debt;
+  debt,
+
+  /// "Fees": the expense a transfer fee is saved as.
+  fees,
+
+  /// "Loan": transactions listed in the Loans section with a Paid button.
+  loanRecord,
+
+  /// "Business / sales": income added from business sales.
+  sales;
 
   static CategoryRole? fromDb(String? v) {
     for (final r in CategoryRole.values) {
@@ -50,6 +59,9 @@ class Category {
   bool get isOther => role == CategoryRole.other;
   bool get isLoan => role == CategoryRole.loan;
   bool get isDebt => role == CategoryRole.debt;
+  bool get isFees => role == CategoryRole.fees;
+  bool get isLoanRecord => role == CategoryRole.loanRecord;
+  bool get isSales => role == CategoryRole.sales;
 
   Category copyWith({String? name, String? icon, int? color, int? sortOrder, TransactionKind? kind}) => Category(
         id: id,

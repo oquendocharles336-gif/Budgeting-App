@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'data/repositories/op_guard.dart';
 import 'domain/services/app_lock_service.dart';
 import 'presentation/providers/app_state_providers.dart';
 import 'presentation/providers/core_providers.dart';
+import 'presentation/providers/photo_migration_provider.dart';
 import 'presentation/screens/auth/auth_widgets.dart';
 import 'presentation/screens/home_shell.dart';
 import 'presentation/screens/legal/legal_gate_screen.dart';
@@ -40,6 +42,19 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
       } catch (e) {
         debugPrint('Could not restore debt reminders: $e');
       }
+      try {
+        await ref.read(payLaterServiceProvider).rescheduleAll(currencySymbol: ref.read(currencyProvider).symbol);
+      } catch (e) {
+        debugPrint('Could not restore Pay Later reminders: $e');
+      }
+      try {
+        // Retry keys are only needed for minutes; keep the table small.
+        await OpGuard.prune(ref.read(databaseProvider).db);
+      } catch (e) {
+        debugPrint('Could not prune op keys: $e');
+      }
+      // One-time: encrypt photos saved before photos were encrypted.
+      if (mounted) ref.read(photoMigrationProvider.notifier).start();
     });
   }
 

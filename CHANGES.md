@@ -1,3 +1,50 @@
+# Update 4: optimistic saves everywhere, stock ledger, capital withdrawals, encrypted photos
+
+`flutter analyze` and `flutter test` were **not** run (no Flutter SDK or pub.dev access where this was made). Run first:
+
+```bash
+flutter pub get && flutter analyze && flutter test
+```
+
+- DB migration **v8** (new tables `op_keys`, `stock_movements`, `product_ingredients`; new columns `transactions.from_capital`, `orders.cancelled_at`; `capital_entries` rebuilt to allow history rows). Existing stock becomes a "Starting stock" ledger row.
+- No new packages, no AndroidManifest change, minSdk stays 24. Terms version 4 (privacy text changed).
+- There was no delivery fee in the code, so nothing to remove; order total = sum of items.
+
+## Manual tests (real Android phone)
+1. **Optimistic + Try again:** turn on airplane mode is not enough (offline app), so to force a failure temporarily throw in a repository method while debugging. Add a Pay Later item / transfer with fee / capital move / inventory item / product / order: the row and "Saved" appear at once; on failure the row disappears and "Try again" saves it once.
+2. **Double tap:** tap Save twice quickly, and press "Try again" after a write that actually succeeded: still one row, one expense, one transfer.
+3. **Stock:** Product "Cake" with recipe Sugar 50 g, Eggs 2 pcs. Order 3 cakes → Sugar -150 g, Eggs -6. Mark it Paid / Delivered → stock unchanged. Edit to 1 cake → history shows the return and the new use. Cancel → stock back. Order more than in stock → warning lists the missing items; "Add anyway" → stock 0, not negative.
+4. **Capital:** add 1,000; withdraw 300 with fee 10 to GCash → GCash +300, capital 690. Withdraw 2,000 → error before saving. "Add to Budget" on sales → history shows "Sales added", capital unchanged.
+5. **Photos:** take a photo; check `/data/data/<app>/app_flutter/business_photos/` has only `.enc` files (adb, debug build). Update from v7 with plain photos → "Encrypting photos… n of m", originals gone.
+6. **Lost camera photo:** Developer options → "Don't keep activities" ON. Open an inventory item, type a name, tap Camera, take the photo, confirm. The app restarts; unlock → the item form reopens with the name and photo. Also try cancelling in the camera (form comes back, "No photo was taken").
+7. **Backup:** Settings → Backup & restore → create (password 8+ chars). Restore with a wrong password (refused), then Replace and Merge. Photos come back. Interrupt nothing is half-restored: a damaged file changes nothing.
+8. **Delete all my data:** photos folder and the photo key are gone (new photos get a new key).
+
+---
+
+# Update 3: Pay Later, Loans, transfer fees, business side
+
+`flutter analyze` and `flutter test` were **not** run (no Flutter SDK or pub.dev access where this was made). Run first:
+
+```bash
+flutter pub get && flutter analyze && flutter test
+```
+
+New dependencies: `image_picker ^1.2.4`, `path_provider ^2.1.6` (was already a transitive dependency). New assets folder: `assets/qr/` (placeholder PNGs; replace with your own QR images, same names).
+
+DB migration v7 (columns + new tables only). Terms version bumped to 3, so the accept screen shows once again.
+
+## Manual tests
+1. **Pay Later:** add an item due in 5 days → "Due in 5 days", total unpaid updates, nothing in Budget. Tap Paid → pick an account → one expense appears in Activity and the account goes down. Tap Paid fast twice / Undo / Paid again → still one expense.
+2. **Loans:** add an expense in "Loan" → it shows in Loans. Paid → row shows "Paid <date>", no extra expense; Undo restores it.
+3. **Transfer fee:** transfer 1,000 GCash → BPI with fee 15. The confirm dialog lists -1,015 / +1,000 / fee. After saving: GCash -1,015, BPI +1,000, a 15 "Fees" expense. Delete the transfer → the fee goes too.
+4. **Business:** Home → Business. Add capital 500 from Cash with fee 10 → Cash -510, capital +500. Add inventory with a camera photo; deny camera permission in phone settings → message, form still works. Products → Orders: total 120, cash 500 → "Change to give ₱380". Enter 100 → partial-payment prompt. QR methods show the placeholder.
+5. **Sales:** tiles, chart (Day/Week/Month), best sellers, methods. Add to Budget → income appears once; press again → "Nothing new to add". Unpaid orders are never added.
+6. **Insights:** previous button is greyed out at the first month with spending; swiping and the month picker stop there too.
+7. **Delete all my data:** business rows and the photos folder are gone.
+
+---
+
 # Update 2: UX, theme, analytics and debts
 
 As before, `flutter analyze` and `flutter test` could **not** be run here (no Flutter SDK and no pub.dev access). The code was checked by reading it only. Run these on your machine first:

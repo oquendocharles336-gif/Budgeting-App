@@ -14,9 +14,12 @@ import '../../widgets/motion/skeleton.dart';
 import '../../widgets/payment_card_view.dart';
 import '../../widgets/transaction_tile.dart';
 import '../analytics/analytics_screen.dart';
+import '../business/business_shell.dart';
 import '../cards/card_detail_screen.dart';
 import '../debts/debts_screen.dart';
 import '../import/import_hub_screen.dart';
+import '../loans/loans_screen.dart';
+import '../pay_later/pay_later_screen.dart';
 import '../settings/settings_screen.dart';
 import '../transactions/transaction_form_screen.dart';
 
@@ -51,7 +54,10 @@ class DashboardScreen extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
             children: [
-              _Header(onSettings: () => _push(context, const SettingsScreen())),
+              _Header(
+                onSettings: () => _push(context, const SettingsScreen()),
+                onBusiness: () => _push(context, const BusinessShell()),
+              ),
               const SizedBox(height: 16),
               AsyncView(
                 value: summary,
@@ -69,6 +75,9 @@ class DashboardScreen extends ConsumerWidget {
                 onImport: () => _push(context, const ImportHubScreen()),
                 onDebts: () => _push(context, const DebtsScreen()),
                 onInsights: () => _push(context, const AnalyticsScreen()),
+                onPayLater: () => _push(context, const PayLaterScreen()),
+                onLoans: () => _push(context, const LoansScreen()),
+                onBusiness: () => _push(context, const BusinessShell()),
               ),
               const SizedBox(height: 12),
               _CardsStrip(onOpenWallets: onOpenWallets),
@@ -89,8 +98,9 @@ class DashboardScreen extends ConsumerWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onSettings});
+  const _Header({required this.onSettings, required this.onBusiness});
   final VoidCallback onSettings;
+  final VoidCallback onBusiness;
 
   @override
   Widget build(BuildContext context) {
@@ -111,6 +121,8 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
+        IconButton.filledTonal(onPressed: onBusiness, icon: const Icon(Icons.storefront_rounded), tooltip: 'Switch to Business'),
+        const SizedBox(width: 8),
         IconButton.filledTonal(onPressed: onSettings, icon: const Icon(Icons.settings_rounded), tooltip: 'Settings'),
       ],
     );
@@ -215,19 +227,43 @@ class _HeroBudgetCard extends ConsumerWidget {
 }
 
 class _QuickActions extends StatelessWidget {
-  const _QuickActions({required this.onImport, required this.onDebts, required this.onInsights});
+  const _QuickActions({
+    required this.onImport,
+    required this.onDebts,
+    required this.onInsights,
+    required this.onPayLater,
+    required this.onLoans,
+    required this.onBusiness,
+  });
   final VoidCallback onImport;
   final VoidCallback onDebts;
   final VoidCallback onInsights;
+  final VoidCallback onPayLater;
+  final VoidCallback onLoans;
+  final VoidCallback onBusiness;
 
   @override
-  Widget build(BuildContext context) => Row(
+  Widget build(BuildContext context) => Column(
         children: [
-          Expanded(child: _Action(icon: Icons.file_download_rounded, label: 'Import', onTap: onImport)),
-          const SizedBox(width: 12),
-          Expanded(child: _Action(icon: Icons.insights_rounded, label: 'Insights', onTap: onInsights)),
-          const SizedBox(width: 12),
-          Expanded(child: _Action(icon: Icons.handshake_rounded, label: 'Debts', onTap: onDebts)),
+          Row(
+            children: [
+              Expanded(child: _Action(icon: Icons.file_download_rounded, label: 'Import', onTap: onImport)),
+              const SizedBox(width: 12),
+              Expanded(child: _Action(icon: Icons.insights_rounded, label: 'Insights', onTap: onInsights)),
+              const SizedBox(width: 12),
+              Expanded(child: _Action(icon: Icons.handshake_rounded, label: 'Debts', onTap: onDebts)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: _Action(icon: Icons.schedule_rounded, label: 'Pay Later', onTap: onPayLater)),
+              const SizedBox(width: 12),
+              Expanded(child: _Action(icon: Icons.request_quote_rounded, label: 'Loans', onTap: onLoans)),
+              const SizedBox(width: 12),
+              Expanded(child: _Action(icon: Icons.storefront_rounded, label: 'Business', onTap: onBusiness)),
+            ],
+          ),
         ],
       );
 }
@@ -246,7 +282,7 @@ class _Action extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Column(
         children: [
-          Icon(icon, color: scheme.primary),
+          ExcludeSemantics(child: Icon(icon, color: scheme.primary)),
           const SizedBox(height: 6),
           Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
         ],
