@@ -442,9 +442,15 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
       // lists keep showing it until the saved row arrives (no flicker).
       try {
         container.read(dataRevisionProvider.notifier).bump();
-        pending.clear(pendingId);
       } catch (e) {
         debugPrint('Session closed before the save finished: $e'); // app locked meanwhile
+      }
+      // Always, even if the reload above failed: a copy left behind would
+      // show in the lists as an extra row that isn't really saved.
+      try {
+        pending.clear(pendingId);
+      } catch (_) {
+        // The session was locked meanwhile; its pending copies are gone too.
       }
     }, onError: (Object e) {
       debugPrint('Save failed: $e');

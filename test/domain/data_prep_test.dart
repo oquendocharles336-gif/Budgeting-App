@@ -103,6 +103,16 @@ void main() {
       expect(out.report.duplicatesRemoved, 0);
     });
 
+    test('typed entries are never merged, even next to an imported copy', () {
+      final out = DataPrep.clean([
+        row(id: 1, description: 'ate kaye'),
+        row(id: 2, description: 'ate kaye'),
+        row(id: 3, description: 'ate kaye', source: 'csv_import'),
+      ]);
+      expect(out.rows.map((t) => t.id), [1, 2]);
+      expect(out.report.duplicatesRemoved, 1);
+    });
+
     test('identical manual entries are kept (two coffees are real)', () {
       final out = DataPrep.clean([row(id: 1), row(id: 2)]);
       expect(out.rows, hasLength(2));

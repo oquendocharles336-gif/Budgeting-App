@@ -29,8 +29,10 @@ the update.
    - Tag: `v1.3.0` (same version as pubspec; the leading `v` is optional).
    - Notes: the same notes as the changelog. Markdown bullets are shown as
      plain lines (max 30 lines, 300 characters each).
-   - Attach the APK (e.g. `pitaka-1.3.0.apk`). Without an `.apk` asset the
-     Download button opens the release page instead.
+   - Attach the APK (e.g. `pitaka-1.3.0.apk`). The app downloads it itself
+     (progress shown, size and GitHub's SHA-256 checked) and opens Android's
+     "Update Pitaka?" screen. Without an `.apk` asset the button opens the
+     release page in the browser instead.
    - Publish it. Drafts and pre-releases are ignored by `/releases/latest`.
 5. Phones see it at their next daily check, or right away with
    Settings > App updates > Check now.
@@ -38,7 +40,9 @@ the update.
 ## What users can see
 
 - **Up to date**: the installed version is the same or newer than the tag.
-- **Update available**: notes, Download (the APK) / Later / Skip this version.
+- **Update available**: notes, Download (downloads and installs inside the app) / Later / Skip this version.
+  Android always asks the user to confirm the install, and the first time to allow
+  "Install unknown apps" for Pitaka. The app restarts on the new version with all data kept.
 - **Error**: no internet, GitHub's hourly limit for unauthenticated requests
   (60 per network), or no published release (also shown when the repository
   is private or the name is wrong). "Try again" is offered.

@@ -7,9 +7,12 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Fingerprint / face unlock. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
-    <!-- Only for the optional "Check for updates": one HTTPS download of a small
-         public version file (Settings > App updates). No user data is sent. -->
+    <!-- Only for app updates: reads the latest GitHub release and downloads the
+         new APK (Settings > App updates). No user data is sent. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Install the downloaded update inside the app (Android asks the user to
+         allow it once, and confirms each update). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="Pitaka"
@@ -49,6 +52,17 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
+
+        <!-- Shares the downloaded update APK with the system installer. -->
+        <provider
+            android:name=".UpdateFileProvider"
+            android:authorities="${applicationId}.updates.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
 
         <meta-data
             android:name="flutterEmbedding"

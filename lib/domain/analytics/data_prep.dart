@@ -64,9 +64,10 @@ class PreparedData {
 ///    or text like "₱1,234.50"), dates from epoch ms or ISO text, trimmed
 ///    and single-spaced text, unknown kinds as expense.
 /// 3. **Duplicates**: rows with the same kind, amount, day, description
-///    (case-insensitive) and account. If any copy came from a CSV / SMS /
-///    bank import, only the first is kept. Copies that were all typed by
-///    hand are kept: two identical coffees on one day are real spending.
+///    (case-insensitive) and account. Rows typed by hand are ALWAYS kept,
+///    each one counted: two identical coffees (or two identical loans) on
+///    one day are real money. Only an imported copy (CSV / SMS / bank) of a
+///    row that's already there is dropped.
 ///
 /// Pure function: no database, easy to unit test.
 class DataPrep {
@@ -169,8 +170,14 @@ class DataPrep {
     final drop = <TransactionEntry>{};
     for (final g in groups.values) {
       if (g.length < 2) continue;
-      final anyImported = g.any((t) => t.source != TransactionSourceType.manual);
-      if (keepManualRepeats && !anyImported) continue;
+      bool manual(TransactionEntry t) => t.source == TransactionSourceType.manual;
+      if (keepManualRepeats) {
+        // Every typed row counts. Imported copies go when the same entry is
+        // already there (typed, or an earlier import).
+        final imported = g.where((t) => !manual(t)).toList()..sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
+        drop.addAll(g.any(manual) ? imported : imported.skip(1));
+        continue;
+      }
       // Keep the oldest saved row (lowest id), drop the rest.
       final sorted = [...g]..sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
       drop.addAll(sorted.skip(1));

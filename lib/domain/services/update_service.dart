@@ -160,4 +160,7 @@ class UpdateService {
 
   /// This version's notes, for Settings.
   Future<ChangelogEntry?> currentNotes() async => WhatsNew.current(changelog, (await _installed()).version);
+
+  /// The latest update's notes and the previous one's, for Settings.
+  Future<List<ChangelogEntry>> latestNotes() async => WhatsNew.latest(changelog, (await _installed()).version);
 }

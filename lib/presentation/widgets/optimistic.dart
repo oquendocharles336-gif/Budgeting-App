@@ -64,11 +64,20 @@ class OptimisticWrite {
       try {
         // Reload first, then drop the preview: no flicker.
         container.read(dataRevisionProvider.notifier).bump();
+      } catch (e) {
+        debugPrint('Session closed before the save finished: $e');
+      }
+      // Always, so a preview can never stay behind as an extra, unsaved row.
+      try {
         remove();
+      } catch (_) {
+        // The session was locked meanwhile; nothing left to remove.
+      }
+      try {
         final action = undo?.call();
         if (action != null) showSavedSnack(messenger, text: savedText, textColor: textColor, action: action);
       } catch (e) {
-        debugPrint('Session closed before the save finished: $e');
+        debugPrint('Could not offer undo: $e');
       }
     }, onError: (Object e) {
       debugPrint('Save failed: $e');

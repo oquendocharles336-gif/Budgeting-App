@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../data/sources/apk_updater.dart';
+import '../../domain/services/app_lock_service.dart';
 import '../../domain/services/update_service.dart';
 import '../theme/app_palette.dart';
 import 'common.dart';
@@ -37,24 +39,148 @@ class _Notes extends StatelessWidget {
 }
 
 /// "Update available": the new version, its notes, and Download / Later /
-/// Skip. The app keeps working offline either way.
+/// Skip. On Android, Download fetches the APK inside the app (with progress)
+/// and opens Android's own "Update Pitaka?" screen: no browser. Elsewhere, or
+/// when the release has no APK, it opens the release page instead.
 Future<void> showUpdateSheet(
   BuildContext context, {
   required UpdateCheck check,
   required Future<void> Function(AppVersion version) onSkip,
 }) {
-  final release = check.release!;
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     isScrollControlled: true,
+    // Not dismissible by a tap outside while downloading (see _UpdateSheet).
     isDismissible: true,
-    builder: (ctx) {
-      final t = ctx.tokens;
-      final text = Theme.of(ctx).textTheme;
-      return SafeArea(
+    builder: (ctx) => _UpdateSheet(check: check, onSkip: onSkip),
+  );
+}
+
+enum _Step { ready, downloading, installing, failed }
+
+class _UpdateSheet extends StatefulWidget {
+  const _UpdateSheet({required this.check, required this.onSkip});
+  final UpdateCheck check;
+  final Future<void> Function(AppVersion version) onSkip;
+
+  @override
+  State<_UpdateSheet> createState() => _UpdateSheetState();
+}
+
+class _UpdateSheetState extends State<_UpdateSheet> {
+  _Step _step = _Step.ready;
+  int _received = 0;
+  int? _total;
+  String? _error;
+  DownloadCancel? _cancel;
+
+  ReleaseInfo get _release => widget.check.release!;
+  bool get _inApp => ApkUpdater.supported && _release.isApk;
+  bool get _busy => _step == _Step.downloading || _step == _Step.installing;
+
+  @override
+  void dispose() {
+    // Closing the sheet (or the app locking) stops a running download.
+    _cancel?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _download() async {
+    if (!_inApp) {
+      await _openInBrowser();
+      return;
+    }
+    final cancel = DownloadCancel();
+    setState(() {
+      _step = _Step.downloading;
+      _received = 0;
+      _total = _release.apkSize;
+      _error = null;
+      _cancel = cancel;
+    });
+    try {
+      final apk = await ApkUpdater.download(
+        _release.downloadUrl,
+        version: '${_release.version}',
+        expectedSize: _release.apkSize,
+        expectedSha256: _release.apkSha256,
+        cancel: cancel,
+        onProgress: (received, total) {
+          if (!mounted) return;
+          setState(() {
+            _received = received;
+            _total = total;
+          });
+        },
+      );
+      if (!mounted) return;
+      setState(() => _step = _Step.installing);
+      // Android's installer (and, the first time, its "Install unknown apps"
+      // switch) is another screen: don't lock the app while it's up.
+      final outcome = await LockGuard.run(() => ApkUpdater.install(apk));
+      if (!mounted) return;
+      switch (outcome) {
+        case InstallOutcome.installed:
+          Navigator.pop(context);
+        case InstallOutcome.cancelled:
+          setState(() => _step = _Step.ready);
+          showSnack(context, 'Update not installed. Tap Update when you\'re ready.');
+        case InstallOutcome.permissionDenied:
+          _fail('Allow "Install unknown apps" for Pitaka to update from inside the app, then tap Try again.');
+        case InstallOutcome.failed:
+          _fail('Android couldn\'t install the update. If this keeps happening, the update may be signed with a '
+              'different key than the app on this phone.');
+      }
+    } on ApkUpdateException catch (e) {
+      if (!mounted) return;
+      if (cancel.isCancelled) {
+        setState(() => _step = _Step.ready);
+      } else {
+        _fail(e.message);
+      }
+    } catch (e) {
+      if (mounted) _fail('Could not update: $e');
+    }
+  }
+
+  void _fail(String message) => setState(() {
+        _step = _Step.failed;
+        _error = message;
+      });
+
+  Future<void> _openInBrowser() async {
+    final url = _release.isApk ? _release.downloadUrl : _release.pageUrl;
+    var ok = false;
+    try {
+      ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      ok = false;
+    }
+    if (!mounted) return;
+    if (!ok) {
+      await Clipboard.setData(ClipboardData(text: url.toString()));
+      if (mounted) showSnack(context, 'Couldn\'t open the browser. The download link was copied.');
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  static String _mb(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(1);
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    final text = Theme.of(context).textTheme;
+    final release = _release;
+    final check = widget.check;
+    final progress = _total == null || _total == 0 ? null : (_received / _total!).clamp(0.0, 1.0).toDouble();
+    return PopScope(
+      // Back doesn't close the sheet mid-download by accident; Cancel does.
+      canPop: !_busy,
+      child: SafeArea(
         child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(ctx).height * 0.85),
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
           child: ListView(
             shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
@@ -68,6 +194,7 @@ Future<void> showUpdateSheet(
                   StatusBadge(label: 'New: ${release.version}', tone: BadgeTone.accent, icon: Icons.system_update_rounded),
                   if (check.installed != null) StatusBadge(label: 'You have ${check.installed!.version}'),
                   if (release.releasedAt != null) StatusBadge(label: DateFormat('MMM d, yyyy').format(release.releasedAt!)),
+                  if (release.apkSize != null) StatusBadge(label: '${_mb(release.apkSize!)} MB'),
                 ],
               ),
               if (release.name != null && release.name != release.tag) ...[
@@ -83,49 +210,74 @@ Future<void> showUpdateSheet(
                 _Notes(release.notes),
               const SizedBox(height: 8),
               Text(
-                release.isApk
-                    ? 'Your data stays on this phone: installing the update over this app keeps everything. '
-                        'After the download, open the file and tap Install (Android may ask you to allow installs from your browser).'
+                _inApp
+                    ? 'The update downloads here, then Android asks you to confirm. Your data stays on this phone. '
+                        'The first time, Android asks you to allow Pitaka to install apps.'
                     : 'This opens the release page on GitHub. Download the APK there and install it over this app; your data stays.',
                 style: TextStyle(color: t.onSecondMuted, fontSize: 13),
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: () => _open(ctx, release.downloadUrl),
-                icon: Icon(release.isApk ? Icons.download_rounded : Icons.open_in_new_rounded),
-                label: Text(release.isApk ? 'Download ${release.version}' : 'Open release page'),
-              ),
-              const SizedBox(height: 8),
-              OutlinedButton(onPressed: () => Navigator.pop(ctx), child: const Text('Later')),
-              TextButton(
-                style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
-                onPressed: () async {
-                  await onSkip(release.version);
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                child: const Text('Skip this version'),
-              ),
+              if (_step == _Step.downloading) ...[
+                Semantics(
+                  liveRegion: true,
+                  label: progress == null ? 'Downloading' : 'Downloading, ${(progress * 100).round()} percent',
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(value: progress, minHeight: 10),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  progress == null
+                      ? 'Downloading… ${_mb(_received)} MB'
+                      : 'Downloading… ${(progress * 100).round()}% · ${_mb(_received)} of ${_mb(_total!)} MB',
+                  style: TextStyle(color: t.onSecond),
+                ),
+                const SizedBox(height: 4),
+                Text('Keep Pitaka open until it finishes.', style: TextStyle(color: t.onSecondMuted, fontSize: 13)),
+                const SizedBox(height: 12),
+                OutlinedButton(onPressed: () => _cancel?.cancel(), child: const Text('Cancel download')),
+              ] else if (_step == _Step.installing) ...[
+                const LinearProgressIndicator(minHeight: 10),
+                const SizedBox(height: 8),
+                Text('Opening the installer… Tap Update on Android\'s screen.', style: TextStyle(color: t.onSecond)),
+              ] else ...[
+                if (_step == _Step.failed && _error != null) ...[
+                  Text(_error!, style: TextStyle(color: t.danger, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 12),
+                ],
+                FilledButton.icon(
+                  onPressed: _download,
+                  icon: Icon(_inApp ? Icons.system_update_alt_rounded : Icons.open_in_new_rounded),
+                  label: Text(
+                    _step == _Step.failed
+                        ? 'Try again'
+                        : (_inApp ? 'Download ${release.version}' : 'Open release page'),
+                  ),
+                ),
+                if (_step == _Step.failed && _inApp)
+                  TextButton(
+                    style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    onPressed: _openInBrowser,
+                    child: const Text('Download in the browser instead'),
+                  ),
+                const SizedBox(height: 8),
+                OutlinedButton(onPressed: () => Navigator.pop(context), child: const Text('Later')),
+                TextButton(
+                  style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                  onPressed: () async {
+                    await widget.onSkip(release.version);
+                    if (context.mounted) Navigator.pop(context);
+                  },
+                  child: const Text('Skip this version'),
+                ),
+              ],
             ],
           ),
         ),
-      );
-    },
-  );
-}
-
-Future<void> _open(BuildContext ctx, Uri url) async {
-  var ok = false;
-  try {
-    ok = await launchUrl(url, mode: LaunchMode.externalApplication);
-  } catch (_) {
-    ok = false;
+      ),
+    );
   }
-  if (!ok && ctx.mounted) {
-    await Clipboard.setData(ClipboardData(text: url.toString()));
-    if (ctx.mounted) showSnack(ctx, 'Couldn\'t open the browser. The download link was copied.');
-    return;
-  }
-  if (ctx.mounted) Navigator.pop(ctx);
 }
 
 /// Result of "Check now" that isn't "update available": up to date, or

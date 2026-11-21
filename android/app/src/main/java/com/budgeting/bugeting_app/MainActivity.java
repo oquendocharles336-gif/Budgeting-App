@@ -1,14 +1,21 @@
 package com.budgeting.bugeting_app;
 
 import android.Manifest;
+import android.app.Activity;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.content.FileProvider;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +31,11 @@ import io.flutter.plugin.common.MethodChannel;
  * Also hosts a tiny "pitaka/sms" MethodChannel that reads the SMS inbox on
  * the device. Messages are returned to Dart for local parsing only; nothing
  * is sent over the network.
+ *
+ * And "pitaka/update": hands an APK the app downloaded itself (from the
+ * GitHub release) to Android's package installer, so updating never needs
+ * the browser. Android still shows its own "Update this app?" screen, and the
+ * first time asks to allow "Install unknown apps" for Pitaka.
  */
 public class MainActivity extends FlutterFragmentActivity {
     private static final String CHANNEL = "pitaka/sms";
@@ -31,6 +43,12 @@ public class MainActivity extends FlutterFragmentActivity {
     private static final int MAX_MESSAGES = 2000;
 
     private MethodChannel.Result pendingPermissionResult;
+
+    private static final String UPDATE_CHANNEL = "pitaka/update";
+    private static final int INSTALL_REQUEST = 4243;
+    private static final int UNKNOWN_SOURCES_REQUEST = 4244;
+    private MethodChannel.Result pendingInstallResult;
+    private String pendingApkPath;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -65,6 +83,101 @@ public class MainActivity extends FlutterFragmentActivity {
                             result.notImplemented();
                     }
                 });
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), UPDATE_CHANNEL)
+                .setMethodCallHandler((call, result) -> {
+                    switch (call.method) {
+                        case "canInstall":
+                            result.success(canInstallApks());
+                            break;
+                        case "installApk":
+                            installApk(call.argument("path"), result);
+                            break;
+                        default:
+                            result.notImplemented();
+                    }
+                });
+    }
+
+    // ---------------------------------------------------------------------
+    // In-app update: install a downloaded APK
+    // ---------------------------------------------------------------------
+
+    private boolean canInstallApks() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true;
+        return getPackageManager().canRequestPackageInstalls();
+    }
+
+    private void installApk(String path, MethodChannel.Result result) {
+        if (pendingInstallResult != null) {
+            result.error("busy", "The installer is already open", null);
+            return;
+        }
+        if (path == null || !new File(path).isFile()) {
+            result.error("missing", "The downloaded update was not found", null);
+            return;
+        }
+        pendingInstallResult = result;
+        pendingApkPath = path;
+        if (!canInstallApks()) {
+            // First time: let the user allow "Install unknown apps" for Pitaka,
+            // then come back here (onActivityResult) and open the installer.
+            try {
+                Intent settings = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:" + getPackageName()));
+                startActivityForResult(settings, UNKNOWN_SOURCES_REQUEST);
+            } catch (Exception e) {
+                finishInstall("permission_denied");
+            }
+            return;
+        }
+        launchInstaller();
+    }
+
+    @SuppressWarnings("deprecation") // ACTION_INSTALL_PACKAGE still returns a result on every Android version.
+    private void launchInstaller() {
+        try {
+            File apk = new File(pendingApkPath);
+            Uri uri = FileProvider.getUriForFile(this, getPackageName() + ".updates.fileprovider", apk);
+            Intent install = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+            install.setData(uri);
+            install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            install.putExtra(Intent.EXTRA_RETURN_RESULT, true);
+            startActivityForResult(install, INSTALL_REQUEST);
+        } catch (Exception e) {
+            if (pendingInstallResult != null) {
+                pendingInstallResult.error("install_failed", e.getMessage(), null);
+                pendingInstallResult = null;
+            }
+        }
+    }
+
+    private void finishInstall(String outcome) {
+        if (pendingInstallResult == null) return;
+        pendingInstallResult.success(outcome);
+        pendingInstallResult = null;
+        pendingApkPath = null;
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == UNKNOWN_SOURCES_REQUEST) {
+            if (pendingInstallResult == null) return;
+            if (canInstallApks()) {
+                launchInstaller();
+            } else {
+                finishInstall("permission_denied");
+            }
+        } else if (requestCode == INSTALL_REQUEST) {
+            // On success Android usually restarts the app before this runs.
+            if (resultCode == Activity.RESULT_OK) {
+                finishInstall("installed");
+            } else if (resultCode == Activity.RESULT_CANCELED) {
+                finishInstall("cancelled");
+            } else {
+                finishInstall("failed");
+            }
+        }
     }
 
     private boolean hasSmsPermission() {

@@ -90,6 +90,8 @@ class ReleaseInfo {
     this.name,
     this.releasedAt,
     this.isApk = false,
+    this.apkSize,
+    this.apkSha256,
   });
 
   /// From the tag ("v1.2.0" -> 1.2.0).
@@ -102,6 +104,14 @@ class ReleaseInfo {
 
   /// Whether [downloadUrl] is an APK file (not the release page).
   final bool isApk;
+
+  /// The APK's size in bytes, from GitHub (to show progress and check the
+  /// download is complete).
+  final int? apkSize;
+
+  /// The APK's SHA-256 (lower-case hex) when GitHub lists one (the asset's
+  /// `digest`), to check the download wasn't damaged or swapped.
+  final String? apkSha256;
 
   /// The release page on github.com.
   final Uri pageUrl;
@@ -134,6 +144,8 @@ class ReleaseInfo {
     if (page == null) throw const FormatException('The release has no https:// page link.');
 
     Uri? apk;
+    int? apkSize;
+    String? apkSha256;
     final assets = d['assets'];
     if (assets is List) {
       for (final a in assets) {
@@ -142,6 +154,13 @@ class ReleaseInfo {
         final url = _https(a['browser_download_url']);
         if (url != null && name.endsWith('.apk')) {
           apk = url;
+          final size = a['size'];
+          if (size is int && size > 0) apkSize = size;
+          final digest = a['digest'];
+          if (digest is String && digest.toLowerCase().startsWith('sha256:')) {
+            final hex = digest.substring(7).toLowerCase();
+            if (RegExp(r'^[0-9a-f]{64}$').hasMatch(hex)) apkSha256 = hex;
+          }
           break;
         }
       }
@@ -155,6 +174,8 @@ class ReleaseInfo {
       name: name is String && name.trim().isNotEmpty ? name.trim() : null,
       downloadUrl: apk ?? page,
       isApk: apk != null,
+      apkSize: apkSize,
+      apkSha256: apkSha256,
       pageUrl: page,
       notes: body is String ? notesFromMarkdown(body) : const [],
       releasedAt: published is String ? DateTime.tryParse(published)?.toLocal() : null,
@@ -227,6 +248,10 @@ class ChangelogEntry {
 class WhatsNew {
   WhatsNew._();
 
+  /// "What's new" shows at most this many versions: the latest update and
+  /// the one before it.
+  static const maxVersions = 2;
+
   /// Whether "What's new" should show: only when [current] is higher than
   /// the [lastSeen] version. Never for a fresh install ([lastSeen] null).
   static bool shouldShow({required String? lastSeen, required String current}) {
@@ -237,7 +262,8 @@ class WhatsNew {
   }
 
   /// Entries the user hasn't seen: newer than [lastSeen], up to the
-  /// installed [current], newest first. Empty when [shouldShow] is false.
+  /// installed [current], newest first, at most [maxVersions] (the latest
+  /// update and the one before it). Empty when [shouldShow] is false.
   static List<ChangelogEntry> since(List<ChangelogEntry> all, {required String? lastSeen, required String current}) {
     if (!shouldShow(lastSeen: lastSeen, current: current)) return const [];
     final seen = AppVersion.tryParse(lastSeen)!;
@@ -248,7 +274,19 @@ class WhatsNew {
       if (v != null && v > seen && v <= now) out.add(e);
     }
     out.sort((a, b) => AppVersion.tryParse(b.version)!.compareTo(AppVersion.tryParse(a.version)!));
-    return out;
+    return out.take(maxVersions).toList();
+  }
+
+  /// For Settings > "What's new": the installed version's notes and the
+  /// previous version's, newest first.
+  static List<ChangelogEntry> latest(List<ChangelogEntry> all, String current) {
+    final now = AppVersion.tryParse(current);
+    if (now == null) return const [];
+    final out = [
+      for (final e in all)
+        if (AppVersion.tryParse(e.version) case final v? when v <= now) e,
+    ]..sort((a, b) => AppVersion.tryParse(b.version)!.compareTo(AppVersion.tryParse(a.version)!));
+    return out.take(maxVersions).toList();
   }
 
   /// The entry for the installed version (Settings > What's new).

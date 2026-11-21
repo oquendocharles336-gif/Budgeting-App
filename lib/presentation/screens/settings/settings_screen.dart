@@ -110,13 +110,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _showCurrentNotes() async {
-    final entry = await ref.read(updateServiceProvider).currentNotes();
+    final entries = await ref.read(updateServiceProvider).latestNotes();
     if (!mounted) return;
-    if (entry == null) {
+    if (entries.isEmpty) {
       showSnack(context, 'No notes for this version.');
       return;
     }
-    await showWhatsNewSheet(context, [entry]);
+    await showWhatsNewSheet(context, entries);
   }
 
   Future<void> _loadSecurity() async {
@@ -361,7 +361,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.new_releases_outlined),
-                  title: const Text('What\'s new in this version'),
+                  title: const Text('What\'s new'),
+                  subtitle: const Text('This update and the one before'),
                   onTap: _showCurrentNotes,
                 ),
               ],

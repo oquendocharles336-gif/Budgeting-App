@@ -66,6 +66,19 @@ void main() {
       expect(r.releasedAt, DateTime.utc(2026, 12, 1, 8).toLocal());
     });
 
+    test('APK size and SHA-256 digest are read for the in-app download', () {
+      final r = ReleaseInfo.parseGitHub(release(assets: [
+        {
+          'name': 'pitaka-1.2.0.apk',
+          'size': 31457280,
+          'digest': 'sha256:${'AB' * 32}',
+          'browser_download_url': 'https://github.com/me/r/releases/download/v1.2.0/pitaka-1.2.0.apk',
+        },
+      ]));
+      expect(r.apkSize, 31457280);
+      expect(r.apkSha256, 'ab' * 32);
+    });
+
     test('no APK: the download link is the release page', () {
       final r = ReleaseInfo.parseGitHub(release(assets: const []));
       expect(r.isApk, isFalse);
@@ -133,6 +146,13 @@ void main() {
       expect(WhatsNew.shouldShow(lastSeen: '1.1.0', current: '1.2.0'), isTrue);
       expect(WhatsNew.shouldShow(lastSeen: '1.2.0', current: '1.2.0'), isFalse);
       expect(WhatsNew.shouldShow(lastSeen: '1.3.0', current: '1.2.0'), isFalse);
+    });
+
+    test('at most the latest update and the one before it', () {
+      const more = [ChangelogEntry(version: '1.3.0', build: 4, notes: ['d']), ...all];
+      expect(WhatsNew.since(more, lastSeen: '1.0.0', current: '1.3.0').map((e) => e.version), ['1.3.0', '1.2.0']);
+      expect(WhatsNew.latest(more, '1.3.0').map((e) => e.version), ['1.3.0', '1.2.0']);
+      expect(WhatsNew.latest(more, '1.2.0').map((e) => e.version), ['1.2.0', '1.1.0']);
     });
 
     test('nothing on a fresh install', () {

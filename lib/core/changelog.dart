@@ -14,8 +14,11 @@ const changelog = <ChangelogEntry>[
     build: 4,
     date: '2026-11-21',
     notes: [
+      'Updates now download and install inside the app. No browser needed.',
       'Loans: when a loan you gave is paid back, the money is now added to Cash or your e-wallet instead of taken out.',
+      'Adding the same transaction more than once now counts every one in your budget, balance and Loans.',
       'Orders are Complete or Paid. Status comes first, and the payment is entered only when you choose Paid; unpaid amounts still show on each order.',
+      'What\'s new shows this update and the one before it.',
     ],
   ),
   ChangelogEntry(

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/dates.dart';
+import '../../data/sources/apk_updater.dart';
 import '../../domain/services/photo_service.dart';
 import '../../domain/services/update_service.dart';
 import '../providers/core_providers.dart';
@@ -83,6 +84,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   }
 
   Future<void> _checkForUpdate() async {
+    // An APK downloaded for an update that is now installed isn't needed.
+    await ApkUpdater.clearDownloads();
     final updates = ref.read(updateServiceProvider);
     final check = await updates.checkIfDue(); // never throws; null when offline or not due
     if (check == null || check.status != UpdateStatus.available || !check.shouldPrompt || !mounted) return;
