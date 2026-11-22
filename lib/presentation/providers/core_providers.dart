@@ -25,6 +25,7 @@ import '../../domain/services/budget_alert_service.dart';
 import '../../domain/services/business_service.dart';
 import '../../domain/services/debt_service.dart';
 import '../../domain/services/notification_service.dart';
+import '../../domain/services/phone_access_service.dart';
 import '../../domain/services/photo_service.dart';
 import '../../domain/services/transaction_service.dart';
 import '../../domain/services/update_service.dart';
@@ -154,6 +155,13 @@ final backupBundleServiceProvider = Provider(
 );
 
 final appLockServiceProvider = Provider((ref) => AppLockService());
+
+final phoneAccessServiceProvider = Provider(
+  (ref) => PhoneAccessService(
+    notifications: ref.watch(notificationServiceProvider),
+    sms: ref.watch(smsInboxProvider),
+  ),
+);
 
 final updateServiceProvider = Provider(
   (ref) => UpdateService(

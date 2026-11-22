@@ -24,12 +24,14 @@ the update.
 2. `lib/core/changelog.dart`: add an entry at the top with the same version
    and build number, and the notes users will see after updating.
 3. Build: `flutter build apk --release`
-   (file: `build/app/outputs/flutter-apk/app-release.apk`).
+   (file: `build/app/outputs/flutter-apk/Pitaka.apk`, made by the `pitakaApk`
+   task in `android/app/build.gradle.kts`; `app-release.apk` next to it is the
+   same file under the name the Flutter tool needs).
 4. On GitHub: Releases > Draft a new release.
    - Tag: `v1.3.0` (same version as pubspec; the leading `v` is optional).
    - Notes: the same notes as the changelog. Markdown bullets are shown as
      plain lines (max 30 lines, 300 characters each).
-   - Attach the APK (e.g. `pitaka-1.3.0.apk`). The app downloads it itself
+   - Attach `Pitaka.apk`. The app downloads it itself
      (progress shown, size and GitHub's SHA-256 checked) and opens Android's
      "Update Pitaka?" screen. Without an `.apk` asset the button opens the
      release page in the browser instead.

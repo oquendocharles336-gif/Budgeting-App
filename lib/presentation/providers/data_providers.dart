@@ -8,10 +8,12 @@ import '../../data/models/payment_card.dart';
 import '../../data/models/sms_pattern.dart';
 import '../../data/models/transaction_entry.dart';
 import '../../data/repositories/card_repository.dart';
+import '../../data/repositories/settings_repository.dart';
 import '../../domain/analytics/data_prep.dart';
 import '../../domain/analytics/insights_range.dart';
 import '../../domain/analytics/spending_analytics.dart';
 import '../../domain/budget/budget_calculator.dart';
+import '../../domain/services/phone_access_service.dart';
 import 'core_providers.dart';
 import 'optimistic_providers.dart';
 
@@ -179,6 +181,39 @@ class OpenDebtLoanCounts {
   @override
   int get hashCode => Object.hash(debts, loans);
 }
+
+// -----------------------------------------------------------------------------
+// Phone permissions ("Allow" buttons)
+// -----------------------------------------------------------------------------
+
+/// What the phone allows Pitaka right now. Read once per unlock (a change
+/// made in the phone's settings by hand is seen after the app locks and
+/// opens again) and refreshed by the "Allow" buttons.
+final phoneAccessProvider = FutureProvider<PhoneAccessStatus>((ref) {
+  return ref.watch(phoneAccessServiceProvider).status();
+});
+
+/// What Home's "Allow" card needs to know, besides [phoneAccessProvider].
+class PhoneAccessNeeds {
+  const PhoneAccessNeeds({required this.smsInUse, required this.snoozedUntil});
+
+  /// The user turned on SMS import before, so losing it matters.
+  final bool smsInUse;
+
+  /// "Not now" was tapped: hidden until then.
+  final DateTime? snoozedUntil;
+}
+
+final phoneAccessNeedsProvider = FutureProvider<PhoneAccessNeeds>((ref) async {
+  ref.watch(dataRevisionProvider);
+  final settings = ref.watch(settingsRepositoryProvider);
+  final sms = await settings.get(SettingsRepository.smsEnabled);
+  final until = int.tryParse(await settings.get(SettingsRepository.phoneAccessSnoozedUntil) ?? '');
+  return PhoneAccessNeeds(
+    smsInUse: sms == '1',
+    snoozedUntil: until == null ? null : DateTime.fromMillisecondsSinceEpoch(until),
+  );
+});
 
 // -----------------------------------------------------------------------------
 // Loans

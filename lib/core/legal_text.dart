@@ -32,13 +32,16 @@ On this device only: your Cash amount; the cards and e-wallets you add (a nickna
 The balance of a card or e-wallet is a number you type and keep up to date; transactions you record add to it or take from it. The app does not connect to your bank, card issuer or e-wallet (for example GCash or Maya) and cannot see your real balance or move money. Available balance is your Cash plus your debit, prepaid and e-wallet balances, worked out on this phone. Credit cards are shown separately as available credit.
 
 2b. Business Mode
-Business Mode is a switch in Settings that only shows or hides the Business tab. Turning it off hides the tab; it does not delete any business records, which stay on this phone until you delete them.
+Business Mode is a switch in Settings that only shows or hides the Business buttons on Home and the Business tab. Turning it off hides them; it does not delete any business records, which stay on this phone until you delete them.
 
 3. SMS access (Android, optional)
 SMS access is off by default. If you turn on "Import from SMS" and grant permission, the app reads messages in your inbox on the device to find bank and card transaction alerts using the patterns shown in Settings. Messages are processed only on your phone. They are not uploaded, stored as a copy, or shared. Only the transactions you review and approve are saved. Messages that look like one-time passwords (OTPs) are skipped. You can revoke the permission at any time in your phone's settings.
 
 4. Notifications
 Budget alerts and debt reminders are local notifications created by the app on your phone. No push service is used.
+
+4d. Phone permissions
+Pitaka asks your phone for only three things, each with an "Allow" button you choose to tap (Settings > Phone permissions): notifications (alerts and reminders), reading SMS (only for Import from SMS) and installing its own updates. Tapping Allow shows Android's own question or opens Android's settings page for Pitaka; you can change any of them there at any time. The app keeps working without them.
 
 4a. Photos (optional)
 You can add a photo to an inventory item or product, from the camera or your gallery. The app opens your phone's own camera or photo picker; on Android it does not ask for camera or storage permission itself. Only the photo you choose is copied, made smaller, encrypted (AES-256-GCM) and saved in the app's private folder on this phone. The photo key is kept in Android's secure key storage (Android Keystore), never in the database or plain app settings. The picker's temporary unencrypted copy is deleted right after encryption, and photos are decrypted only in memory to show them. Photo location data is not kept. Removing a photo, deleting the item, or using "Delete all my data" deletes the file; "Delete all my data" also deletes the photo key. If Android closes the app while the camera is open, the form you were filling in is kept on this phone (in the encrypted database) so the photo can be attached when you return.
@@ -93,7 +96,7 @@ CSV and SMS imports depend on the file format and message wording of your bank. 
 The app is provided "as is", without warranties of any kind. To the extent allowed by law, the developer is not liable for any loss arising from use of the app, including missed payments or inaccurate figures.
 
 5a. Business features and Business Mode
-Business Mode only shows or hides the Business tab; it never deletes business records. Capital, inventory, orders and sales analytics are a simple record of what you type. They are not accounting, inventory-valuation or tax software, and they don't replace official receipts or records you may need to keep. When a buyer pays by QR, check the payment in your own Maya, MariBank or BDO app; this app does not verify payments.
+Business Mode only shows or hides the Business buttons and tab; it never deletes business records. Capital, inventory, orders and sales analytics are a simple record of what you type. They are not accounting, inventory-valuation or tax software, and they don't replace official receipts or records you may need to keep. When a buyer pays by QR, check the payment in your own Maya, MariBank or BDO app; this app does not verify payments.
 
 6. Third parties
 The app does not connect to your bank or to any payment service. Any future feature that does will have its own terms and an updated privacy policy that you must accept first.

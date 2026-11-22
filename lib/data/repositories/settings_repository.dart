@@ -44,6 +44,9 @@ class SettingsRepository {
   /// bar. Off by default.
   static const businessMode = 'business_mode';
 
+  /// "Not now" on Home's "Allow" card: hidden until this time (ms).
+  static const phoneAccessSnoozedUntil = 'phone_access_snoozed_until';
+
   /// Keys that are device-specific and never exported in backups.
   static const privateKeys = {
     pinHash,
@@ -57,6 +60,7 @@ class SettingsRepository {
     whatsNewSeenBuild,
     whatsNewSeenVersion,
     businessMode,
+    phoneAccessSnoozedUntil,
   };
 
   /// Leftovers of the old PIN lock (before the password + encryption

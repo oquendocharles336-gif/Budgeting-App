@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/sources/apk_updater.dart';
+import '../../data/sources/phone_access.dart';
 import '../../domain/services/app_lock_service.dart';
 import '../../domain/services/update_service.dart';
 import '../theme/app_palette.dart';
@@ -75,6 +76,10 @@ class _UpdateSheetState extends State<_UpdateSheet> {
   String? _error;
   DownloadCancel? _cancel;
 
+  /// Android refused to install because "Install unknown apps" is off for
+  /// Pitaka: the sheet shows an "Allow" button for it.
+  bool _needsInstallAccess = false;
+
   ReleaseInfo get _release => widget.check.release!;
   bool get _inApp => ApkUpdater.supported && _release.isApk;
   bool get _busy => _step == _Step.downloading || _step == _Step.installing;
@@ -98,6 +103,7 @@ class _UpdateSheetState extends State<_UpdateSheet> {
       _total = _release.apkSize;
       _error = null;
       _cancel = cancel;
+      _needsInstallAccess = false;
     });
     try {
       final apk = await ApkUpdater.download(
@@ -127,7 +133,8 @@ class _UpdateSheetState extends State<_UpdateSheet> {
           setState(() => _step = _Step.ready);
           showSnack(context, 'Update not installed. Tap Update when you\'re ready.');
         case InstallOutcome.permissionDenied:
-          _fail('Allow "Install unknown apps" for Pitaka to update from inside the app, then tap Try again.');
+          _fail('Pitaka needs your OK to install updates. Tap Allow, turn on "Allow from this source", then come back.');
+          setState(() => _needsInstallAccess = true);
         case InstallOutcome.failed:
           _fail('Android couldn\'t install the update. If this keeps happening, the update may be signed with a '
               'different key than the app on this phone.');
@@ -141,6 +148,24 @@ class _UpdateSheetState extends State<_UpdateSheet> {
       }
     } catch (e) {
       if (mounted) _fail('Could not update: $e');
+    }
+  }
+
+  /// Opens Android's "Install unknown apps" page for Pitaka; when the user
+  /// comes back with it allowed, the update starts again by itself.
+  Future<void> _allowInstall() async {
+    PhoneAccessStatus after;
+    try {
+      after = await LockGuard.run(() => const PhoneAccessChannel().openSettings(PhoneAccess.installUpdates));
+    } catch (e) {
+      if (mounted) showSnack(context, 'Couldn\'t open the phone\'s settings: $e', error: true);
+      return;
+    }
+    if (!mounted) return;
+    if (after.installUpdates) {
+      await _download();
+    } else {
+      showSnack(context, 'Installing updates is still not allowed.', error: true);
     }
   }
 
@@ -245,6 +270,14 @@ class _UpdateSheetState extends State<_UpdateSheet> {
                 if (_step == _Step.failed && _error != null) ...[
                   Text(_error!, style: TextStyle(color: t.danger, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 12),
+                ],
+                if (_step == _Step.failed && _needsInstallAccess) ...[
+                  FilledButton.icon(
+                    onPressed: _allowInstall,
+                    icon: const Icon(Icons.verified_user_rounded),
+                    label: const Text('Allow'),
+                  ),
+                  const SizedBox(height: 8),
                 ],
                 FilledButton.icon(
                   onPressed: _download,

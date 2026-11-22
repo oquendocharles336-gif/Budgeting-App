@@ -1,4 +1,4 @@
-# Update 7 (1.3.0): swipe tabs, Debts tab + badge, Business Mode, balance boxes, What's new fix, performance
+# Update 7 (1.3.0): swipe tabs, debt/loan badges, Business Mode, Allow buttons, balance boxes, What's new fix, performance
 
 `flutter analyze` and `flutter test` were **not** run (no Flutter SDK where this was made; only a Dart syntax check). Run first:
 
@@ -12,14 +12,19 @@ flutter pub get && flutter analyze && flutter test
 - **What's new bug:** `main.dart` removed every `SettingsRepository.privateKeys` entry on each unlock, which wiped
   `whats_new_seen_version` (and the last update check and the camera photo draft). Now only the old PIN keys are removed.
 - Business Mode and What's new use the encrypted `settings` table (no shared_preferences).
+- **APK name:** `flutter build apk --release` now also writes `build/app/outputs/flutter-apk/Pitaka.apk`
+  (Gradle task `pitakaApk` in `android/app/build.gradle.kts`, run after `assembleRelease`). No rename command needed.
+- **Android:** `MainActivity.java` has a new `pitaka/permissions` channel (status + the system settings page for notifications / install / app info). No manifest change. Rebuild the APK (a hot restart doesn't load Java changes).
 
 ## Manual tests
 1. **Swipe:** swipe between all tabs; tap a far tab (Home → Wallets): one smooth slide. Scroll position stays when you come back.
 2. **Gestures:** swipe a transaction row (Edit/Delete still opens), the card deck and chip rows still scroll.
-3. **Badge:** add a debt → 1; add a "Loan" transaction → 2; mark paid / delete → goes down; 0 → hidden.
-4. **Business Mode:** Settings → on → Business tab appears. Open it, go to Settings, turn it off → back on Home, no crash. Restart → setting kept.
+3. **Badges (Home quick actions):** add a debt → Debts shows 1; add a "Loan" transaction → Loans shows 1; mark paid / delete → goes down; 0 → hidden.
+4. **Business Mode:** off (default) → no Business button in Home's header or quick actions, no Business tab. On → both buttons and the Business tab appear. Open the tab, go to Settings, turn it off → back on Home, no crash. Restart → setting kept.
 5. **Balance:** add / edit / delete a card or e-wallet, add an expense paid with it → Cash and Cards & e-wallets boxes change.
-6. **What's new:** update from 1.2.1 → shows once; lock / reopen → not again; fresh install → shows once.
+6. **Allow buttons:** Android 13+: Settings > Apps > Pitaka > Notifications off → open Pitaka → Home shows "Pitaka needs your OK" → Allow → Android's question (or the settings page if you said no before) → card disappears. "Not now" hides it for 7 days. Settings > Phone permissions lists Notifications, Read bank texts, Install updates with Allowed / Allow.
+7. **Update install:** with "Install unknown apps" off, Download an update → error with an **Allow** button → turn it on, press Back → the update starts again.
+8. **What's new:** update from 1.2.1 → shows once; lock / reopen → not again; fresh install → shows once.
 
 ---
 

@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../../../core/legal_text.dart';
 import '../../../core/money.dart';
 import '../../../data/db/seed_data.dart';
+import '../../../data/sources/apk_updater.dart';
 import '../../../domain/security/password_crypto.dart';
 import '../../../domain/services/app_lock_service.dart';
 import '../../../domain/services/update_service.dart';
@@ -20,6 +21,7 @@ import '../../widgets/color_picker.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/animated_icons.dart';
 import '../../widgets/password_dialog.dart';
+import '../../widgets/phone_access_widgets.dart';
 import '../../widgets/update_sheets.dart';
 import '../../widgets/photo_migration_line.dart';
 import '../auth/recovery_key_screen.dart';
@@ -220,7 +222,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 SwitchListTile(
                   secondary: const Icon(Icons.business_center_rounded),
                   title: const Text('Business Mode'),
-                  subtitle: const Text('Show a Business tab in the bottom bar'),
+                  subtitle: const Text('Show Business on Home and as a tab in the bottom bar'),
                   value: businessMode,
                   onChanged: _setBusinessMode,
                 ),
@@ -296,6 +298,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ],
             ),
           ),
+          if (Platform.isAndroid) ...[
+            const SectionHeader('Phone permissions'),
+            PhoneAccessSection(showInstall: ApkUpdater.supported),
+          ],
           const SectionHeader('Your data'),
           const PhotoMigrationLine(),
           Card(
@@ -412,7 +418,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       if (mounted) showSnack(context, 'Could not save Business Mode: $e', error: true);
       return;
     }
-    if (mounted) showSnack(context, on ? 'Business tab added to the bottom bar' : 'Business tab removed');
+    if (mounted) showSnack(context, on ? 'Business is now on Home and in the bottom bar' : 'Business is hidden from Home and the bottom bar');
   }
 
   Future<void> _pickCurrency() async {

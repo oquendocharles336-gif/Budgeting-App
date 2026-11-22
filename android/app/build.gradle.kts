@@ -54,6 +54,45 @@ flutter {
     source = "../.."
 }
 
+// ---------------------------------------------------------------------------
+// Pitaka.apk
+//
+// `flutter build apk --release` leaves the APK as
+//   build/app/outputs/flutter-apk/app-release.apk
+// The Flutter tool itself looks for that exact name (and fails if it's
+// missing), so the APK can't simply be renamed with `outputFileName`.
+// Instead, right after the release build, this copies it next to it as
+//   build/app/outputs/flutter-apk/Pitaka.apk
+// (with --split-per-abi: Pitaka-arm64-v8a.apk, Pitaka-armeabi-v7a.apk, ...).
+// No rename command needed.
+// ---------------------------------------------------------------------------
+val pitakaApk = tasks.register("pitakaApk") {
+    group = "build"
+    description = "Copies the release APK in build/app/outputs/flutter-apk to Pitaka.apk."
+    val apkDir = layout.buildDirectory.dir("outputs/flutter-apk")
+    // A quick copy: always run it, so Pitaka.apk is never older than the build.
+    outputs.upToDateWhen { false }
+    doLast {
+        val dir = apkDir.get().asFile
+        // app-release.apk, or app-<abi>-release.apk with --split-per-abi.
+        val releaseApk = Regex("""app(-.+)?-release\.apk""")
+        val built = dir.listFiles().orEmpty().filter { releaseApk.matches(it.name) }
+        if (built.isEmpty()) throw GradleException("No release APK found in $dir")
+        for (apk in built) {
+            val suffix = releaseApk.matchEntire(apk.name)!!.groupValues[1]
+            val target = File(dir, "Pitaka$suffix.apk")
+            apk.copyTo(target, overwrite = true)
+            logger.lifecycle("Pitaka APK: ${target.path}")
+        }
+    }
+}
+
+// Runs after assembleRelease, which is what `flutter build apk --release`
+// calls, once Flutter has copied the APK into flutter-apk.
+tasks.configureEach {
+    if (name == "assembleRelease") finalizedBy(pitakaApk)
+}
+
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     // Theme.AppCompat for the biometric prompt (local_auth).

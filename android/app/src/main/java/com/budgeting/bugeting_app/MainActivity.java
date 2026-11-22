@@ -13,6 +13,7 @@ import android.view.WindowManager;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.FileProvider;
 
 import java.io.File;
@@ -36,6 +37,12 @@ import io.flutter.plugin.common.MethodChannel;
  * GitHub release) to Android's package installer, so updating never needs
  * the browser. Android still shows its own "Update this app?" screen, and the
  * first time asks to allow "Install unknown apps" for Pitaka.
+ *
+ * And "pitaka/permissions": what Pitaka is allowed to do on this phone
+ * (notifications, SMS, installing updates), and the system settings page
+ * for each one, for the "Allow" buttons. The settings page is opened with
+ * startActivityForResult, so the call only returns (with the new status)
+ * when the user comes back to the app.
  */
 public class MainActivity extends FlutterFragmentActivity {
     private static final String CHANNEL = "pitaka/sms";
@@ -49,6 +56,10 @@ public class MainActivity extends FlutterFragmentActivity {
     private static final int UNKNOWN_SOURCES_REQUEST = 4244;
     private MethodChannel.Result pendingInstallResult;
     private String pendingApkPath;
+
+    private static final String PERMISSIONS_CHANNEL = "pitaka/permissions";
+    private static final int SETTINGS_REQUEST = 4245;
+    private MethodChannel.Result pendingSettingsResult;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,6 +107,60 @@ public class MainActivity extends FlutterFragmentActivity {
                             result.notImplemented();
                     }
                 });
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), PERMISSIONS_CHANNEL)
+                .setMethodCallHandler((call, result) -> {
+                    switch (call.method) {
+                        case "status":
+                            result.success(permissionStatus());
+                            break;
+                        case "openSettings":
+                            openSettingsPage(call.argument("page"), result);
+                            break;
+                        default:
+                            result.notImplemented();
+                    }
+                });
+    }
+
+    // ---------------------------------------------------------------------
+    // Phone permissions: status and the system settings page for each
+    // ---------------------------------------------------------------------
+
+    private Map<String, Object> permissionStatus() {
+        Map<String, Object> status = new HashMap<>();
+        status.put("notifications", NotificationManagerCompat.from(this).areNotificationsEnabled());
+        status.put("sms", hasSmsPermission());
+        status.put("install", canInstallApks());
+        return status;
+    }
+
+    private void openSettingsPage(String page, MethodChannel.Result result) {
+        if (pendingSettingsResult != null) {
+            result.error("busy", "A settings page is already open", null);
+            return;
+        }
+        String pkg = getPackageName();
+        Intent appDetails = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg));
+        Intent intent = appDetails;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if ("notifications".equals(page)) {
+                intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, pkg);
+            } else if ("install".equals(page)) {
+                intent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + pkg));
+            }
+        }
+        pendingSettingsResult = result;
+        try {
+            startActivityForResult(intent, SETTINGS_REQUEST);
+        } catch (Exception e) {
+            // Some phones don't have the specific page: fall back to the app's info page.
+            try {
+                startActivityForResult(appDetails, SETTINGS_REQUEST);
+            } catch (Exception e2) {
+                pendingSettingsResult = null;
+                result.error("no_settings", "Could not open the phone's settings", null);
+            }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -167,6 +232,12 @@ public class MainActivity extends FlutterFragmentActivity {
                 launchInstaller();
             } else {
                 finishInstall("permission_denied");
+            }
+        } else if (requestCode == SETTINGS_REQUEST) {
+            // Back from the settings page: report what is allowed now.
+            if (pendingSettingsResult != null) {
+                pendingSettingsResult.success(permissionStatus());
+                pendingSettingsResult = null;
             }
         } else if (requestCode == INSTALL_REQUEST) {
             // On success Android usually restarts the app before this runs.

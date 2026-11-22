@@ -15,11 +15,14 @@ const changelog = <ChangelogEntry>[
     date: '2026-11-22',
     notes: [
       'Swipe left or right to move between tabs, or tap the bottom bar for a smooth slide.',
-      'New Debts tab with your debts and loans together. A badge shows how many are still open.',
-      'Business Mode: turn it on in Settings to get a Business tab in the bottom bar.',
+      'The Debts and Loans buttons on Home show how many are still open.',
+      'Business Mode in Settings: turn it on to show Business on Home and as a tab; turn it off to hide it. Your business records are kept.',
       'Available balance now shows two boxes: Cash, and Cards & e-wallets, each with its own total.',
+      'Allow buttons: when your phone hasn\'t allowed something Pitaka needs (like notifications for reminders), Home shows an Allow button. See them all in Settings > Phone permissions.',
+      'Installing an update now has an Allow button if Android needs your OK first.',
       'Smoother and cooler: lighter screens, faster totals and lists, and less work while you scroll or swipe.',
       'What\'s new now shows only once per update.',
+      'Updated Privacy Policy and Terms.',
     ],
   ),
   ChangelogEntry(

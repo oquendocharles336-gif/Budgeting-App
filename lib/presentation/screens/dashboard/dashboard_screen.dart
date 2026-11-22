@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/dates.dart';
 import '../../../domain/budget/budget_calculator.dart';
+import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../theme/app_palette.dart';
@@ -13,10 +14,10 @@ import '../../widgets/available_balance_card.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/skeleton.dart';
 import '../../widgets/payment_card_view.dart';
+import '../../widgets/phone_access_widgets.dart';
 import '../analytics/analytics_screen.dart';
 import '../business/business_shell.dart';
 import '../cards/card_detail_screen.dart';
-import '../debts/debts_loans_screen.dart';
 import '../debts/debts_screen.dart';
 import '../loans/loans_screen.dart';
 import '../settings/settings_screen.dart';
@@ -28,16 +29,12 @@ class DashboardScreen extends ConsumerWidget {
     required this.onSeeAllTransactions,
     required this.onOpenBudget,
     required this.onOpenWallets,
-    this.onOpenDebts,
     this.onOpenBusiness,
   });
 
   final VoidCallback onSeeAllTransactions;
   final VoidCallback onOpenBudget;
   final VoidCallback onOpenWallets;
-
-  /// Opens the "Debts" tab on debts or loans. Null: open the screens on top.
-  final ValueChanged<DebtsSection>? onOpenDebts;
 
   /// Opens the business side (the Business tab when Business Mode is on).
   /// Null: open it on top.
@@ -47,6 +44,8 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final monthKey = Dates.monthKey(DateTime.now());
     final summary = ref.watch(monthSummaryProvider(monthKey));
+    // Business Mode (Settings): off hides every Business button on Home.
+    final business = ref.watch(businessModeProvider);
     void openBusiness() {
       final open = onOpenBusiness;
       if (open != null) {
@@ -56,17 +55,6 @@ class DashboardScreen extends ConsumerWidget {
       }
     }
 
-    void openSection(DebtsSection section) {
-      final open = onOpenDebts;
-      if (open != null) {
-        open(section);
-      } else {
-        _push(context, section == DebtsSection.debts ? const DebtsScreen() : const LoansScreen());
-      }
-    }
-
-    void openDebts() => openSection(DebtsSection.debts);
-    void openLoans() => openSection(DebtsSection.loans);
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -84,9 +72,11 @@ class DashboardScreen extends ConsumerWidget {
             children: [
               _Header(
                 onSettings: () => _push(context, const SettingsScreen()),
-                onBusiness: openBusiness,
+                onBusiness: business ? openBusiness : null,
               ),
               const SizedBox(height: 16),
+              // "Allow" buttons when the phone hasn't allowed what Pitaka needs.
+              const PhoneAccessCard(),
               AsyncView(
                 value: summary,
                 loading: const SkeletonCard(height: 190),
@@ -101,15 +91,15 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 20),
               // Import lives in Settings > Your data.
               _QuickActions(
-                onDebts: openDebts,
+                onDebts: () => _push(context, const DebtsScreen()),
                 onInsights: () => _push(context, const AnalyticsScreen()),
-                onLoans: openLoans,
-                onBusiness: openBusiness,
+                onLoans: () => _push(context, const LoansScreen()),
+                onBusiness: business ? openBusiness : null,
               ),
               const SizedBox(height: 12),
               _CardsStrip(onOpenWallets: onOpenWallets),
               const SizedBox(height: 8),
-              _DebtSummary(onTap: openDebts),
+              _DebtSummary(onTap: () => _push(context, const DebtsScreen())),
               const SizedBox(height: 8),
               SectionHeader('Recent transactions', actionLabel: 'See all', onAction: onSeeAllTransactions),
               const _RecentTransactions(),
@@ -125,9 +115,11 @@ class DashboardScreen extends ConsumerWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.onSettings, required this.onBusiness});
+  const _Header({required this.onSettings, this.onBusiness});
   final VoidCallback onSettings;
-  final VoidCallback onBusiness;
+
+  /// Null when Business Mode is off: the button is hidden.
+  final VoidCallback? onBusiness;
 
   @override
   Widget build(BuildContext context) {
@@ -148,8 +140,10 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        IconButton.filledTonal(onPressed: onBusiness, icon: const Icon(Icons.storefront_rounded), tooltip: 'Switch to Business'),
-        const SizedBox(width: 8),
+        if (onBusiness != null) ...[
+          IconButton.filledTonal(onPressed: onBusiness, icon: const Icon(Icons.storefront_rounded), tooltip: 'Switch to Business'),
+          const SizedBox(width: 8),
+        ],
         IconButton.filledTonal(onPressed: onSettings, icon: const Icon(Icons.settings_rounded), tooltip: 'Settings'),
       ],
     );
@@ -262,45 +256,91 @@ class _QuickActions extends StatelessWidget {
     required this.onDebts,
     required this.onInsights,
     required this.onLoans,
-    required this.onBusiness,
+    this.onBusiness,
   });
   final VoidCallback onDebts;
   final VoidCallback onInsights;
   final VoidCallback onLoans;
-  final VoidCallback onBusiness;
+
+  /// Null when Business Mode is off: the button is hidden and the other
+  /// three share the row.
+  final VoidCallback? onBusiness;
 
   @override
-  Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(child: _Action(icon: Icons.insights_rounded, label: 'Insights', onTap: onInsights)),
+  Widget build(BuildContext context) {
+    final business = onBusiness;
+    return Row(
+      children: [
+        Expanded(child: _Action(icon: Icons.insights_rounded, label: 'Insights', onTap: onInsights)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _Action(icon: Icons.handshake_rounded, label: 'Debts', onTap: onDebts, badge: _OpenCount.debts),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _Action(icon: Icons.request_quote_rounded, label: 'Loans', onTap: onLoans, badge: _OpenCount.loans),
+        ),
+        if (business != null) ...[
           const SizedBox(width: 10),
-          Expanded(child: _Action(icon: Icons.handshake_rounded, label: 'Debts', onTap: onDebts)),
-          const SizedBox(width: 10),
-          Expanded(child: _Action(icon: Icons.request_quote_rounded, label: 'Loans', onTap: onLoans)),
-          const SizedBox(width: 10),
-          Expanded(child: _Action(icon: Icons.storefront_rounded, label: 'Business', onTap: onBusiness)),
+          Expanded(child: _Action(icon: Icons.storefront_rounded, label: 'Business', onTap: business)),
         ],
-      );
+      ],
+    );
+  }
 }
 
+/// Which open count a quick action's badge shows.
+enum _OpenCount { debts, loans }
+
 class _Action extends StatelessWidget {
-  const _Action({required this.icon, required this.label, required this.onTap});
+  const _Action({required this.icon, required this.label, required this.onTap, this.badge});
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final _OpenCount? badge;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final kind = badge;
+    final glyph = ExcludeSemantics(child: Icon(icon, color: scheme.primary));
     return AppCard(
       onTap: onTap,
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Column(
         children: [
-          ExcludeSemantics(child: Icon(icon, color: scheme.primary)),
+          kind == null ? glyph : _CountBadge(kind: kind, label: label, child: glyph),
           const SizedBox(height: 6),
           Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
         ],
+      ),
+    );
+  }
+}
+
+/// The number of open debts (or unpaid loans) on a quick action. Hidden at
+/// 0, "99+" above 99. It reads a cached count (one SQL query per data
+/// change, never in build()), and only this small widget rebuilds when the
+/// count changes.
+class _CountBadge extends ConsumerWidget {
+  const _CountBadge({required this.kind, required this.label, required this.child});
+  final _OpenCount kind;
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final n = ref.watch(openDebtLoanCountsProvider.select((a) {
+      final c = a.asDataOrNull;
+      if (c == null) return 0;
+      return kind == _OpenCount.debts ? c.debts : c.loans;
+    }));
+    return Semantics(
+      label: n > 0 ? '$n open' : null,
+      child: Badge(
+        isLabelVisible: n > 0,
+        label: Text(n > 99 ? '99+' : '$n'),
+        child: child,
       ),
     );
   }

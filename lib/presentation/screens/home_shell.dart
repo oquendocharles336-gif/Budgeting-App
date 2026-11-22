@@ -11,7 +11,6 @@ import '../providers/app_state_providers.dart';
 import '../providers/core_providers.dart';
 import '../providers/data_providers.dart';
 import '../theme/glass.dart';
-import '../widgets/common.dart';
 import '../widgets/motion/animated_icons.dart';
 import '../widgets/motion/cascade.dart';
 import '../widgets/update_sheets.dart';
@@ -21,18 +20,16 @@ import 'business/inventory_screen.dart';
 import 'business/products_screen.dart';
 import 'cards/cards_screen.dart';
 import 'dashboard/dashboard_screen.dart';
-import 'debts/debts_loans_screen.dart';
 import 'transactions/transaction_form_screen.dart';
 import 'transactions/transactions_screen.dart';
 
 /// The tabs of the home screen.
-enum HomeTab { home, activity, debts, budget, wallets, business }
+enum HomeTab { home, activity, budget, wallets, business }
 
 /// Icon and label of each tab in the bottom bar.
 const _tabInfo = <HomeTab, ({IconData icon, String label, String semantics})>{
   HomeTab.home: (icon: Icons.home_rounded, label: 'Home', semantics: 'Home'),
   HomeTab.activity: (icon: Icons.receipt_long_rounded, label: 'Activity', semantics: 'Activity'),
-  HomeTab.debts: (icon: Icons.handshake_rounded, label: 'Debts', semantics: 'Debts and loans'),
   HomeTab.budget: (icon: Icons.pie_chart_rounded, label: 'Budget', semantics: 'Budget'),
   HomeTab.wallets: (icon: Icons.account_balance_wallet_rounded, label: 'Wallets', semantics: 'Wallets'),
   HomeTab.business: (icon: Icons.storefront_rounded, label: 'Business', semantics: 'Business'),
@@ -44,7 +41,6 @@ const _tabInfo = <HomeTab, ({IconData icon, String label, String semantics})>{
 List<HomeTab> homeTabs({required bool business}) => [
       HomeTab.home,
       HomeTab.activity,
-      HomeTab.debts,
       HomeTab.budget,
       HomeTab.wallets,
       if (business) HomeTab.business,
@@ -60,7 +56,7 @@ class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
   /// How many tabs sit left of the "+" button.
-  static const leftCount = 3;
+  static const leftCount = 2;
 
   /// Tab switch animation (taps and Back).
   static const switchDuration = Duration(milliseconds: 280);
@@ -293,11 +289,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
   }
 
-  void _openDebts(DebtsSection section) {
-    ref.read(debtsSectionProvider.notifier).show(section);
-    _go(HomeTab.debts);
-  }
-
   /// Home's "Business" buttons: the tab when Business Mode is on,
   /// otherwise the business screens on top, as before.
   void _openBusiness() {
@@ -321,11 +312,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onSeeAllTransactions: () => _go(HomeTab.activity),
                   onOpenBudget: () => _go(HomeTab.budget),
                   onOpenWallets: () => _go(HomeTab.wallets),
-                  onOpenDebts: _openDebts,
                   onOpenBusiness: _openBusiness,
                 ),
               HomeTab.activity => const TransactionsScreen(),
-              HomeTab.debts => const DebtsLoansScreen(),
               HomeTab.budget => const BudgetScreen(),
               HomeTab.wallets => const CardsScreen(asTab: true),
               HomeTab.business => const BusinessShell(asTab: true),
@@ -426,7 +415,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                       label: _tabInfo[t]!.label,
                       semanticsLabel: _tabInfo[t]!.semantics,
                       selected: t == current,
-                      showDebtBadge: t == HomeTab.debts,
                       onTap: () => _go(t),
                     );
                 final left = tabs.take(HomeShell.leftCount).toList();
@@ -486,93 +474,54 @@ class _NavItem extends StatelessWidget {
     required this.semanticsLabel,
     required this.selected,
     required this.onTap,
-    this.showDebtBadge = false,
   });
   final IconData icon;
   final String label;
   final String semanticsLabel;
   final bool selected;
   final VoidCallback onTap;
-  final bool showDebtBadge;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final color = selected ? scheme.primary : scheme.onSurfaceVariant;
-    Widget glyph = Icon(icon, color: selected ? scheme.onPrimaryContainer : color);
-    if (showDebtBadge) glyph = _DebtBadge(child: glyph);
-    final item = InkWell(
-      onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Scales down instead of overflowing on narrow phones (6 tabs).
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: selected ? scheme.primaryContainer : Colors.transparent,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: glyph,
-            ),
-          ),
-          const SizedBox(height: 2),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              label,
-              maxLines: 1,
-              style: TextStyle(fontSize: 12, color: color, fontWeight: selected ? FontWeight.w700 : FontWeight.w500),
-            ),
-          ),
-        ],
-      ),
-    );
     return Expanded(
-      child: showDebtBadge
-          // The count joins the label for screen readers.
-          ? _DebtSemantics(label: semanticsLabel, selected: selected, child: item)
-          : Semantics(selected: selected, button: true, label: semanticsLabel, excludeSemantics: true, child: item),
-    );
-  }
-}
-
-/// Open debts + unpaid loans. Only this small widget listens to the count
-/// (a cached provider, one COUNT query per data change), so the bar and
-/// the pages don't rebuild when it changes.
-class _DebtBadge extends ConsumerWidget {
-  const _DebtBadge({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final n = ref.watch(openDebtLoanCountsProvider.select((a) => a.asDataOrNull?.total ?? 0));
-    return Badge(
-      isLabelVisible: n > 0,
-      label: Text(n > 99 ? '99+' : '$n'),
-      child: child,
-    );
-  }
-}
-
-class _DebtSemantics extends ConsumerWidget {
-  const _DebtSemantics({required this.label, required this.selected, required this.child});
-  final String label;
-  final bool selected;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final n = ref.watch(openDebtLoanCountsProvider.select((a) => a.asDataOrNull?.total ?? 0));
-    return Semantics(
-      selected: selected,
-      button: true,
-      label: n > 0 ? '$label, $n open' : label,
-      excludeSemantics: true,
-      child: child,
+      child: Semantics(
+        selected: selected,
+        button: true,
+        label: semanticsLabel,
+        excludeSemantics: true,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Scales down instead of overflowing on narrow phones.
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: selected ? scheme.primaryContainer : Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: selected ? scheme.onPrimaryContainer : color),
+                ),
+              ),
+              const SizedBox(height: 2),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(fontSize: 12, color: color, fontWeight: selected ? FontWeight.w700 : FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
