@@ -72,9 +72,15 @@ class Money {
     return negative ? -value : value;
   }
 
+  /// Cached formatters by currency symbol (only a handful of currencies).
+  static final _currency = <String, NumberFormat>{};
+  static final _compact = <String, NumberFormat>{};
+
   /// Formats centavos for display, e.g. 123456 -> "₱1,234.56".
   static String format(int centavos, {String symbol = '₱', bool showPlus = false}) {
-    final f = NumberFormat.currency(symbol: symbol, decimalDigits: 2, locale: 'en_US');
+    // Built once per symbol: creating a NumberFormat parses locale data and
+    // a pattern, and this runs for every amount on screen.
+    final f = _currency[symbol] ??= NumberFormat.currency(symbol: symbol, decimalDigits: 2, locale: 'en_US');
     final text = f.format(centavos.abs() / 100);
     if (centavos < 0) return '-$text';
     if (showPlus && centavos > 0) return '+$text';
@@ -83,7 +89,7 @@ class Money {
 
   /// Short form for chart axes: 1500000 -> "₱15K".
   static String compact(int centavos, {String symbol = '₱'}) {
-    final f = NumberFormat.compactCurrency(symbol: symbol, decimalDigits: 0, locale: 'en_US');
+    final f = _compact[symbol] ??= NumberFormat.compactCurrency(symbol: symbol, decimalDigits: 0, locale: 'en_US');
     return f.format(centavos / 100);
   }
 

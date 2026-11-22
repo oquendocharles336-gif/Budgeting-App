@@ -127,35 +127,58 @@ class UpdateService {
   /// "Skip this version": not shown automatically again until a newer one.
   Future<void> skip(AppVersion version) => _settings.set(SettingsRepository.updateSkippedVersion, '$version');
 
-  /// "What's new" to show once after an update. Returns nothing on a fresh
-  /// install, or when this version (or a newer one) was already seen.
+  /// Process-wide: "What's new" was already put on screen since the app
+  /// started. Locking the app tears down every screen and service (a new
+  /// [UpdateService] is made on unlock), so this lives on the class: the
+  /// sheet can never come back in the same run, even if it was closed by
+  /// locking instead of "Got it".
+  static bool _whatsNewShownThisRun = false;
+
+  /// Notes to show once, or nothing. Saves nothing: call
+  /// [markWhatsNewShown] right before showing them and [markWhatsNewSeen]
+  /// when the user closes the sheet.
   ///
-  /// The installed version is saved as seen BEFORE anything is shown, so
-  /// closing or locking the app while the sheet is open doesn't bring it
-  /// back. [hasExistingData] tells an update from 1.0 (which saved nothing)
-  /// apart from a fresh install.
-  Future<List<ChangelogEntry>> takeWhatsNew({required bool hasExistingData}) async {
+  ///  * No saved version (a new user, or an update from a version whose
+  ///    record was lost): this version's notes.
+  ///  * Saved version lower than the installed one: every newer version's
+  ///    notes (at most [WhatsNew.maxVersions]).
+  ///  * Same or higher (after installing an older APK): nothing.
+  Future<List<ChangelogEntry>> pendingWhatsNew() async {
+    if (_whatsNewShownThisRun) return const [];
     final current = (await _installed()).version;
-    final lastSeen = await _lastSeenVersion(hasExistingData: hasExistingData);
-    final entries = WhatsNew.since(changelog, lastSeen: lastSeen, current: current);
-    // Never move the record backwards (e.g. after installing an older APK).
-    final seen = AppVersion.tryParse(lastSeen);
-    final now = AppVersion.tryParse(current);
-    if (seen == null || now == null || now > seen) {
-      await _settings.set(SettingsRepository.whatsNewSeenVersion, current);
+    final lastSeen = await _lastSeenVersion();
+    if (lastSeen == null) {
+      final notes = WhatsNew.current(changelog, current);
+      return notes == null ? const [] : [notes];
     }
-    return entries;
+    return WhatsNew.since(changelog, lastSeen: lastSeen, current: current);
   }
 
-  Future<String?> _lastSeenVersion({required bool hasExistingData}) async {
+  /// The sheet is about to open: don't offer it again in this run.
+  void markWhatsNewShown() => _whatsNewShownThisRun = true;
+
+  /// The user closed "What's new": remember the installed version, so it
+  /// isn't shown again for it. Never moves the record backwards.
+  Future<void> markWhatsNewSeen() async {
+    _whatsNewShownThisRun = true;
+    final current = (await _installed()).version;
+    final seen = AppVersion.tryParse(await _lastSeenVersion());
+    final now = AppVersion.tryParse(current);
+    if (now == null) return;
+    if (seen == null || now > seen) {
+      await _settings.set(SettingsRepository.whatsNewSeenVersion, current);
+    }
+  }
+
+  /// The last version whose notes were seen, or null when there is no
+  /// usable record (new user, or an older version that saved nothing).
+  Future<String?> _lastSeenVersion() async {
     final saved = await _settings.get(SettingsRepository.whatsNewSeenVersion);
-    if (saved != null) return saved;
+    if (AppVersion.tryParse(saved) != null) return saved;
     // 1.1 saved the build number instead of the version.
     final build = int.tryParse(await _settings.get(SettingsRepository.whatsNewSeenBuild) ?? '');
-    if (build != null) return WhatsNew.versionForBuild(changelog, build) ?? '0.0.0';
-    // 1.0 saved nothing: data means it's an update from the first release;
-    // no data means a fresh install (nothing to show).
-    return hasExistingData ? changelog.last.version : null;
+    if (build != null) return WhatsNew.versionForBuild(changelog, build);
+    return null;
   }
 
   /// This version's notes, for Settings.

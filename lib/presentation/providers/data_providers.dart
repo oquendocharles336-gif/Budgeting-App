@@ -7,6 +7,7 @@ import '../../data/models/debt.dart';
 import '../../data/models/payment_card.dart';
 import '../../data/models/sms_pattern.dart';
 import '../../data/models/transaction_entry.dart';
+import '../../data/repositories/card_repository.dart';
 import '../../domain/analytics/data_prep.dart';
 import '../../domain/analytics/insights_range.dart';
 import '../../domain/analytics/spending_analytics.dart';
@@ -35,26 +36,44 @@ final cashBalanceProvider = FutureProvider<int>((ref) {
   return ref.watch(cardRepositoryProvider).cashBalance();
 });
 
+/// Account totals added up in SQL (SUM), not in Dart.
+final accountTotalsProvider = FutureProvider<AccountTotals>((ref) {
+  ref.watch(dataRevisionProvider);
+  return ref.watch(cardRepositoryProvider).balanceTotals();
+});
+
 /// Totals shown on Home, Budget and the Wallets tab.
+///
+/// Available balance = Cash + every debit / prepaid / e-wallet balance.
+/// Credit cards are left out: available credit is borrowed money, not the
+/// user's own, so it is shown on its own line instead.
 class BalanceSummary {
-  const BalanceSummary({required this.cash, required this.accounts});
+  const BalanceSummary({required this.cash, required this.accounts, this.totals = const AccountTotals()});
   final int cash;
 
   /// Active (not archived) accounts.
   final List<PaymentCard> accounts;
 
-  /// Cash plus every debit / prepaid / e-wallet balance. Credit cards are
-  /// left out: available credit is borrowed money, not the user's own.
-  int get available => cash + accounts.where((c) => c.countsTowardAvailable).fold<int>(0, (a, c) => a + c.balance);
+  /// SUM totals of [accounts], from the database.
+  final AccountTotals totals;
 
-  int get availableCredit => accounts.where((c) => c.isCredit).fold<int>(0, (a, c) => a + c.balance);
-  bool get hasCredit => accounts.any((c) => c.isCredit);
+  /// Debit, prepaid and e-wallet balances together (the second box).
+  int get cardsAndWallets => totals.own;
+
+  /// How many accounts are in [cardsAndWallets].
+  int get cardsAndWalletsCount => totals.ownCount;
+
+  int get available => cash + totals.own;
+
+  int get availableCredit => totals.credit;
+  bool get hasCredit => totals.creditCount > 0;
 }
 
 final balanceSummaryProvider = FutureProvider<BalanceSummary>((ref) async {
   final cash = await ref.watch(cashBalanceProvider.future);
   final accounts = await ref.watch(cardsProvider.future);
-  return BalanceSummary(cash: cash, accounts: accounts);
+  final totals = await ref.watch(accountTotalsProvider.future);
+  return BalanceSummary(cash: cash, accounts: accounts, totals: totals);
 });
 
 final categoriesProvider = FutureProvider<List<Category>>((ref) {
@@ -133,6 +152,33 @@ final debtPaymentsProvider = FutureProvider.family<List<DebtPayment>, int>((ref,
   ref.watch(dataRevisionProvider);
   return ref.watch(debtRepositoryProvider).payments(debtId);
 });
+
+/// Open debts and unpaid loans, counted with one SQL query and cached here
+/// (never in build()). It refreshes with every write (dataRevisionProvider),
+/// so adding, paying or deleting a debt or loan updates the badge.
+final openDebtLoanCountsProvider = FutureProvider<OpenDebtLoanCounts>((ref) async {
+  ref.watch(dataRevisionProvider);
+  final c = await ref.watch(debtRepositoryProvider).openCounts();
+  return OpenDebtLoanCounts(debts: c.debts, loans: c.loans);
+});
+
+class OpenDebtLoanCounts {
+  const OpenDebtLoanCounts({this.debts = 0, this.loans = 0});
+
+  /// Debts the user still owes (payables).
+  final int debts;
+
+  /// "Loan" transactions not marked paid (borrowed or lent).
+  final int loans;
+
+  int get total => debts + loans;
+
+  @override
+  bool operator ==(Object other) => other is OpenDebtLoanCounts && other.debts == debts && other.loans == loans;
+
+  @override
+  int get hashCode => Object.hash(debts, loans);
+}
 
 // -----------------------------------------------------------------------------
 // Loans

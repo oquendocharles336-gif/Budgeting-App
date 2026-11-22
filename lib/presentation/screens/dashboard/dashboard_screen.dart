@@ -16,6 +16,7 @@ import '../../widgets/payment_card_view.dart';
 import '../analytics/analytics_screen.dart';
 import '../business/business_shell.dart';
 import '../cards/card_detail_screen.dart';
+import '../debts/debts_loans_screen.dart';
 import '../debts/debts_screen.dart';
 import '../loans/loans_screen.dart';
 import '../settings/settings_screen.dart';
@@ -27,16 +28,45 @@ class DashboardScreen extends ConsumerWidget {
     required this.onSeeAllTransactions,
     required this.onOpenBudget,
     required this.onOpenWallets,
+    this.onOpenDebts,
+    this.onOpenBusiness,
   });
 
   final VoidCallback onSeeAllTransactions;
   final VoidCallback onOpenBudget;
   final VoidCallback onOpenWallets;
 
+  /// Opens the "Debts" tab on debts or loans. Null: open the screens on top.
+  final ValueChanged<DebtsSection>? onOpenDebts;
+
+  /// Opens the business side (the Business tab when Business Mode is on).
+  /// Null: open it on top.
+  final VoidCallback? onOpenBusiness;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final monthKey = Dates.monthKey(DateTime.now());
     final summary = ref.watch(monthSummaryProvider(monthKey));
+    void openBusiness() {
+      final open = onOpenBusiness;
+      if (open != null) {
+        open();
+      } else {
+        _push(context, const BusinessShell());
+      }
+    }
+
+    void openSection(DebtsSection section) {
+      final open = onOpenDebts;
+      if (open != null) {
+        open(section);
+      } else {
+        _push(context, section == DebtsSection.debts ? const DebtsScreen() : const LoansScreen());
+      }
+    }
+
+    void openDebts() => openSection(DebtsSection.debts);
+    void openLoans() => openSection(DebtsSection.loans);
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -54,7 +84,7 @@ class DashboardScreen extends ConsumerWidget {
             children: [
               _Header(
                 onSettings: () => _push(context, const SettingsScreen()),
-                onBusiness: () => _push(context, const BusinessShell()),
+                onBusiness: openBusiness,
               ),
               const SizedBox(height: 16),
               AsyncView(
@@ -71,15 +101,15 @@ class DashboardScreen extends ConsumerWidget {
               const SizedBox(height: 20),
               // Import lives in Settings > Your data.
               _QuickActions(
-                onDebts: () => _push(context, const DebtsScreen()),
+                onDebts: openDebts,
                 onInsights: () => _push(context, const AnalyticsScreen()),
-                onLoans: () => _push(context, const LoansScreen()),
-                onBusiness: () => _push(context, const BusinessShell()),
+                onLoans: openLoans,
+                onBusiness: openBusiness,
               ),
               const SizedBox(height: 12),
               _CardsStrip(onOpenWallets: onOpenWallets),
               const SizedBox(height: 8),
-              const _DebtSummary(),
+              _DebtSummary(onTap: openDebts),
               const SizedBox(height: 8),
               SectionHeader('Recent transactions', actionLabel: 'See all', onAction: onSeeAllTransactions),
               const _RecentTransactions(),
@@ -319,7 +349,8 @@ class _CardsStrip extends ConsumerWidget {
 }
 
 class _DebtSummary extends ConsumerWidget {
-  const _DebtSummary();
+  const _DebtSummary({required this.onTap});
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -341,7 +372,7 @@ class _DebtSummary extends ConsumerWidget {
           children: [
             const SectionHeader('Debts'),
             AppCard(
-              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const DebtsScreen())),
+              onTap: onTap,
               child: Row(
                 children: [
                   Container(

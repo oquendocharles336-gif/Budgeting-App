@@ -8,7 +8,7 @@ import 'core_providers.dart';
 
 /// Bump this when the privacy policy or terms change in a way users must
 /// accept again.
-const currentTermsVersion = '5'; // 2: password + encryption; 3: business side, photos; 4: encrypted photos in backups; 5: optional update check (internet)
+const currentTermsVersion = '6'; // 2: password + encryption; 3: business side, photos; 4: encrypted photos in backups; 5: optional update check (internet); 6: in-app updates, Business Mode, cards/e-wallets
 
 // -----------------------------------------------------------------------------
 // Theme
@@ -93,3 +93,28 @@ class TermsController extends Notifier<bool> {
 }
 
 final termsAcceptedProvider = NotifierProvider<TermsController, bool>(TermsController.new);
+
+// -----------------------------------------------------------------------------
+// Business Mode (Settings switch): shows the Business tab in the bottom bar
+// -----------------------------------------------------------------------------
+
+class BusinessModeController extends Notifier<bool> {
+  /// Seeded from the settings loaded before the first frame, so after a
+  /// restart the bottom bar has the right tabs from the very first frame.
+  @override
+  bool build() => ref.read(initialSettingsProvider)[SettingsRepository.businessMode] == '1';
+
+  /// Turns it on or off and saves it. On a save error the switch goes back.
+  Future<void> set(bool on) async {
+    if (state == on) return;
+    state = on;
+    try {
+      await ref.read(settingsRepositoryProvider).set(SettingsRepository.businessMode, on ? '1' : '0');
+    } catch (e) {
+      state = !on;
+      rethrow;
+    }
+  }
+}
+
+final businessModeProvider = NotifierProvider<BusinessModeController, bool>(BusinessModeController.new);

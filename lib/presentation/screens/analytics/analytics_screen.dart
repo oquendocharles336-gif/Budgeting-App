@@ -232,7 +232,7 @@ class _DailyChart extends ConsumerWidget {
       label: 'Bar chart of daily spending. Highest day ${Money.format((maxV * 100).round(), symbol: symbol)}.',
       child: SizedBox(
         height: 220,
-        child: BarChart(
+        child: RepaintBoundary(child: BarChart(
           BarChartData(
             maxY: maxY,
             alignment: BarChartAlignment.spaceBetween,
@@ -318,7 +318,7 @@ class _DailyChart extends ConsumerWidget {
             ],
           ),
           duration: const Duration(milliseconds: 400),
-        ),
+        )),
       ),
     );
   }
@@ -358,7 +358,7 @@ class _CategoryDonutState extends ConsumerState<_CategoryDonut> {
 
     return Column(
       children: [
-        SizedBox(
+        RepaintBoundary(child: SizedBox(
           height: 200,
           child: Stack(
             alignment: Alignment.center,
@@ -398,7 +398,7 @@ class _CategoryDonutState extends ConsumerState<_CategoryDonut> {
               ),
             ],
           ),
-        ),
+        )),
         const SizedBox(height: 12),
         for (final s in slices)
           Padding(

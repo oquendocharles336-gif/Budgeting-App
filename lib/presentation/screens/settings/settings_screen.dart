@@ -144,6 +144,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final theme = ref.watch(themeControllerProvider);
     final currency = ref.watch(currencyProvider);
+    final businessMode = ref.watch(businessModeProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
@@ -215,6 +216,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   title: const Text('Loans'),
                   subtitle: const Text('Transactions in the "Loan" category'),
                   onTap: () => _push(const LoansScreen()),
+                ),
+                SwitchListTile(
+                  secondary: const Icon(Icons.business_center_rounded),
+                  title: const Text('Business Mode'),
+                  subtitle: const Text('Show a Business tab in the bottom bar'),
+                  value: businessMode,
+                  onChanged: _setBusinessMode,
                 ),
                 ListTile(
                   leading: const Icon(Icons.storefront_rounded),
@@ -395,6 +403,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _setBusinessMode(bool on) async {
+    try {
+      await ref.read(businessModeProvider.notifier).set(on);
+    } catch (e) {
+      if (mounted) showSnack(context, 'Could not save Business Mode: $e', error: true);
+      return;
+    }
+    if (mounted) showSnack(context, on ? 'Business tab added to the bottom bar' : 'Business tab removed');
   }
 
   Future<void> _pickCurrency() async {

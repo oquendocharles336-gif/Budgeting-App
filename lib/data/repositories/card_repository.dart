@@ -39,6 +39,32 @@ class CardRepository {
 
   Future<int> balanceOf(int? accountId) => AccountLedger.balanceOf(_db, accountId);
 
+  /// Totals of the active (not archived) accounts in one SQL query:
+  /// own money (debit, prepaid, e-wallet) and available credit (credit
+  /// cards), with how many of each. Cash is not here (see [cashBalance]).
+  Future<AccountTotals> balanceTotals() async {
+    final r = await _db.rawQuery('''
+      SELECT
+        IFNULL(SUM(CASE WHEN card_type IN ($_ownTypes) THEN balance END), 0) AS own_total,
+        IFNULL(SUM(CASE WHEN card_type IN ($_ownTypes) THEN 1 ELSE 0 END), 0) AS own_count,
+        IFNULL(SUM(CASE WHEN card_type IN ($_ownTypes) THEN 0 ELSE balance END), 0) AS credit_total,
+        IFNULL(SUM(CASE WHEN card_type IN ($_ownTypes) THEN 0 ELSE 1 END), 0) AS credit_count
+      FROM cards
+      WHERE archived = 0
+    ''');
+    final row = r.first;
+    return AccountTotals(
+      own: (row['own_total'] as num?)?.toInt() ?? 0,
+      ownCount: (row['own_count'] as num?)?.toInt() ?? 0,
+      credit: (row['credit_total'] as num?)?.toInt() ?? 0,
+      creditCount: (row['credit_count'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  /// Account types that hold the user's own money. Anything else is
+  /// treated as credit, like [CardType.fromDb] does for unknown values.
+  static final _ownTypes = [CardType.debit, CardType.prepaid, CardType.ewallet].map((t) => "'${t.name}'").join(', ');
+
   Future<int> transactionCount(int cardId) async {
     final r = await _db.rawQuery(
       'SELECT COUNT(*) AS c FROM transactions WHERE card_id = ? OR to_card_id = ?',
@@ -67,4 +93,17 @@ class CardRepository {
       await txn.delete('cards', where: 'id = ?', whereArgs: [cardId]);
     });
   }
+}
+
+/// Active account totals, in centavos.
+class AccountTotals {
+  const AccountTotals({this.own = 0, this.ownCount = 0, this.credit = 0, this.creditCount = 0});
+
+  /// Debit, prepaid and e-wallet balances added up.
+  final int own;
+  final int ownCount;
+
+  /// Credit cards' available credit added up (borrowed money, kept apart).
+  final int credit;
+  final int creditCount;
 }

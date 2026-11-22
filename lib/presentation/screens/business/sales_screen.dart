@@ -258,7 +258,7 @@ class _SalesChart extends ConsumerWidget {
       label: 'Bar chart of sales. ${best == null || best.total == 0 ? 'No sales in this range' : 'Best: ${best.label}, ${Money.format(best.total, symbol: symbol)}'}.',
       child: SizedBox(
         height: 200,
-        child: BarChart(
+        child: RepaintBoundary(child: BarChart(
           BarChartData(
             maxY: maxY,
             borderData: FlBorderData(show: false),
@@ -323,7 +323,7 @@ class _SalesChart extends ConsumerWidget {
             ],
           ),
           duration: reduce ? Duration.zero : const Duration(milliseconds: 400),
-        ),
+        )),
       ),
     );
   }

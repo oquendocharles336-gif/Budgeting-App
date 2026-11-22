@@ -27,6 +27,7 @@ class Migrations {
     8: _v8StockLedgerCapitalWithdrawIdempotency,
     9: _v9RemovePayLaterLoanPaymentMethod,
     10: _v10OrderStatusCompleteOrPaid,
+    11: _v11QueryIndexes,
   };
 
   static int get latestVersion => _steps.keys.reduce((a, b) => a > b ? a : b);
@@ -509,6 +510,25 @@ class Migrations {
     // What is still owed shows from the amounts, so nothing is lost. The old
     // values stay allowed by the CHECK so old backups still restore.
     await db.execute("UPDATE orders SET status = 'complete' WHERE status IN ('delivered', 'delivered_unpaid')");
+  }
+
+  // ---------------------------------------------------------------------------
+  // v11: indexes for the queries that run on every refresh
+  // ---------------------------------------------------------------------------
+  static Future<void> _v11QueryIndexes(DatabaseExecutor db) async {
+    // Only new indexes: no table is changed or dropped, every row is kept.
+    // IF NOT EXISTS so a half-finished upgrade can safely run again.
+    //
+    // Spending by month / earliest expense: WHERE kind = ? AND date ...
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_transactions_kind_date ON transactions(kind, date)');
+    // Open debts (badge count, Home summary): WHERE is_paid = 0.
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_debts_paid ON debts(is_paid, due_date)');
+    // A debt's payment history: WHERE debt_id = ? ORDER BY date.
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_debt_payments_debt_date ON debt_payments(debt_id, date)');
+    // Orders by status (sales, unpaid orders).
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_orders_status ON orders(status)');
+    // Active accounts by type (Available balance totals).
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_cards_archived_type ON cards(archived, card_type)');
   }
 
   static Future<bool> _tableExists(DatabaseExecutor db, String name) async {

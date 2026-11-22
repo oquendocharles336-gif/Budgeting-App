@@ -19,10 +19,17 @@ class Glass {
   static const blur = 16.0;
   static const radius = 20.0;
 
-  /// Backdrop blur on cards ([AppCard]). Set to false if scrolling long
-  /// lists stutters on older phones: cards keep the translucent glass look
-  /// (the background behind them is a smooth gradient), only the blur goes.
-  static const blurCards = true;
+  /// Backdrop blur on cards ([AppCard]). Off since 1.3.0: every blurred
+  /// card is an extra full-screen read-back on each frame while scrolling or
+  /// swiping tabs, and what sits behind a card is the smooth gradient, so
+  /// the blur was nearly invisible. Cards keep the translucent glass fill,
+  /// the light edge and the shadow. Set to true to bring it back.
+  static const blurCards = false;
+
+  /// Backdrop blur on the bottom bars ([GlassBar]). Off for the same reason:
+  /// the screens don't scroll under the bars (no `extendBody`), so only the
+  /// static gradient is behind them.
+  static const blurBars = false;
 
   /// Peak opacity of the background glow (radial, top left).
   static double glowAlpha(ThemeTokens t) => t.isDark ? 0.18 : 0.30;
@@ -176,22 +183,27 @@ class GlassSurface extends StatelessWidget {
 
 /// A frosted bar (bottom navigation): blur + translucent fill + top edge.
 class GlassBar extends StatelessWidget {
-  const GlassBar({super.key, required this.child});
+  const GlassBar({super.key, required this.child, this.blur = Glass.blurBars});
   final Widget child;
+
+  /// Backdrop blur behind the bar (see [Glass.blurBars]).
+  final bool blur;
 
   @override
   Widget build(BuildContext context) {
     final t = context.tokens;
+    final bar = DecoratedBox(
+      decoration: BoxDecoration(
+        color: Glass.barFill(t),
+        border: Border(top: Glass.side(t)),
+      ),
+      child: child,
+    );
+    if (!blur) return bar;
     return ClipRect(
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: Glass.blur, sigmaY: Glass.blur),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Glass.barFill(t),
-            border: Border(top: Glass.side(t)),
-          ),
-          child: child,
-        ),
+        child: bar,
       ),
     );
   }

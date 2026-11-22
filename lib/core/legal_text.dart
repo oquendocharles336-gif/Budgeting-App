@@ -6,12 +6,13 @@
 class LegalText {
   LegalText._();
 
-  static const effectiveDate = 'November 21, 2026';
+  static const effectiveDate = 'November 22, 2026';
 
   static const privacySummary = [
-    'Everything you enter stays on this phone. There is no account and no cloud server.',
-    'The only internet use is an optional daily check for a newer app version. It sends nothing about you.',
-    'We never upload, sell or share your transactions, cards, debts or budgets.',
+    'Everything you enter stays on this phone, in a local encrypted SQLite database. There is no online account, no sign-up and no cloud server.',
+    'Your PIN, password or phone lock only unlocks the app on this phone. It is not an account and is never sent anywhere.',
+    'The only internet use is the optional update check and update download. They send nothing about you.',
+    'No data is collected. We never upload, sell or share your transactions, cards, e-wallets, debts, loans, budgets or business records.',
     'SMS reading is off unless you turn it on. If you do, alerts are read on your phone only to find transactions.',
     'Backups and exports go only where you choose to save them.',
     'Photos you add to business items are encrypted and stay in the app\'s private folder on this phone.',
@@ -22,10 +23,16 @@ Privacy Policy
 Effective date: $effectiveDate
 
 1. Summary
-Pitaka is an offline budgeting app. All of your data is stored only on this device in a local database. The app has no online accounts, no analytics, no ads, and no server that receives your data. Its only internet use is the optional update check described below. The password you create is a local login that encrypts your data on this phone. Your data is never uploaded or sent to us or to anyone else.
+Pitaka is an offline-first budgeting app. All of your data is stored only on this device, in a local SQLite database that is encrypted. There is no online account and no sign-up, no analytics, no ads, no tracking, and no server that receives your data. We do not collect any data, so we have nothing to sell or share. Its only internet use is the optional update check and update download described below. The PIN, password or phone lock you choose only unlocks the app and its encrypted data on this phone; it is not an online login. Your data is never uploaded or sent to us or to anyone else.
 
 2. What the app stores
-On this device only: the cards you add (a nickname, the last 4 digits, card type and color), your transactions, categories, keyword rules, debts and payments, budgets, SMS patterns, and app settings. If you use the business side, also: business capital entries, inventory items, products, and orders (including the buyer names you type). The app never asks for or stores full card numbers, CVV codes, bank passwords or PINs to your bank.
+On this device only: your Cash amount; the cards and e-wallets you add (a nickname, the last 4 digits or the e-wallet mobile number, type, color and the balance you enter); your transactions, categories, keyword rules, debts, loans and payments, budgets, SMS patterns, and app settings (such as theme, currency and whether Business Mode is on). If you use the business side, also: business capital entries, inventory items, products, and orders (including the buyer names you type). The app never asks for or stores full card numbers, CVV codes, bank passwords or PINs to your bank.
+
+2a. Cards, e-wallets and your available balance
+The balance of a card or e-wallet is a number you type and keep up to date; transactions you record add to it or take from it. The app does not connect to your bank, card issuer or e-wallet (for example GCash or Maya) and cannot see your real balance or move money. Available balance is your Cash plus your debit, prepaid and e-wallet balances, worked out on this phone. Credit cards are shown separately as available credit.
+
+2b. Business Mode
+Business Mode is a switch in Settings that only shows or hides the Business tab. Turning it off hides the tab; it does not delete any business records, which stay on this phone until you delete them.
 
 3. SMS access (Android, optional)
 SMS access is off by default. If you turn on "Import from SMS" and grant permission, the app reads messages in your inbox on the device to find bank and card transaction alerts using the patterns shown in Settings. Messages are processed only on your phone. They are not uploaded, stored as a copy, or shared. Only the transactions you review and approve are saved. Messages that look like one-time passwords (OTPs) are skipped. You can revoke the permission at any time in your phone's settings.
@@ -39,8 +46,8 @@ You can add a photo to an inventory item or product, from the camera or your gal
 4b. Payment QR codes
 The QR images shown for Maya, MariBank and BDO are pictures you add to the app. The app does not connect to these services, does not process or check payments, and sends nothing to them.
 
-4c. Update check (optional)
-Once a day, if "Check for updates" is on (Settings > App updates), the app downloads one small public file from the developer's update address to see whether a newer version exists and what changed. The request contains no account, device ID, budget data or other personal information; like any web request, the server that hosts the file can see your phone's IP address and the time of the request. Downloading an update opens your browser. You can turn the check off at any time; the app works fully without it.
+4c. Update check and download (optional)
+Once a day, if "Check for updates" is on (Settings > App updates), and whenever you tap "Check now", the app reads the public "latest release" information of the app's GitHub repository to see whether a newer version exists and what changed. If you choose to update, the app downloads the new installer file (APK) from that release, checks that it is complete and unchanged (SHA-256), and hands it to Android's own installer, which asks you to confirm. These requests contain no account, device ID, budget data or other personal information; like any web request, GitHub can see your phone's IP address and the time of the request. You can turn the automatic check off at any time; the app works fully without it.
 
 5. Password and encryption
 Your data is stored in an encrypted database (SQLCipher, AES-256). The key that unlocks it is protected by your password and by a recovery key that is shown to you once. Neither your password nor your recovery key is stored, and nothing is sent anywhere, so we cannot see your data or reset your password. If you lose both your password and your recovery key, your data cannot be recovered by anyone.
@@ -68,10 +75,13 @@ Terms & Conditions
 Effective date: $effectiveDate
 
 1. Using the app
-Pitaka is a personal tool for tracking your own spending, budgets and debts. By using it, you agree to these terms.
+Pitaka is a personal, offline-first tool for tracking your own spending, budgets, cards and e-wallets, debts and loans. There is no online account or sign-up: the PIN, password or phone lock only unlocks the app on your phone. By using it, you agree to these terms.
 
 2. Your data, your responsibility
-Your data is stored only on your device. You are responsible for keeping your phone secure and for making backups. If your phone is lost, reset or the app is uninstalled without a backup, your data cannot be recovered.
+Your data is stored only on your device, in a local encrypted SQLite database. The developer does not collect, receive, sell or share it. You are responsible for keeping your phone secure and for making backups. If your phone is lost, reset or the app is uninstalled without a backup, your data cannot be recovered.
+
+2a. Balances you enter
+Cash, card and e-wallet balances are the amounts you type and the transactions you record. They can differ from your real bank, card or e-wallet balance. Always rely on your bank, card issuer or e-wallet app for the actual amount.
 
 3. Not financial advice
 The app shows totals, charts and budget alerts based on what you enter or import. It does not give financial, legal or tax advice. Always check important figures against your official bank and card statements.
@@ -82,8 +92,8 @@ CSV and SMS imports depend on the file format and message wording of your bank. 
 5. No warranty
 The app is provided "as is", without warranties of any kind. To the extent allowed by law, the developer is not liable for any loss arising from use of the app, including missed payments or inaccurate figures.
 
-5a. Business features
-Capital, inventory, orders and sales analytics are a simple record of what you type. They are not accounting, inventory-valuation or tax software, and they don't replace official receipts or records you may need to keep. When a buyer pays by QR, check the payment in your own Maya, MariBank or BDO app; this app does not verify payments.
+5a. Business features and Business Mode
+Business Mode only shows or hides the Business tab; it never deletes business records. Capital, inventory, orders and sales analytics are a simple record of what you type. They are not accounting, inventory-valuation or tax software, and they don't replace official receipts or records you may need to keep. When a buyer pays by QR, check the payment in your own Maya, MariBank or BDO app; this app does not verify payments.
 
 6. Third parties
 The app does not connect to your bank or to any payment service. Any future feature that does will have its own terms and an updated privacy policy that you must accept first.

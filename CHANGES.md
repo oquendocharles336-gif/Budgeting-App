@@ -1,3 +1,28 @@
+# Update 7 (1.3.0): swipe tabs, Debts tab + badge, Business Mode, balance boxes, What's new fix, performance
+
+`flutter analyze` and `flutter test` were **not** run (no Flutter SDK where this was made; only a Dart syntax check). Run first:
+
+```bash
+flutter pub get && flutter analyze && flutter test
+```
+
+- No new packages. `pubspec.yaml` version is now `1.3.0+5` (read by What's new through package_info_plus).
+- DB migration **v11**: new indexes only (`CREATE INDEX IF NOT EXISTS`). No table is changed or dropped; no reinstall needed.
+- Terms version **6**: users accept the updated policy once after updating.
+- **What's new bug:** `main.dart` removed every `SettingsRepository.privateKeys` entry on each unlock, which wiped
+  `whats_new_seen_version` (and the last update check and the camera photo draft). Now only the old PIN keys are removed.
+- Business Mode and What's new use the encrypted `settings` table (no shared_preferences).
+
+## Manual tests
+1. **Swipe:** swipe between all tabs; tap a far tab (Home → Wallets): one smooth slide. Scroll position stays when you come back.
+2. **Gestures:** swipe a transaction row (Edit/Delete still opens), the card deck and chip rows still scroll.
+3. **Badge:** add a debt → 1; add a "Loan" transaction → 2; mark paid / delete → goes down; 0 → hidden.
+4. **Business Mode:** Settings → on → Business tab appears. Open it, go to Settings, turn it off → back on Home, no crash. Restart → setting kept.
+5. **Balance:** add / edit / delete a card or e-wallet, add an expense paid with it → Cash and Cards & e-wallets boxes change.
+6. **What's new:** update from 1.2.1 → shows once; lock / reopen → not again; fresh install → shows once.
+
+---
+
 # Update 6 (1.2.0): Pay Later removed, GitHub update check, glass theme
 
 `flutter analyze` and `flutter test` were **not** run (no Flutter SDK where this was made). Run first:

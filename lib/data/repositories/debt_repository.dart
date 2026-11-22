@@ -23,6 +23,31 @@ class DebtRepository {
     ];
   }
 
+  /// How many debts are still open (not marked paid and something left to
+  /// pay) and how many "Loan" transactions are not marked paid, in one
+  /// query. Same rules as [DebtStatus.isSettled] and
+  /// `TransactionRepository.loans()` (payment expenses are not loans).
+  Future<({int debts, int loans})> openCounts() async {
+    final r = await _db.rawQuery('''
+      SELECT
+        (SELECT COUNT(*) FROM debts d
+           LEFT JOIN (SELECT debt_id, SUM(amount) AS total FROM debt_payments GROUP BY debt_id) p
+             ON p.debt_id = d.id
+           WHERE d.is_paid = 0
+             AND d.total_amount - d.initial_paid - IFNULL(p.total, 0) > 0) AS open_debts,
+        (SELECT COUNT(*) FROM transactions t
+           JOIN categories c ON c.id = t.category_id
+           WHERE (c.role = 'loanRecord' OR c.name = 'Loan' COLLATE NOCASE)
+             AND t.loan_payment_of_id IS NULL
+             AND t.loan_paid_at IS NULL) AS open_loans
+    ''');
+    final row = r.first;
+    return (
+      debts: (row['open_debts'] as num?)?.toInt() ?? 0,
+      loans: (row['open_loans'] as num?)?.toInt() ?? 0,
+    );
+  }
+
   Future<DebtStatus?> statusById(int id) async {
     final all = await allStatuses();
     for (final s in all) {

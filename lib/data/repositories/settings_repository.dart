@@ -40,6 +40,10 @@ class SettingsRepository {
   /// that was installed fresh). "What's new" shows only for a higher one.
   static const whatsNewSeenVersion = 'whats_new_seen_version';
 
+  /// Business Mode switch ('1' = on): shows the Business tab in the bottom
+  /// bar. Off by default.
+  static const businessMode = 'business_mode';
+
   /// Keys that are device-specific and never exported in backups.
   static const privateKeys = {
     pinHash,
@@ -52,7 +56,14 @@ class SettingsRepository {
     updateSkippedVersion,
     whatsNewSeenBuild,
     whatsNewSeenVersion,
+    businessMode,
   };
+
+  /// Leftovers of the old PIN lock (before the password + encryption
+  /// update). Only these are removed when the app unlocks. The other
+  /// [privateKeys] must survive an unlock: they hold "What's new" seen,
+  /// the last update check, the camera photo draft, and so on.
+  static const legacyLockKeys = {pinHash, pinSalt, biometricEnabled};
 
   static String budgetAlertKey(String month) => 'budget_alerts_$month';
 

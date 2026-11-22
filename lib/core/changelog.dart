@@ -10,6 +10,19 @@ import '../domain/update/app_update.dart';
 /// the last one the user saw.
 const changelog = <ChangelogEntry>[
   ChangelogEntry(
+    version: '1.3.0',
+    build: 5,
+    date: '2026-11-22',
+    notes: [
+      'Swipe left or right to move between tabs, or tap the bottom bar for a smooth slide.',
+      'New Debts tab with your debts and loans together. A badge shows how many are still open.',
+      'Business Mode: turn it on in Settings to get a Business tab in the bottom bar.',
+      'Available balance now shows two boxes: Cash, and Cards & e-wallets, each with its own total.',
+      'Smoother and cooler: lighter screens, faster totals and lists, and less work while you scroll or swipe.',
+      'What\'s new now shows only once per update.',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.2.1',
     build: 4,
     date: '2026-11-21',

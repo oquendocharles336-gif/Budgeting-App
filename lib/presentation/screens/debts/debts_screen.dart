@@ -14,7 +14,11 @@ import 'debt_detail_screen.dart';
 import 'debt_form_screen.dart';
 
 class DebtsScreen extends ConsumerWidget {
-  const DebtsScreen({super.key});
+  const DebtsScreen({super.key, this.asTab = false});
+
+  /// Inside the "Debts" tab (`DebtsLoansScreen`): that screen has the app
+  /// bar and the add button, so this one shows only its list.
+  final bool asTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -23,25 +27,32 @@ class DebtsScreen extends ConsumerWidget {
     // Keep the last card clear of the FAB and the system gesture bar.
     final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
     return Scaffold(
-      appBar: AppBar(title: const Text('Debts')),
+      appBar: asTab ? null : AppBar(title: const Text('Debts')),
       // Standard extended FAB (pill shape from Material 3). Scaffold already
       // lifts it above the gesture bar; this screen has no bottom nav.
-      floatingActionButton: FloatingActionButton.extended(
-        tooltip: 'Add debt',
-        onPressed: openAdd,
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('Add debt'),
-      ),
+      floatingActionButton: asTab
+          ? null
+          : FloatingActionButton.extended(
+              tooltip: 'Add debt',
+              onPressed: openAdd,
+              icon: const Icon(Icons.add_rounded),
+              label: const Text('Add debt'),
+            ),
       body: CascadeScope(
         child: AsyncView<List<DebtStatus>>(
         value: debts,
         onRetry: () => ref.invalidate(debtsProvider),
         data: (list) {
           if (list.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Icons.handshake_rounded,
               title: 'No debts',
               message: 'Track money you owe: loans, installments, or that ₱500 from a friend.',
+              action: FilledButton.tonal(
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+                onPressed: openAdd,
+                child: const Text('Add debt'),
+              ),
             );
           }
           final open = list.where((d) => !d.isSettled).toList();

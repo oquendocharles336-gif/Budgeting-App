@@ -272,7 +272,9 @@ class _BootstrapState extends State<_Bootstrap> {
     final db = _db!;
     final repo = SettingsRepository(db.db);
     // The old PIN lock is replaced by the password; drop its leftovers.
-    for (final k in SettingsRepository.privateKeys) {
+    // Only those: removing every private key here wiped "What's new" seen,
+    // the last update check and the camera photo draft on every unlock.
+    for (final k in SettingsRepository.legacyLockKeys) {
       await repo.remove(k);
     }
     _settings = await repo.all();

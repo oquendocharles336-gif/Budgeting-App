@@ -25,14 +25,18 @@ import '../transactions/transaction_form_screen.dart';
 /// the month's budget, like any transaction with "Paid with". "Mark unpaid"
 /// removes the payment again.
 class LoansScreen extends ConsumerWidget {
-  const LoansScreen({super.key});
+  const LoansScreen({super.key, this.asTab = false});
+
+  /// Inside the "Debts" tab (`DebtsLoansScreen`), which has the app bar.
+  final bool asTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final loans = ref.watch(loansProvider);
-    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
+    // In the tab, the last row must clear the bottom bar's "+" button.
+    final bottomInset = asTab ? 68.0 : MediaQuery.viewPaddingOf(context).bottom;
     return Scaffold(
-      appBar: AppBar(title: const Text('Loans')),
+      appBar: asTab ? null : AppBar(title: const Text('Loans')),
       body: CascadeScope(
         child: AsyncView<List<TransactionEntry>>(
           value: loans,
