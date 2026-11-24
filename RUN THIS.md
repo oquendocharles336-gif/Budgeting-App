@@ -1,5 +1,11 @@
 # Running the App
 
+## Prerequisites (If `flutter: command not found`)
+If Flutter is installed at `/home/chachie/development/flutter`, add it to your PATH first:
+```bash
+export PATH="$PATH:/home/chachie/development/flutter/bin"
+```
+
 ## Windows (PowerShell)
 ```powershell
 flutter clean
