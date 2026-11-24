@@ -14,12 +14,10 @@ export '../../data/sources/phone_access.dart' show PhoneAccess, PhoneAccessStatu
 /// The app doesn't lock while the user is on Android's screens.
 class PhoneAccessService {
   PhoneAccessService({
-    required NotificationService notifications,
-    required SmsInbox sms,
-    PhoneAccessChannel channel = const PhoneAccessChannel(),
-  })  : _notifications = notifications,
-        _sms = sms,
-        _channel = channel;
+    required this._notifications,
+    required this._sms,
+    this._channel = const PhoneAccessChannel(),
+  });
 
   final NotificationService _notifications;
   final SmsInbox _sms;
