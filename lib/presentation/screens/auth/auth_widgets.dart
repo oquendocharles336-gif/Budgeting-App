@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The app logo (assets/logo/logo.png). Falls back to an icon if the
 /// asset is missing, so a bad asset never blocks unlocking.

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../core/dates.dart';
 import '../../data/sources/apk_updater.dart';

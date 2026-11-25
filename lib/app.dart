@@ -1,5 +1,5 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'data/repositories/op_guard.dart';
 import 'domain/services/app_lock_service.dart';
@@ -111,7 +111,9 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
           data: mq.copyWith(textScaler: mq.textScaler.clamp(minScaleFactor: 1.0, maxScaleFactor: 1.6)),
           child: Stack(
             children: [
-              child!,
+              // fl_chart still imports package:flutter/material.dart; the bridge
+              // gives those widgets the app's theme and localizations.
+              MaterialUiCompatibilityBridge(child: child!),
               if (_covered) const Positioned.fill(child: _PrivacyCover()),
             ],
           ),

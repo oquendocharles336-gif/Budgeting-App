@@ -1,7 +1,7 @@
 import 'dart:io' show Platform;
 
-import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../../../core/feature_flags.dart';
 import '../../../data/models/payment_card.dart';

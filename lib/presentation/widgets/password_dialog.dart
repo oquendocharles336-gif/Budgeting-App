@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Asks for a password. [check] runs with a spinner and returns an error
 /// message to show, or null to accept. Returns the password, or null if

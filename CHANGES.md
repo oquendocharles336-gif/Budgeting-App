@@ -1,3 +1,24 @@
+# Material import migration (Flutter 3.50)
+
+`flutter analyze` and `flutter test` were **not** run here (no Flutter SDK). Run first:
+
+```bash
+flutter pub get && flutter analyze && flutter test
+```
+
+- `package:flutter/material.dart` is deprecated in Flutter 3.50. All 70 files (68 in `lib/`, 2 in `test/`) now import
+  `package:material_ui/material_ui.dart` instead. Class names are the same; no widget code changed.
+- New direct dependency `material_ui: ^1.11.1` (it was already in `pubspec.lock` as a transitive package, same version).
+- `app.dart`: the app's `builder` wraps the screens in `MaterialUiCompatibilityBridge`, because fl_chart 1.3.1 still
+  uses the old Material library. Remove it once fl_chart moves to `material_ui`.
+- No DB migration, no terms change, no Android change.
+
+## Manual tests
+1. Analytics and Business > Sales charts: colors, labels and tooltips look the same in light and dark mode.
+2. Login / unlock screens and Home: no visual change.
+
+---
+
 # Update 7 (1.3.0): swipe tabs, debt/loan badges, Business Mode, Allow buttons, balance boxes, What's new fix, performance
 
 `flutter analyze` and `flutter test` were **not** run (no Flutter SDK where this was made; only a Dart syntax check). Run first:
