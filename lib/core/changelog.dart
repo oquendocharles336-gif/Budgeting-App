@@ -10,6 +10,20 @@ import '../domain/update/app_update.dart';
 /// the last one the user saw.
 const changelog = <ChangelogEntry>[
   ChangelogEntry(
+    version: '1.4.0',
+    build: 6,
+    date: '2026-11-25',
+    notes: [
+      'Loans: money you lent and got back in the same month no longer counts as spending. Paid back in a later month, it stays counted in the month you lent it.',
+      'Loans has Unpaid and Paid tabs, and each loan shows how your budget counts it.',
+      'Marking a loan paid: pick Cash or an e-wallet and the day it was paid, and see your new balance and budget before you confirm.',
+      'Budget shows "Loans returned this month". Tap it to see how it works.',
+      'Remaining and the budget bar now move smoothly to their new values.',
+      'Activity shows when a loan was taken out of your budget, and which loan a repayment belongs to.',
+      'New empty Loans screen with an "Add a loan" button.',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.3.0',
     build: 5,
     date: '2026-11-22',
