@@ -113,6 +113,9 @@ class _PitakaAppState extends ConsumerState<PitakaApp> with WidgetsBindingObserv
             children: [
               // fl_chart still imports package:flutter/material.dart; the bridge
               // gives those widgets the app's theme and localizations.
+              // TODO: remove the bridge (and this ignore) once fl_chart
+              // imports package:material_ui. Still needed as of fl_chart 1.3.1.
+              // ignore: deprecated_member_use
               MaterialUiCompatibilityBridge(child: child!),
               if (_covered) const Positioned.fill(child: _PrivacyCover()),
             ],
@@ -129,7 +132,7 @@ class _PrivacyCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ColoredBox(
-        color: Theme.of(context).colorScheme.surface,
-        child: const Center(child: AppLogo(size: 96)),
-      );
+    color: Theme.of(context).colorScheme.surface,
+    child: const Center(child: AppLogo(size: 96)),
+  );
 }
