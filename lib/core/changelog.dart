@@ -10,6 +10,21 @@ import '../domain/update/app_update.dart';
 /// the last one the user saw.
 const changelog = <ChangelogEntry>[
   ChangelogEntry(
+    version: '1.5.0',
+    build: 7,
+    date: '2026-11-25',
+    notes: [
+      'A fresh new look: clean white cards, a warm Sunset orange and a new, easier-to-read font, in light and dark mode.',
+      'Choose Sunset or Teal as your accent color in Settings > Appearance. A color you picked before is kept.',
+      'Insights now has its own tab in the bottom bar: Home, Activity, Budget, Wallets and Insights.',
+      'The + button now floats at the bottom right of Home and Activity.',
+      'Loans: each loan is a clear card with its status, and Paid opens a simpler sheet that shows your new balance and budget before you confirm.',
+      'Budget: a "Heads up" banner at 80% used, and "Loans returned this month" now stands out in green.',
+      'Activity: every transaction is its own card, and a loan repayment shows which loan it belongs to and when it was lent.',
+      'Updated Privacy Policy and Terms.',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.4.0',
     build: 6,
     date: '2026-11-25',

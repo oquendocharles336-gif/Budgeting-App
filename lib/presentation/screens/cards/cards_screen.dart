@@ -63,7 +63,10 @@ class _CardsScreenState extends ConsumerState<CardsScreen> {
     final summary = ref.watch(balanceSummaryProvider);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Cards & e-wallets'),
+        // A tab (Figma "Wallets") gets the large tab title.
+        title: widget.asTab
+            ? Text('Wallets', style: Theme.of(context).textTheme.headlineMedium)
+            : const Text('Cards & e-wallets'),
         actions: [
           IconButton(
             tooltip: 'How card imports work',

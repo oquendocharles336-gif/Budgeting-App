@@ -32,50 +32,47 @@ class CapitalScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final entries = ref.watch(capitalEntriesProvider);
     final balance = ref.watch(capitalBalanceProvider).asDataOrNull ?? 0;
-    final scheme = Theme.of(context).colorScheme;
+    final t = context.tokens;
     void open(bool withdraw) =>
         Navigator.of(context).push(MaterialPageRoute(builder: (_) => CapitalMoveScreen(withdraw: withdraw)));
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
       children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(gradient: AppTheme.heroGradient(scheme), borderRadius: BorderRadius.circular(24)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+        HeroCard(
+          label: 'Capital balance',
+          value: entries.hasValue ? AmountText(balance) : const SkeletonBox(width: 160, height: 36),
+          caption: 'Money you moved in from your personal budget, minus what you took out.',
+          footer: Row(
             children: [
-              Text('Capital balance', style: TextStyle(color: context.tokens.onSecondMuted)),
-              const SizedBox(height: 4),
-              entries.hasValue
-                  ? AmountText(balance, style: TextStyle(color: context.tokens.accentOnSecond, fontSize: 32, fontWeight: FontWeight.w800))
-                  : const SkeletonBox(width: 160, height: 36),
-              const SizedBox(height: 4),
-              Text(
-                'Money you moved in from your personal budget, minus what you took out.',
-                style: TextStyle(color: context.tokens.onSecondMuted, fontSize: 13),
+              Expanded(
+                // On the hero gradient: a white pill with accent text.
+                child: FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    backgroundColor: Colors.white,
+                    foregroundColor: Contrast.ensure(t.heroEnd, Colors.white),
+                  ),
+                  onPressed: () => open(false),
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Add to capital'),
+                ),
               ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
-                      onPressed: () => open(false),
-                      icon: const Icon(Icons.add_rounded),
-                      label: const Text('Add to capital'),
-                    ),
+              const SizedBox(width: Space.md),
+              Expanded(
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    backgroundColor: Colors.white.withValues(alpha: 0),
+                    foregroundColor: t.onHero,
+                    disabledForegroundColor: t.onHero.withValues(alpha: 0.6),
+                    side: BorderSide(color: Colors.white.withValues(alpha: 0.7)),
+                    shape: const StadiumBorder(),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      style: OutlinedButton.styleFrom(minimumSize: const Size(0, 48)),
-                      // Nothing to take out: disabled (with the reason for screen readers).
-                      onPressed: balance > 0 ? () => open(true) : null,
-                      icon: const Icon(Icons.remove_rounded),
-                      label: Text('Withdraw', semanticsLabel: balance > 0 ? 'Withdraw from capital' : 'Withdraw, no capital to withdraw'),
-                    ),
-                  ),
-                ],
+                  // Nothing to take out: disabled (with the reason for screen readers).
+                  onPressed: balance > 0 ? () => open(true) : null,
+                  icon: const Icon(Icons.remove_rounded),
+                  label: Text('Withdraw', semanticsLabel: balance > 0 ? 'Withdraw from capital' : 'Withdraw, no capital to withdraw'),
+                ),
               ),
             ],
           ),

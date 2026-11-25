@@ -5,7 +5,7 @@ publish_to: 'none'
 # Release: bump this (name+build), add a matching entry in lib/core/changelog.dart
 # and publish a GitHub release tagged with the same version, e.g. v1.2.0
 # (see docs/RELEASING.md).
-version: 1.4.0+6
+version: 1.5.0+7
 
 environment:
   sdk: ^3.12.0
@@ -68,6 +68,24 @@ flutter:
     # Payment QR placeholders: replace maya.png, maribank.png and bdo.png
     # with your own QR images (same file names).
     - assets/qr/
+    # Shown in Settings > Legal > Open-source licenses.
+    - assets/fonts/OFL.txt
+
+  # Pitaka design system typeface (Figma: Plus Jakarta Sans). Bundled so the
+  # offline app never fetches fonts. License: assets/fonts/OFL.txt.
+  fonts:
+    - family: PlusJakartaSans
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/PlusJakartaSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/PlusJakartaSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/PlusJakartaSans-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/PlusJakartaSans-ExtraBold.ttf
+          weight: 800
 
 # `dart run flutter_launcher_icons`
 # To use your own logo: replace assets/logo/logo.png (1024x1024, transparent)
@@ -89,13 +107,13 @@ flutter_launcher_icons:
 
 # `dart run flutter_native_splash:create`
 flutter_native_splash:
-  color: "#F7F8FC"
-  color_dark: "#0A0D14"
+  color: "#F5F7FB"
+  color_dark: "#0A0E1A"
   image: "assets/logo/logo.png"
   android_12:
     image: "assets/logo/splash_android12.png"
-    color: "#F7F8FC"
-    color_dark: "#0A0D14"
+    color: "#F5F7FB"
+    color_dark: "#0A0E1A"
   android: true
   ios: false
   web: false

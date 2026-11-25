@@ -3,7 +3,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../../../core/legal_text.dart';
 import '../../providers/app_state_providers.dart';
-import '../../theme/app_theme.dart';
+import '../../theme/app_palette.dart';
 import 'legal_document_screen.dart';
 
 /// First-launch screen: what the app is, the privacy promise, and an
@@ -35,10 +35,10 @@ class _LegalGateScreenState extends ConsumerState<LegalGateScreen> {
                     width: 72,
                     height: 72,
                     decoration: BoxDecoration(
-                      gradient: AppTheme.heroGradient(scheme),
+                      gradient: context.tokens.heroGradient,
                       borderRadius: BorderRadius.circular(22),
                     ),
-                    child: Icon(Icons.account_balance_wallet_rounded, size: 38, color: scheme.onSecondaryContainer),
+                    child: Icon(Icons.account_balance_wallet_rounded, size: 38, color: context.tokens.onHero),
                   ),
                   const SizedBox(height: 24),
                   Text('Welcome to Pitaka', style: text.headlineMedium),

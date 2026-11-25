@@ -35,14 +35,23 @@ class Contrast {
   }
 }
 
-/// The colors of one theme, split 60 / 30 / 10:
+/// The Pitaka design tokens of one theme (Figma: "Theme · Light" /
+/// "Theme · Dark" variables, combined with one "Accent" collection).
 ///
-///  * **main (60%)**: screen backgrounds, app bars, the canvas.
-///  * **second (30%)**: cards, containers, sheets, inputs, chips.
-///  * **accent (10%)**: buttons, the FAB, highlights, key numbers.
+/// Flat surfaces on a cool off-white (or midnight) background:
 ///
-/// Every `on*` color is checked to reach WCAG AA (4.5:1) on its background
-/// (see test/presentation/theme_contrast_test.dart).
+///  * [main]: screen background.
+///  * [second]: cards, sheets, dialogs, the bottom bar (white / navy),
+///    with a 1px [outline] border instead of a shadow.
+///  * [secondHigh]: one step up: progress tracks, skeletons, icon bubbles,
+///    input fills.
+///  * [accent]: the brand color (Sunset orange or Teal): filled buttons,
+///    the hero card gradient, the selected tab pill.
+///
+/// Every text token is nudged to WCAG AA (4.5:1) on the surfaces it is used
+/// on (see test/presentation/theme_contrast_test.dart). The one exception is
+/// the Figma brand fill itself ([accent], [heroStart]): white labels on it
+/// are bold and ≥16px, and the test documents its ratio.
 @immutable
 class ThemeTokens {
   const ThemeTokens({
@@ -54,58 +63,110 @@ class ThemeTokens {
     required this.secondHigh,
     required this.onSecond,
     required this.onSecondMuted,
+    required this.outline,
     required this.accent,
     required this.onAccent,
     required this.accentOnSecond,
-    required this.outline,
+    required this.accentContainer,
+    required this.onAccentContainer,
+    required this.heroStart,
+    required this.heroEnd,
+    required this.onHero,
+    required this.onHeroMuted,
     required this.success,
+    required this.successContainer,
+    required this.onSuccessContainer,
     required this.warning,
+    required this.warningContainer,
+    required this.onWarningContainer,
     required this.danger,
+    required this.dangerContainer,
+    required this.onDangerContainer,
+    required this.neutralContainer,
+    required this.onNeutralContainer,
+    required this.infoContainer,
+    required this.inverseSurface,
+    required this.onInverseSurface,
+    required this.inverseAccent,
     required this.scrim,
-    required this.glow,
   });
 
   final Brightness brightness;
 
-  /// 60%: backgrounds.
+  /// Screen background.
   final Color main;
   final Color onMain;
 
-  /// Secondary text on [main] (labels, captions). Still AA.
+  /// Secondary text on [main] and on cards (labels, captions). Still AA.
   final Color onMainMuted;
 
-  /// 30%: cards and containers.
+  /// Cards, sheets, dialogs, bars.
   final Color second;
 
-  /// A step up from [second]: inputs, selected chips, progress tracks.
+  /// A step up from [second]: tracks, skeletons, icon bubbles, inputs.
   final Color secondHigh;
   final Color onSecond;
   final Color onSecondMuted;
 
-  /// 10%: the loud color.
+  /// Card borders and dividers (1px).
+  final Color outline;
+
+  /// Brand fill: filled buttons, the FAB, progress, focus rings.
   final Color accent;
   final Color onAccent;
 
-  /// The accent tuned to stay readable as text on [second] (key numbers).
+  /// The accent as text on cards and on the background ("Mark unpaid",
+  /// "Add", "Cancel").
   final Color accentOnSecond;
-  final Color outline;
 
-  /// Status colors, AA on [second] (they're used on cards).
+  /// Tonal fill (Figma "Button / Tonal"): the "Paid" button, the selected
+  /// segment, the selected nav pill, the empty-state circle.
+  final Color accentContainer;
+  final Color onAccentContainer;
+
+  /// Hero card gradient (top left → bottom right) and its text.
+  final Color heroStart;
+  final Color heroEnd;
+  final Color onHero;
+  final Color onHeroMuted;
+
+  /// Status colors: the strong color is AA on cards (bars, amounts, icons);
+  /// containers are badge / banner fills with their own AA text.
   final Color success;
+  final Color successContainer;
+  final Color onSuccessContainer;
   final Color warning;
+  final Color warningContainer;
+  final Color onWarningContainer;
   final Color danger;
+  final Color dangerContainer;
+  final Color onDangerContainer;
 
-  /// Behind dialogs and sheets: dims everything else so there is one focus.
+  /// "Not in budget" and other neutral pills.
+  final Color neutralContainer;
+  final Color onNeutralContainer;
+
+  /// The blue-grey panel used for previews ("Balance · Cash → ...").
+  final Color infoContainer;
+
+  /// Snackbars / toasts.
+  final Color inverseSurface;
+  final Color onInverseSurface;
+  final Color inverseAccent;
+
+  /// Behind dialogs and sheets.
   final Color scrim;
 
-  /// The 30% hue as light, for the glass background's soft glow and the
-  /// glass edges (electric blue in Midnight dark). Never used for text.
-  final Color glow;
-
   bool get isDark => brightness == Brightness.dark;
+
+  LinearGradient get heroGradient => LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [heroStart, heroEnd],
+      );
 }
 
-/// A named theme: one set of tokens for light mode and one for dark mode.
+/// A named accent (Figma "Accent" collection) with its light and dark theme.
 @immutable
 class AppPalette {
   const AppPalette({required this.id, required this.name, required this.seed, required this.light, required this.dark});
@@ -122,147 +183,211 @@ class AppPalette {
   ThemeTokens tokens(Brightness b) => b == Brightness.dark ? dark : light;
 }
 
+/// Raw values from the Figma file ("Pitaka — Loans & Budget redesign").
+class PitakaColors {
+  PitakaColors._();
+
+  // Theme · Light
+  static const lightBackground = Color(0xFFF5F7FB);
+  static const lightSurface = Color(0xFFFFFFFF);
+  static const lightSurfaceHigh = Color(0xFFE6ECFA);
+  static const lightBorder = Color(0xFFE3E8F0);
+  static const lightInk = Color(0xFF0F172A);
+  static const lightInkMuted = Color(0xFF5B6578);
+  static const lightInfo = Color(0xFFE6EDFD);
+  static const lightNeutral = Color(0xFFE2E8F2);
+  static const lightOnNeutral = Color(0xFF475569);
+  static const lightSuccess = Color(0xFF15803D);
+  static const lightSuccessContainer = Color(0xFFDCF5E3);
+  static const lightWarning = Color(0xFFB45309);
+  static const lightWarningContainer = Color(0xFFFEEFD3);
+  static const lightOnWarning = Color(0xFF92400E);
+  static const lightDanger = Color(0xFFB91C1C);
+  static const lightDangerContainer = Color(0xFFFDE2E2);
+  static const lightInverse = Color(0xFF0F1428);
+
+  // Theme · Dark
+  static const darkBackground = Color(0xFF0A0E1A);
+  static const darkSurface = Color(0xFF111C38);
+  static const darkSurfaceHigh = Color(0xFF1A2648);
+  static const darkBorder = Color(0xFF1F2B4C);
+  static const darkInk = Color(0xFFF1F5F9);
+  static const darkInkMuted = Color(0xFF94A3B8);
+  static const darkInfo = Color(0xFF1A2648);
+  static const darkNeutral = Color(0xFF22304B);
+  static const darkOnNeutral = Color(0xFFCBD5E1);
+  static const darkSuccess = Color(0xFF4ADE80);
+  static const darkSuccessContainer = Color(0xFF12322A);
+  static const darkWarning = Color(0xFFFBBF24);
+  static const darkWarningContainer = Color(0xFF3A2C16);
+  static const darkOnWarning = Color(0xFFFDD58A);
+  static const darkDanger = Color(0xFFFF8A80);
+  static const darkDangerContainer = Color(0xFF3B1A1E);
+  static const darkInverse = Color(0xFF26324F);
+
+  // Accent · Sunset
+  static const sunset = Color(0xFFFF6B35);
+  static const sunsetDeep = Color(0xFFC2410C);
+  static const sunsetContainer = Color(0xFFFFE1D5);
+  static const sunsetOnDark = Color(0xFFFF8A5C);
+
+  // Accent · Teal
+  static const teal = Color(0xFF0D9488);
+  static const tealDeep = Color(0xFF0F766E);
+  static const tealContainer = Color(0xFFCCF2EE);
+  static const tealOnDark = Color(0xFF5EEAD4);
+}
+
 class AppPalettes {
   AppPalettes._();
 
-  // Dark mode of the default theme, 60/30/10: midnight black background,
-  // electric-blue glass cards and glow (one step lighter, so cards read as
-  // raised), and a warm sunset orange as the only bright color.
-  static const midnightBlack = Color(0xFF0B0F17);
-  static const electricNavy = Color(0xFF101C38);
-  static const electricNavyHigh = Color(0xFF18295A);
+  /// The default accent's id and picker swatch (same value as before the
+  /// redesign, so saved settings still match).
+  static const sunsetOrange = PitakaColors.sunset;
+  static const teal = PitakaColors.teal;
 
-  /// The 30% color's light: background glow and glass edges.
-  static const electricBlue = Color(0xFF3B82F6);
-
-  /// The palette's id and picker swatch (kept so saved settings still match).
-  static const sunsetOrange = Color(0xFFFF6B35);
-
-  /// Sunset orange lifted a little for dark backgrounds: glows without
-  /// vibrating, and takes dark button text (8:1).
-  static const sunsetGlow = Color(0xFFFF8A50);
-
-  static final midnight = AppPalette(
-    id: 0xFFFF6B35,
-    name: 'Midnight',
-    seed: sunsetOrange,
-    dark: _finish(
-      brightness: Brightness.dark,
-      main: midnightBlack,
-      onMain: const Color(0xFFEEF1F6),
-      onMainMuted: const Color(0xFFA3ACBD),
-      second: electricNavy,
-      secondHigh: electricNavyHigh,
-      onSecond: const Color(0xFFF1F4F9),
-      onSecondMuted: const Color(0xFFB8C0CF),
-      accent: sunsetGlow,
-      glow: electricBlue,
-    ),
-    light: _finish(
-      brightness: Brightness.light,
-      main: const Color(0xFFF7F8FC),
-      onMain: const Color(0xFF0B1324),
-      onMainMuted: const Color(0xFF4A5468),
-      second: const Color(0xFFE4ECFF),
-      secondHigh: const Color(0xFFD3E0FF),
-      onSecond: const Color(0xFF0B1B44),
-      onSecondMuted: const Color(0xFF34436A),
-      // Sunset orange, deepened so white button text passes AA.
-      accent: const Color(0xFFC2410C),
-      glow: const Color(0xFF8FB3FF),
-    ),
+  static final sunset = _build(
+    name: 'Sunset',
+    seed: PitakaColors.sunset,
+    accent: PitakaColors.sunset,
+    deep: PitakaColors.sunsetDeep,
+    container: PitakaColors.sunsetContainer,
+    onDark: PitakaColors.sunsetOnDark,
   );
 
-  /// Same 60/30/10 structure for every other accent: a near-neutral main
-  /// tinted with the hue, a stronger tint of the hue for containers, and
-  /// the accent itself as the loud 10%.
+  static final tealPalette = _build(
+    name: 'Teal',
+    seed: PitakaColors.teal,
+    accent: PitakaColors.teal,
+    deep: PitakaColors.tealDeep,
+    container: PitakaColors.tealContainer,
+    onDark: PitakaColors.tealOnDark,
+  );
+
+  /// Any other saved or custom color keeps the Pitaka structure; only the
+  /// accent family follows the color.
   static AppPalette fromSeed(String name, Color seed) {
-    final hue = HSLColor.fromColor(seed).hue;
-    Color hsl(double s, double l) => HSLColor.fromAHSL(1, hue, s, l).toColor();
+    final hsl = HSLColor.fromColor(seed);
+    Color at(double s, double l) => HSLColor.fromAHSL(1, hsl.hue, s, l).toColor();
+    return _build(
+      name: name,
+      seed: seed,
+      accent: seed,
+      deep: at(math.min(hsl.saturation, 0.85), math.min(hsl.lightness, 0.40)),
+      container: at(math.min(hsl.saturation, 0.90), 0.92),
+      onDark: at(math.min(hsl.saturation, 0.90), math.max(hsl.lightness, 0.70)),
+    );
+  }
+
+  static AppPalette _build({
+    required String name,
+    required Color seed,
+    required Color accent,
+    required Color deep,
+    required Color container,
+    required Color onDark,
+  }) {
     return AppPalette(
       id: seed.toARGB32(),
       name: name,
       seed: seed,
-      light: _finish(
-        brightness: Brightness.light,
-        main: hsl(0.30, 0.975),
-        onMain: hsl(0.30, 0.10),
-        onMainMuted: hsl(0.12, 0.36),
-        second: hsl(0.55, 0.92),
-        secondHigh: hsl(0.55, 0.87),
-        onSecond: hsl(0.60, 0.14),
-        onSecondMuted: hsl(0.25, 0.32),
-        accent: seed,
-        glow: hsl(0.70, 0.80),
-      ),
-      // Dark: low-saturation tints so the accent is the only loud color,
-      // with clear steps between background, cards and raised parts.
-      dark: _finish(
-        brightness: Brightness.dark,
-        main: hsl(0.22, 0.07),
-        onMain: hsl(0.20, 0.95),
-        onMainMuted: hsl(0.12, 0.72),
-        second: hsl(0.24, 0.13),
-        secondHigh: hsl(0.22, 0.18),
-        onSecond: hsl(0.30, 0.94),
-        onSecondMuted: hsl(0.18, 0.78),
-        accent: _bright(seed),
-        glow: hsl(0.60, 0.45),
-      ),
+      light: _light(accent: accent, deep: deep, container: container),
+      dark: _dark(accent: accent, deep: deep, container: container, onDark: onDark),
     );
   }
 
-  static Color _bright(Color c) {
-    final hsl = HSLColor.fromColor(c);
-    return hsl.withLightness(math.max(hsl.lightness, 0.62)).toColor();
-  }
-
-  /// Fills in derived colors and nudges everything to AA.
-  static ThemeTokens _finish({
-    required Brightness brightness,
-    required Color main,
-    required Color onMain,
-    required Color onMainMuted,
-    required Color second,
-    required Color secondHigh,
-    required Color onSecond,
-    required Color onSecondMuted,
-    required Color accent,
-    required Color glow,
-  }) {
-    final dark = brightness == Brightness.dark;
-    // The accent fills buttons: it needs AA for its label, and must stand
-    // out from the background as a UI part (3:1).
-    var a = Contrast.ensure(accent, main, target: Contrast.aaLarge);
-    var onA = Contrast.bestOn(a);
-    if (Contrast.ratio(onA, a) < Contrast.aa) {
-      a = Contrast.ensure(a, onA, target: Contrast.aa);
-      onA = Contrast.bestOn(a);
-    }
-    final success = dark ? const Color(0xFF4ADE80) : const Color(0xFF15803D);
-    final warning = dark ? const Color(0xFFFBBF24) : const Color(0xFFB45309);
-    final danger = dark ? const Color(0xFFFF8A80) : const Color(0xFFB91C1C);
+  static ThemeTokens _light({required Color accent, required Color deep, required Color container}) {
+    const bg = PitakaColors.lightBackground;
+    const card = PitakaColors.lightSurface;
+    const high = PitakaColors.lightSurfaceHigh;
+    final surfaces = [bg, card, high];
+    final onContainer = Contrast.ensure(deep, container);
     return ThemeTokens(
-      brightness: brightness,
-      main: main,
-      // Body text sits on the background and on cards, so it must pass on all three.
-      onMain: _ensureAll(onMain, [main, second, secondHigh]),
-      onMainMuted: _ensureAll(onMainMuted, [main, second, secondHigh]),
-      second: second,
-      secondHigh: secondHigh,
-      onSecond: _ensureAll(onSecond, [second, secondHigh]),
-      onSecondMuted: _ensureAll(onSecondMuted, [second, secondHigh]),
-      accent: a,
-      onAccent: onA,
-      accentOnSecond: _ensureAll(a, [second, secondHigh]),
-      outline: Color.alphaBlend(onMain.withValues(alpha: 0.16), main),
-      // Checked on secondHigh too: on glass, cards blend with the glow.
-      success: _ensureAll(success, [second, secondHigh]),
-      warning: _ensureAll(warning, [second, secondHigh]),
-      danger: _ensureAll(danger, [second, secondHigh]),
-      scrim: Colors.black.withValues(alpha: dark ? 0.66 : 0.5),
-      glow: glow,
+      brightness: Brightness.light,
+      main: bg,
+      onMain: _ensureAll(PitakaColors.lightInk, surfaces),
+      onMainMuted: _ensureAll(PitakaColors.lightInkMuted, surfaces),
+      second: card,
+      secondHigh: high,
+      onSecond: _ensureAll(PitakaColors.lightInk, [card, high]),
+      onSecondMuted: _ensureAll(PitakaColors.lightInkMuted, [card, high, PitakaColors.lightInfo]),
+      outline: PitakaColors.lightBorder,
+      accent: accent,
+      onAccent: Colors.white,
+      accentOnSecond: _ensureAll(deep, [card, bg, high]),
+      accentContainer: container,
+      onAccentContainer: onContainer,
+      heroStart: accent,
+      heroEnd: deep,
+      onHero: Colors.white,
+      onHeroMuted: Colors.white.withValues(alpha: 0.86),
+      success: _ensureAll(PitakaColors.lightSuccess, [card, bg]),
+      successContainer: PitakaColors.lightSuccessContainer,
+      onSuccessContainer: Contrast.ensure(PitakaColors.lightSuccess, PitakaColors.lightSuccessContainer),
+      warning: _ensureAll(PitakaColors.lightWarning, [card, bg]),
+      warningContainer: PitakaColors.lightWarningContainer,
+      onWarningContainer: Contrast.ensure(PitakaColors.lightOnWarning, PitakaColors.lightWarningContainer),
+      danger: _ensureAll(PitakaColors.lightDanger, [card, bg]),
+      dangerContainer: PitakaColors.lightDangerContainer,
+      onDangerContainer: Contrast.ensure(PitakaColors.lightDanger, PitakaColors.lightDangerContainer),
+      neutralContainer: PitakaColors.lightNeutral,
+      onNeutralContainer: Contrast.ensure(PitakaColors.lightOnNeutral, PitakaColors.lightNeutral),
+      infoContainer: PitakaColors.lightInfo,
+      inverseSurface: PitakaColors.lightInverse,
+      onInverseSurface: const Color(0xFFF8FAFC),
+      inverseAccent: Contrast.ensure(_lift(accent), PitakaColors.lightInverse),
+      scrim: Colors.black.withValues(alpha: 0.45),
     );
+  }
+
+  static ThemeTokens _dark({required Color accent, required Color deep, required Color container, required Color onDark}) {
+    const bg = PitakaColors.darkBackground;
+    const card = PitakaColors.darkSurface;
+    const high = PitakaColors.darkSurfaceHigh;
+    final surfaces = [bg, card, high];
+    return ThemeTokens(
+      brightness: Brightness.dark,
+      main: bg,
+      onMain: _ensureAll(PitakaColors.darkInk, surfaces),
+      onMainMuted: _ensureAll(PitakaColors.darkInkMuted, surfaces),
+      second: card,
+      secondHigh: high,
+      onSecond: _ensureAll(PitakaColors.darkInk, [card, high]),
+      onSecondMuted: _ensureAll(PitakaColors.darkInkMuted, [card, high, PitakaColors.darkInfo]),
+      outline: PitakaColors.darkBorder,
+      accent: accent,
+      onAccent: Colors.white,
+      accentOnSecond: _ensureAll(onDark, [card, bg, high]),
+      // The tonal peach / mint stays light in dark mode (Figma dark frames).
+      accentContainer: container,
+      onAccentContainer: Contrast.ensure(deep, container),
+      heroStart: accent,
+      heroEnd: deep,
+      onHero: Colors.white,
+      onHeroMuted: Colors.white.withValues(alpha: 0.86),
+      success: _ensureAll(PitakaColors.darkSuccess, [card, bg]),
+      successContainer: PitakaColors.darkSuccessContainer,
+      onSuccessContainer: Contrast.ensure(PitakaColors.darkSuccess, PitakaColors.darkSuccessContainer),
+      warning: _ensureAll(PitakaColors.darkWarning, [card, bg]),
+      warningContainer: PitakaColors.darkWarningContainer,
+      onWarningContainer: Contrast.ensure(PitakaColors.darkOnWarning, PitakaColors.darkWarningContainer),
+      danger: _ensureAll(PitakaColors.darkDanger, [card, bg]),
+      dangerContainer: PitakaColors.darkDangerContainer,
+      onDangerContainer: Contrast.ensure(PitakaColors.darkDanger, PitakaColors.darkDangerContainer),
+      neutralContainer: PitakaColors.darkNeutral,
+      onNeutralContainer: Contrast.ensure(PitakaColors.darkOnNeutral, PitakaColors.darkNeutral),
+      infoContainer: PitakaColors.darkInfo,
+      inverseSurface: PitakaColors.darkInverse,
+      onInverseSurface: const Color(0xFFF8FAFC),
+      inverseAccent: Contrast.ensure(onDark, PitakaColors.darkInverse),
+      scrim: Colors.black.withValues(alpha: 0.6),
+    );
+  }
+
+  /// A lighter tint of [c] for use on the dark snackbar.
+  static Color _lift(Color c) {
+    final hsl = HSLColor.fromColor(c);
+    return hsl.withLightness(math.max(hsl.lightness, 0.66)).toColor();
   }
 
   static Color _ensureAll(Color c, List<Color> backgrounds) {
@@ -277,24 +402,14 @@ class AppPalettes {
     return out;
   }
 
-  static final all = <AppPalette>[
-    midnight,
-    fromSeed('Indigo', const Color(0xFF4F46E5)),
-    fromSeed('Teal', const Color(0xFF0D9488)),
-    fromSeed('Emerald', const Color(0xFF059669)),
-    fromSeed('Sky', const Color(0xFF0284C7)),
-    fromSeed('Violet', const Color(0xFF7C3AED)),
-    fromSeed('Pink', const Color(0xFFDB2777)),
-    fromSeed('Rose', const Color(0xFFE11D48)),
-    fromSeed('Orange', const Color(0xFFEA580C)),
-    fromSeed('Amber', const Color(0xFFCA8A04)),
-    fromSeed('Slate', const Color(0xFF475569)),
-  ];
+  /// The accents offered in Settings (Figma: Accent · Sunset, Accent · Teal).
+  static final all = <AppPalette>[sunset, tealPalette];
 
-  /// The palette saved in settings. A custom color gets its own palette
-  /// with the same 60/30/10 structure; nothing saved = Midnight.
+  /// The palette saved in settings. Any other saved color (older versions
+  /// offered more) or a custom color gets its own palette with the same
+  /// structure; nothing saved = Sunset.
   static AppPalette byId(int? id) {
-    if (id == null) return midnight;
+    if (id == null) return sunset;
     for (final p in all) {
       if (p.id == id) return p;
     }
@@ -318,11 +433,11 @@ class AppColors extends ThemeExtension<AppColors> {
 }
 
 extension AppColorsX on BuildContext {
-  /// Falls back to the default (Midnight) palette for the current
-  /// brightness when the theme wasn't built by AppTheme (e.g. a plain
-  /// MaterialApp in a widget test), instead of crashing.
+  /// Falls back to the default (Sunset) palette for the current brightness
+  /// when the theme wasn't built by AppTheme (e.g. a plain MaterialApp in a
+  /// widget test), instead of crashing.
   ThemeTokens get tokens {
     final theme = Theme.of(this);
-    return theme.extension<AppColors>()?.tokens ?? AppPalettes.midnight.tokens(theme.brightness);
+    return theme.extension<AppColors>()?.tokens ?? AppPalettes.sunset.tokens(theme.brightness);
   }
 }

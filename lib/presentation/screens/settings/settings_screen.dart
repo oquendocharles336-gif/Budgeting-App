@@ -170,7 +170,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onSelectionChanged: (s) => ref.read(themeControllerProvider.notifier).setMode(s.first),
                   ),
                   const SizedBox(height: 16),
-                  Text('Theme colors', style: Theme.of(context).textTheme.titleSmall),
+                  Text('Accent', style: Theme.of(context).textTheme.titleSmall),
                   const SizedBox(height: 10),
                   ColorPickerField(
                     colors: AppTheme.accentPalette,
@@ -395,6 +395,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   leading: const Icon(Icons.description_outlined),
                   title: const Text('Terms & Conditions'),
                   onTap: () => _push(const LegalDocumentScreen(title: 'Terms & Conditions', body: LegalText.terms)),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.code_rounded),
+                  title: const Text('Open-source licenses'),
+                  subtitle: const Text('Fonts and packages the app is built with'),
+                  onTap: () => showLicensePage(
+                    context: context,
+                    applicationName: 'Pitaka',
+                    applicationVersion: _installedVersion,
+                  ),
                 ),
               ],
             ),

@@ -29,12 +29,16 @@ class DashboardScreen extends ConsumerWidget {
     required this.onSeeAllTransactions,
     required this.onOpenBudget,
     required this.onOpenWallets,
+    this.onOpenInsights,
     this.onOpenBusiness,
   });
 
   final VoidCallback onSeeAllTransactions;
   final VoidCallback onOpenBudget;
   final VoidCallback onOpenWallets;
+
+  /// The Insights tab. Null: open Insights on top.
+  final VoidCallback? onOpenInsights;
 
   /// Opens the business side (the Business tab when Business Mode is on).
   /// Null: open it on top.
@@ -92,7 +96,7 @@ class DashboardScreen extends ConsumerWidget {
               // Import lives in Settings > Your data.
               _QuickActions(
                 onDebts: () => _push(context, const DebtsScreen()),
-                onInsights: () => _push(context, const AnalyticsScreen()),
+                onInsights: onOpenInsights ?? () => _push(context, const AnalyticsScreen()),
                 onLoans: () => _push(context, const LoansScreen()),
                 onBusiness: business ? openBusiness : null,
               ),
@@ -150,6 +154,7 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// The month at a glance on the Figma hero gradient.
 class _HeroBudgetCard extends ConsumerWidget {
   const _HeroBudgetCard({required this.summary, required this.onTap});
   final MonthSummary summary;
@@ -157,95 +162,56 @@ class _HeroBudgetCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
+    final t = context.tokens;
     final p = summary.overall;
-    final fg = scheme.onSecondaryContainer;
-    // The key number is the loud 10%.
-    final key = context.tokens.accentOnSecond;
     final now = DateTime.now();
     final safe = BudgetCalculator.safeDailySpend(budget: p.budget, spent: p.spent, month: summary.month, now: now);
+    final caption = TextStyle(color: t.onHeroMuted, fontSize: 13, fontWeight: FontWeight.w500);
+    final warn = p.level == BudgetLevel.warning || p.level == BudgetLevel.exceeded;
 
     return Semantics(
       button: true,
-      child: Material(
-        borderRadius: BorderRadius.circular(24),
-        clipBehavior: Clip.antiAlias,
-        child: Ink(
-          decoration: BoxDecoration(gradient: AppTheme.heroGradient(scheme)),
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
+      child: HeroCard(
+        onTap: onTap,
+        label: p.hasBudget
+            ? (p.remaining >= 0 ? 'Left to spend in ${DateFormat('MMMM').format(now)}' : 'Over budget by')
+            : 'Spent this month',
+        value: AmountText(p.hasBudget ? p.remaining.abs() : p.spent),
+        chip: !p.hasBudget
+            ? 'Tap to set a monthly budget'
+            : (warn
+                ? (p.level == BudgetLevel.exceeded
+                    ? 'You\'ve used your whole budget for this month.'
+                    : 'You\'ve used ${p.percentUsed}% of this month\'s budget.')
+                : null),
+        chipIcon: !p.hasBudget
+            ? Icons.flag_rounded
+            : (p.level == BudgetLevel.exceeded ? Icons.error_rounded : Icons.warning_amber_rounded),
+        footer: !p.hasBudget
+            ? null
+            : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    p.hasBudget ? (p.remaining >= 0 ? 'Left to spend in ${DateFormat('MMMM').format(now)}' : 'Over budget by') : 'Spent this month',
-                    style: TextStyle(color: context.tokens.onSecondMuted, fontWeight: FontWeight.w500),
-                  ),
-                  const SizedBox(height: 6),
-                  AmountText(
-                    p.hasBudget ? p.remaining.abs() : p.spent,
-                    style: TextStyle(color: key, fontSize: 34, fontWeight: FontWeight.w800, letterSpacing: -0.5),
-                  ),
-                  const SizedBox(height: 16),
-                  if (p.hasBudget) ...[
-                    BudgetProgressBar(progress: p, onDark: true),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${formatMoney(ref, p.spent)} of ${formatMoney(ref, p.budget)} · ${p.percentUsed}%',
-                            style: TextStyle(color: context.tokens.onSecondMuted, fontSize: 13),
-                          ),
-                        ),
-                        if (safe > 0)
-                          Text(
-                            '${formatMoney(ref, safe)}/day',
-                            style: TextStyle(color: fg, fontWeight: FontWeight.w700, fontSize: 13),
-                          ),
-                      ],
-                    ),
-                    if (summary.spentByAccount.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      _PaidWithLine(spent: summary.spentByAccount),
-                    ],
-                    // Inline, in context (no banner box): only at 80% / 100%.
-                    if (p.level == BudgetLevel.warning || p.level == BudgetLevel.exceeded) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            p.level == BudgetLevel.exceeded ? Icons.error_rounded : Icons.warning_amber_rounded,
-                            size: 16,
-                            color: budgetColor(context, p.level),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              p.level == BudgetLevel.exceeded
-                                  ? 'You\'ve used your whole budget for this month.'
-                                  : 'You\'ve used ${p.percentUsed}% of this month\'s budget.',
-                              style: TextStyle(color: budgetColor(context, p.level), fontWeight: FontWeight.w600, fontSize: 13),
-                            ),
-                          ),
-                        ],
+                  BudgetProgressBar(progress: p, onDark: true),
+                  const SizedBox(height: Space.sm + 2),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text('${formatMoney(ref, p.spent)} of ${formatMoney(ref, p.budget)} · ${p.percentUsed}%', style: caption),
                       ),
+                      if (safe > 0)
+                        Text(
+                          '${formatMoney(ref, safe)}/day',
+                          style: TextStyle(color: t.onHero, fontWeight: FontWeight.w700, fontSize: 13),
+                        ),
                     ],
-                  ] else
-                    Row(
-                      children: [
-                        Icon(Icons.flag_rounded, color: fg, size: 18),
-                        const SizedBox(width: 6),
-                        Text('Tap to set a monthly budget', style: TextStyle(color: fg, fontWeight: FontWeight.w600)),
-                      ],
-                    ),
+                  ),
+                  if (summary.spentByAccount.isNotEmpty) ...[
+                    const SizedBox(height: Space.sm),
+                    _PaidWithLine(spent: summary.spentByAccount, color: t.onHeroMuted),
+                  ],
                 ],
               ),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -301,17 +267,17 @@ class _Action extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final t = context.tokens;
     final kind = badge;
-    final glyph = ExcludeSemantics(child: Icon(icon, color: scheme.primary));
+    final glyph = IconBubble(icon: icon, size: 40, background: t.accentContainer, foreground: t.onAccentContainer);
     return AppCard(
       onTap: onTap,
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: Space.xs),
       child: Column(
         children: [
           kind == null ? glyph : _CountBadge(kind: kind, label: label, child: glyph),
-          const SizedBox(height: 6),
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+          const SizedBox(height: Space.sm),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: t.onSecond)),
         ],
       ),
     );
@@ -415,10 +381,11 @@ class _DebtSummary extends ConsumerWidget {
               onTap: onTap,
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(14)),
-                    child: Icon(Icons.account_balance_rounded, color: scheme.onErrorContainer),
+                  IconBubble(
+                    icon: Icons.account_balance_rounded,
+                    size: 44,
+                    background: scheme.errorContainer,
+                    foreground: scheme.onErrorContainer,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -455,8 +422,9 @@ class _DebtSummary extends ConsumerWidget {
 /// "Paid with: Cash ₱1,200 · GCash ₱300": every expense counts in the
 /// monthly budget, whatever it was paid with.
 class _PaidWithLine extends ConsumerWidget {
-  const _PaidWithLine({required this.spent});
+  const _PaidWithLine({required this.spent, this.color});
   final Map<int?, int> spent;
+  final Color? color;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -470,7 +438,7 @@ class _PaidWithLine extends ConsumerWidget {
       'Paid with: ${parts.join(' · ')}',
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(color: context.tokens.onSecondMuted, fontSize: 12.5),
+      style: TextStyle(color: color ?? context.tokens.onSecondMuted, fontSize: 12.5),
     );
   }
 }
@@ -506,35 +474,33 @@ class _RecentTransactionsState extends ConsumerState<_RecentTransactions> {
               icon: Icons.receipt_long_rounded,
               title: 'No transactions yet',
               message: 'Tap + to add your first expense, or import a card statement from Settings.',
-              action: FilledButton.tonal(
-                style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+              action: FilledButton.icon(
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute(fullscreenDialog: true, builder: (_) => const TransactionFormScreen()),
                 ),
-                child: const Text('Add expense'),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Add expense'),
               ),
             ),
           );
         }
-        // A plain glass Card (no clipping blur) so a floating row's
-        // shadow and scale can rise above it.
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              children: [
-                for (final t in list)
-                  ActivityRow(
-                    key: ValueKey('recent-${t.id}'),
-                    tx: t,
-                    selection: _selection,
-                    category: cats[t.categoryId],
-                    card: cards[t.cardId],
-                    toCard: cards[t.toCardId],
-                  ),
-              ],
-            ),
-          ),
+        // Each row is its own flat card (Figma Activity rows).
+        return Column(
+          children: [
+            for (final t in list)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: ActivityRow(
+                  key: ValueKey('recent-${t.id}'),
+                  tx: t,
+                  selection: _selection,
+                  category: cats[t.categoryId],
+                  card: cards[t.cardId],
+                  toCard: cards[t.toCardId],
+                ),
+              ),
+          ],
         );
       },
     );

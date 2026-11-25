@@ -45,7 +45,7 @@ class _LoansScreenState extends ConsumerState<LoansScreen> {
     final loans = ref.watch(loansProvider);
     // In the tab, the last row must clear the bottom bar's "+" button.
     final bottomInset = widget.asTab ? 68.0 : MediaQuery.viewPaddingOf(context).bottom;
-    final padding = EdgeInsets.fromLTRB(16, 8, 16, 32 + bottomInset);
+    final padding = EdgeInsets.fromLTRB(Space.screen, Space.xxs, Space.screen, Space.xxxl + bottomInset);
     return Scaffold(
       appBar: widget.asTab ? null : AppBar(title: const Text('Loans')),
       body: CascadeScope(
@@ -63,16 +63,15 @@ class _LoansScreenState extends ConsumerState<LoansScreen> {
               padding: padding,
               children: [
                 _Hero(open: open, paid: paid),
-                const SizedBox(height: 12),
-                _LoanTabs(
-                  unpaid: open.length,
-                  paid: paid.length,
-                  showPaid: _showPaid,
-                  onChanged: (v) => setState(() => _showPaid = v),
+                const SizedBox(height: Space.lg),
+                PillTabs(
+                  labels: ['Unpaid · ${open.length}', 'Paid · ${paid.length}'],
+                  selected: _showPaid ? 1 : 0,
+                  onChanged: (i) => setState(() => _showPaid = i == 1),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: Space.lg),
                 AnimatedSwitcher(
-                  duration: reduced ? Duration.zero : const Duration(milliseconds: 200),
+                  duration: reduced ? Duration.zero : Motion.fade,
                   child: Column(
                     key: ValueKey(_showPaid),
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -99,8 +98,9 @@ class _LoansScreenState extends ConsumerState<LoansScreen> {
   }
 }
 
-/// "Unpaid loans ₱2,500.00 · 2 unpaid · 2 paid" and, when loans came back
-/// this month, how much that took off this month's budget.
+/// Figma "HeroCard": "Unpaid loans ₱2,500.00 · 2 unpaid · 2 paid" and,
+/// when loans came back this month, how much that took off this month's
+/// budget ("₱1,000 deducted from November's budget").
 class _Hero extends ConsumerWidget {
   const _Hero({required this.open, required this.paid});
   final List<TransactionEntry> open;
@@ -108,105 +108,19 @@ class _Hero extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final scheme = Theme.of(context).colorScheme;
-    final t = context.tokens;
     final now = DateTime.now();
     final deducted = paid
         .where((l) => l.isLoanCancelledByRepayment && l.date.year == now.year && l.date.month == now.month)
         .fold<int>(0, (a, l) => a + l.amount);
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(gradient: AppTheme.heroGradient(scheme), borderRadius: BorderRadius.circular(24)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Unpaid loans', style: TextStyle(color: t.onSecondMuted)),
-          const SizedBox(height: 4),
-          AmountText(
-            open.fold<int>(0, (a, l) => a + l.amount),
-            style: TextStyle(color: t.accentOnSecond, fontSize: 32, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          Text('${open.length} unpaid · ${paid.length} paid', style: TextStyle(color: t.onSecondMuted)),
-          if (deducted > 0) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: t.main.withValues(alpha: 0.22),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ExcludeSemantics(child: Icon(Icons.pie_chart_rounded, size: 16, color: t.onSecond)),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      '${formatMoney(ref, deducted)} deducted from ${DateFormat('MMMM').format(now)}\'s budget',
-                      style: TextStyle(color: t.onSecond, fontSize: 12, fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Two-segment switch: "Unpaid · 2" | "Paid · 2".
-class _LoanTabs extends StatelessWidget {
-  const _LoanTabs({required this.unpaid, required this.paid, required this.showPaid, required this.onChanged});
-  final int unpaid;
-  final int paid;
-  final bool showPaid;
-  final ValueChanged<bool> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    Widget segment(String label, bool selected, VoidCallback onTap) => Expanded(
-          child: Semantics(
-            selected: selected,
-            button: true,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: onTap,
-              child: AnimatedContainer(
-                duration: Cascade.reduced(context) ? Duration.zero : const Duration(milliseconds: 200),
-                constraints: const BoxConstraints(minHeight: 44),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? t.accent.withValues(alpha: 0.16) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: selected ? t.accentOnSecond : t.onSecondMuted,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: t.second,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: t.outline),
-      ),
-      child: Row(
-        children: [
-          segment('Unpaid · $unpaid', !showPaid, () => onChanged(false)),
-          segment('Paid · $paid', showPaid, () => onChanged(true)),
-        ],
-      ),
+    // "₱1,000" rather than "₱1,000.00" in the chip, as in the design.
+    var amount = formatMoney(ref, deducted);
+    if (amount.endsWith('.00')) amount = amount.substring(0, amount.length - 3);
+    return HeroCard(
+      label: 'Unpaid loans',
+      value: AmountText(open.fold<int>(0, (a, l) => a + l.amount)),
+      caption: '${open.length} unpaid · ${paid.length} paid',
+      chip: deducted > 0 ? '$amount deducted from ${DateFormat('MMMM').format(now)}\'s budget' : null,
+      chipIcon: Icons.pie_chart_outline_rounded,
     );
   }
 }
@@ -227,14 +141,13 @@ class _NoLoans extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => EmptyState(
-        icon: Icons.handshake_rounded,
+        icon: Icons.handshake_outlined,
         title: 'No loans yet',
-        message: 'Lent someone money? Add it in the "Loan" category and tap Paid when you get it back.',
-        action: FilledButton.icon(
+        message: 'Lent someone money? Add it in the \u201cLoan\u201d category and tap Paid when you get it back.',
+        action: FilledButton(
           style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
           onPressed: () => _add(context, ref),
-          icon: const Icon(Icons.add_rounded),
-          label: const Text('Add a loan'),
+          child: const Text('+ Add a loan', semanticsLabel: 'Add a loan'),
         ),
       );
 }
@@ -253,10 +166,10 @@ class _LoansSkeleton extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SkeletonBox(height: 120, radius: 24),
-                const SizedBox(height: 12),
-                const SkeletonBox(height: 44, radius: 999),
-                const SizedBox(height: 12),
+                const SkeletonBox(height: 128, radius: Radii.hero),
+                const SizedBox(height: Space.lg),
+                const SkeletonBox(height: 48, radius: Radii.chip),
+                const SizedBox(height: Space.lg),
                 for (var i = 0; i < 3; i++)
                   const Padding(
                     padding: EdgeInsets.only(bottom: 12),
@@ -274,10 +187,11 @@ class _SkeletonLoanRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(Space.lg),
         decoration: BoxDecoration(
-          border: Border.all(color: context.tokens.secondHigh),
-          borderRadius: BorderRadius.circular(20),
+          color: context.tokens.second,
+          border: Border.all(color: context.tokens.outline),
+          borderRadius: BorderRadius.circular(Radii.card),
         ),
         child: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -288,7 +202,7 @@ class _SkeletonLoanRow extends StatelessWidget {
             SizedBox(height: 10),
             SkeletonBox(width: 70, height: 20, radius: 999),
             SizedBox(height: 6),
-            Align(alignment: Alignment.centerRight, child: SkeletonBox(width: 96, height: 40, radius: 999)),
+            Align(alignment: Alignment.centerRight, child: SkeletonBox(width: 96, height: 44, radius: 999)),
           ],
         ),
       );
@@ -512,13 +426,15 @@ class _LoanRowState extends ConsumerState<_LoanRow> {
           : 'Already counted in ${month.format(tx.date)}';
     }
 
+    final text = Theme.of(context).textTheme;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: Space.md),
       child: AppCard(
         onTap: () => Navigator.of(context).push(MaterialPageRoute(
           fullscreenDialog: true,
           builder: (_) => TransactionFormScreen(existing: tx),
         )),
+        padding: const EdgeInsets.fromLTRB(Space.lg, Space.lg, Space.lg, Space.md),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -529,32 +445,38 @@ class _LoanRowState extends ConsumerState<_LoanRow> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(tx.description, style: Theme.of(context).textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(
+                        tx.description,
+                        style: text.titleMedium?.copyWith(color: t.onSecond),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
                       Text(
                         '${tx.isIncome ? 'Borrowed' : 'Lent'} ${fullDate.format(tx.date)} · $account',
-                        style: TextStyle(color: t.onSecondMuted, fontSize: 13),
+                        style: TextStyle(color: t.onSecondMuted, fontSize: 13.5, fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: Space.sm),
                 AmountText(
                   tx.amount,
                   // Paid amounts are muted, not struck through.
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: paid ? t.onSecondMuted : t.onSecond),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: paid ? t.onSecondMuted : t.onSecond),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: Space.md),
             Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: Space.sm,
+              runSpacing: Space.sm,
               children: [
                 if (paid) ...[
                   StatusBadge(
                     label: 'Paid ${shortDate.format(tx.loanPaidAt!)} · $paidWith',
                     tone: BadgeTone.ok,
-                    icon: Icons.check_circle_rounded,
+                    icon: Icons.check_circle_outline_rounded,
                   ),
                   if (tx.isLoanCancelledByRepayment)
                     const StatusBadge(label: 'Not in budget', tone: BadgeTone.neutral, icon: Icons.remove_circle_outline_rounded),
@@ -563,24 +485,28 @@ class _LoanRowState extends ConsumerState<_LoanRow> {
               ],
             ),
             if (hint != null) ...[
-              const SizedBox(height: 8),
-              Text(hint, style: TextStyle(color: t.onSecondMuted, fontSize: 12)),
+              const SizedBox(height: Space.md),
+              Text(hint, style: TextStyle(color: t.onSecondMuted, fontSize: 12.5, fontWeight: FontWeight.w500)),
             ],
+            const SizedBox(height: Space.xs),
             Align(
               alignment: Alignment.centerRight,
               child: paid
                   ? TextButton(
-                      style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                       onPressed: _saving ? null : () => _unpay(paidWith),
-                      child: const Text('Mark unpaid'),
+                      child: _saving
+                          ? SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: t.accentOnSecond),
+                            )
+                          : const Text('Mark unpaid'),
                     )
-                  : FilledButton.tonalIcon(
-                      style: FilledButton.styleFrom(minimumSize: const Size(96, 48)),
-                      onPressed: _saving ? null : _pay,
-                      icon: _saving
-                          ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.check_rounded),
-                      label: Text('Paid', semanticsLabel: 'Mark ${tx.description} as paid'),
+                  : TonalPillButton(
+                      label: 'Paid',
+                      icon: Icons.check_rounded,
+                      busy: _saving,
+                      semanticsLabel: 'Mark ${tx.description} as paid',
+                      onPressed: _pay,
                     ),
             ),
           ],
@@ -654,15 +580,15 @@ class _MarkPaidSheetState extends ConsumerState<_MarkPaidSheet> {
     Widget option({required IconData icon, required String title, required String subtitle, required int? id}) {
       final on = _accountId == id;
       return Padding(
-        padding: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.only(bottom: Space.sm),
         child: Material(
-          color: on ? t.accent.withValues(alpha: 0.10) : Colors.transparent,
+          color: on ? t.accentContainer : t.second.withValues(alpha: 0),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: on ? t.accent : t.outline, width: on ? 1.5 : 1),
+            borderRadius: BorderRadius.circular(Radii.md + 2),
+            side: BorderSide(color: on ? t.accent.withValues(alpha: 0.55) : t.outline.withValues(alpha: 0), width: 1.5),
           ),
           child: InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(Radii.md + 2),
             onTap: () => setState(() => _accountId = id),
             child: Semantics(
               selected: on,
@@ -670,24 +596,34 @@ class _MarkPaidSheetState extends ConsumerState<_MarkPaidSheet> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 56),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: Space.md, vertical: Space.sm),
                   child: Row(
                     children: [
-                      ExcludeSemantics(child: Icon(icon, color: on ? t.accentOnSecond : t.onSecondMuted)),
-                      const SizedBox(width: 12),
+                      ExcludeSemantics(child: Icon(icon, color: on ? t.onAccentContainer : t.onSecondMuted)),
+                      const SizedBox(width: Space.md),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(title, style: TextStyle(color: t.onSecond, fontWeight: FontWeight.w700)),
-                            Text(subtitle, style: TextStyle(color: t.onSecondMuted, fontSize: 12)),
+                            Text(
+                              title,
+                              style: TextStyle(color: on ? t.onAccentContainer : t.onSecond, fontWeight: FontWeight.w700, fontSize: 15.5),
+                            ),
+                            Text(
+                              subtitle,
+                              style: TextStyle(
+                                color: on ? t.onAccentContainer : t.onSecondMuted,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
                           ],
                         ),
                       ),
                       ExcludeSemantics(
                         child: Icon(
                           on ? Icons.radio_button_checked_rounded : Icons.radio_button_unchecked_rounded,
-                          color: on ? t.accentOnSecond : t.onSecondMuted,
+                          color: on ? t.onAccentContainer : t.onSecondMuted,
                         ),
                       ),
                     ],
@@ -702,53 +638,59 @@ class _MarkPaidSheetState extends ConsumerState<_MarkPaidSheet> {
 
     Widget fromTo(String from, String to) => Wrap(
           crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 8,
+          spacing: Space.sm,
           children: [
-            Text(from, style: TextStyle(color: t.onSecondMuted)),
-            ExcludeSemantics(child: Icon(Icons.arrow_forward_rounded, size: 16, color: t.onSecondMuted)),
+            Text(from, style: TextStyle(color: t.onSecondMuted, fontSize: 15, fontWeight: FontWeight.w500)),
+            ExcludeSemantics(child: Icon(Icons.arrow_forward_rounded, size: 18, color: t.onSecond)),
             Text(to, style: TextStyle(color: t.onSecond, fontSize: 18, fontWeight: FontWeight.w800)),
           ],
         );
+    final label = TextStyle(color: t.onSecondMuted, fontSize: 13, fontWeight: FontWeight.w600);
 
     // The live preview: what this choice does to the balance and budget.
     final previewKey = '$_accountId|${Dates.dayKey(_day)}|$balance|$spent';
     final preview = Container(
       key: ValueKey(previewKey),
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: t.secondHigh, borderRadius: BorderRadius.circular(16)),
+      padding: const EdgeInsets.all(Space.lg),
+      decoration: BoxDecoration(color: t.infoContainer, borderRadius: BorderRadius.circular(Radii.card)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Balance · $accountName', style: TextStyle(color: t.onSecondMuted, fontSize: 12)),
+          Text('Balance · $accountName', style: label),
           const SizedBox(height: 2),
           if (balance != null)
             fromTo(money(balance), money(lent ? balance + loan.amount : balance - loan.amount))
           else
             Text('…', style: TextStyle(color: t.onSecondMuted)),
-          Divider(height: 20, color: t.outline),
           if (cancels || !lent) ...[
-            Text('$monthName budget', style: TextStyle(color: t.onSecondMuted, fontSize: 12)),
+            Divider(height: 24, color: t.onSecondMuted.withValues(alpha: 0.2)),
+            Text('$monthName budget', style: label),
             const SizedBox(height: 2),
             if (spent != null)
               fromTo('${money(spent)} spent', '${money(cancels ? spent - loan.amount : spent + loan.amount)} spent')
             else
               Text('…', style: TextStyle(color: t.onSecondMuted)),
             if (cancels) ...[
-              const SizedBox(height: 8),
-              StatusBadge(label: '-${money(loan.amount)} · cancelled', tone: BadgeTone.ok, icon: Icons.check_rounded),
+              const SizedBox(height: Space.sm),
+              StatusBadge(label: '\u2212${money(loan.amount)} · cancelled', tone: BadgeTone.ok, icon: Icons.check_rounded),
             ],
-          ] else
+          ] else ...[
+            const SizedBox(height: Space.md),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                ExcludeSemantics(child: Icon(Icons.info_outline_rounded, size: 18, color: t.onSecondMuted)),
-                const SizedBox(width: 8),
+                ExcludeSemantics(child: Icon(Icons.info_outline_rounded, size: 20, color: t.onSecond)),
+                const SizedBox(width: Space.sm),
                 Expanded(
-                  child: Text('This loan stays counted in $monthName\'s budget.', style: TextStyle(color: t.onSecond)),
+                  child: Text(
+                    'This loan stays counted in $monthName\'s budget.',
+                    style: TextStyle(color: t.onSecond, fontWeight: FontWeight.w600, fontSize: 14.5),
+                  ),
                 ),
               ],
             ),
+          ],
         ],
       ),
     );
@@ -761,20 +703,20 @@ class _MarkPaidSheetState extends ConsumerState<_MarkPaidSheet> {
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.9),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+          padding: const EdgeInsets.fromLTRB(Space.xl, 0, Space.xl, Space.md),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 lent ? 'How was it paid back to you?' : 'How did you pay it back?',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(color: t.onSecond),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: Space.xxs),
               Text(
                 '${loan.description} · ${money(loan.amount)} · ${lent ? 'lent' : 'borrowed'} ${DateFormat('MMM d').format(loan.date)}',
-                style: TextStyle(color: t.onSecondMuted),
+                style: TextStyle(color: t.onSecondMuted, fontWeight: FontWeight.w500),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: Space.lg),
               option(
                 icon: accountIcon(null),
                 title: 'Cash',
@@ -798,21 +740,25 @@ class _MarkPaidSheetState extends ConsumerState<_MarkPaidSheet> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(minimumSize: const Size(0, 44)),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 44),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.sm)),
+                  ),
                   onPressed: _pickDay,
-                  icon: const Icon(Icons.event_rounded, size: 18),
-                  label: Text('Paid on: $dayLabel'),
+                  icon: Icon(Icons.calendar_today_outlined, size: 18, color: t.onSecond),
+                  label: Text('Paid on: $dayLabel', style: const TextStyle(fontWeight: FontWeight.w700)),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: Space.md),
+              // Live preview: 200 ms fade on every choice, read by TalkBack.
               Semantics(
                 liveRegion: true,
                 child: AnimatedSwitcher(
-                  duration: reduced ? Duration.zero : const Duration(milliseconds: 200),
+                  duration: reduced ? Duration.zero : Motion.fade,
                   child: preview,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: Space.lg),
               FilledButton(
                 style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
                 onPressed: () => Navigator.pop<_PayChoice>(context, (
@@ -823,7 +769,7 @@ class _MarkPaidSheetState extends ConsumerState<_MarkPaidSheet> {
                 )),
                 child: Text(lent ? 'Confirm repayment' : 'Confirm payment'),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: Space.xs),
               TextButton(
                 style: TextButton.styleFrom(minimumSize: const Size.fromHeight(48)),
                 onPressed: () => Navigator.pop(context),

@@ -7,9 +7,10 @@ import '../../data/models/category.dart';
 import '../../data/models/payment_card.dart';
 import '../../data/models/transaction_entry.dart';
 import '../providers/core_providers.dart';
+import '../providers/data_providers.dart';
 import '../screens/transactions/transaction_form_screen.dart';
 import '../theme/app_palette.dart';
-import '../theme/glass.dart';
+import '../theme/app_theme.dart';
 import 'common.dart';
 import 'motion/cascade.dart';
 import 'transaction_tile.dart';
@@ -49,7 +50,7 @@ class ActivitySelection extends ChangeNotifier {
 
 /// A transaction in "Recent transactions" and Activity.
 ///
-///  * Tap: the row floats (raised, slightly bigger glass card) and shows its
+///  * Tap: the row floats (lifted card with an accent edge) and shows its
 ///    details (full description, notes, date and time, paid with).
 ///  * Swipe right: Edit and Delete appear on the left. Delete asks first.
 ///  * Tap anywhere else: the floating card / actions close.
@@ -65,6 +66,7 @@ class ActivityRow extends ConsumerStatefulWidget {
     this.toCard,
     this.showDate = true,
     this.onDeleted,
+    this.framed = true,
   });
 
   final TransactionEntry tx;
@@ -76,6 +78,10 @@ class ActivityRow extends ConsumerStatefulWidget {
 
   /// Called after the row was deleted (e.g. to hide it from the list at once).
   final VoidCallback? onDeleted;
+
+  /// Each row is its own card (Figma Activity). Off when the rows already
+  /// sit inside a card.
+  final bool framed;
 
   @override
   ConsumerState<ActivityRow> createState() => _ActivityRowState();
@@ -187,40 +193,55 @@ class _ActivityRowState extends ConsumerState<ActivityRow> with SingleTickerProv
   @override
   Widget build(BuildContext context) {
     final tx = widget.tx;
+    final t = context.tokens;
+    final loanId = tx.loanPaymentOfId;
+    final linkedLoan = loanId == null
+        ? null
+        : (ref.watch(loansProvider).asDataOrNull ?? const <TransactionEntry>[]).where((l) => l.id == loanId).firstOrNull;
     final tile = TransactionTile(
       tx: tx,
       category: widget.category,
       card: widget.card,
       toCard: widget.toCard,
       showDate: widget.showDate,
+      linkedLoan: linkedLoan,
       onTap: _saved ? _onTap : null,
     );
-    if (!_saved) return tile;
+    if (!_saved) {
+      return widget.framed ? AppCard(padding: EdgeInsets.zero, child: tile) : tile;
+    }
 
-    final t = context.tokens;
     final scheme = Theme.of(context).colorScheme;
     final floating = widget.selection.floating == _id;
     final open = widget.selection.revealed == _id;
     final reduced = Cascade.reduced(context);
     final motion = reduced ? Duration.zero : _motion;
 
+    // Framed: always a flat card; tapped ("floating"): the card lifts a
+    // little and shows its details. Unframed rows only become a card while
+    // floating.
+    final framed = widget.framed;
     final foreground = AnimatedScale(
-      scale: floating ? 1.03 : 1,
+      scale: floating ? 1.02 : 1,
       duration: motion,
       curve: Curves.easeOutCubic,
       child: AnimatedContainer(
         duration: motion,
         curve: Curves.easeOutCubic,
-        margin: EdgeInsets.symmetric(horizontal: floating ? 6 : 0, vertical: floating ? 6 : 0),
+        margin: EdgeInsets.symmetric(horizontal: floating && !framed ? 6 : 0, vertical: floating && !framed ? 6 : 0),
         decoration: BoxDecoration(
-          color: floating ? Glass.fill(t, strong: true) : Colors.transparent,
-          borderRadius: BorderRadius.circular(Glass.radius),
-          border: Border.all(color: floating ? Glass.border(t) : Colors.transparent),
-          boxShadow: floating ? Glass.shadow(t, lift: 1) : const [],
+          color: framed || floating ? t.second : t.second.withValues(alpha: 0),
+          borderRadius: BorderRadius.circular(Radii.card),
+          border: Border.all(
+            color: floating ? t.accent.withValues(alpha: 0.45) : (framed ? t.outline : t.outline.withValues(alpha: 0)),
+          ),
+          boxShadow: floating
+              ? [BoxShadow(color: Colors.black.withValues(alpha: t.isDark ? 0.35 : 0.08), blurRadius: 18, offset: const Offset(0, 6))]
+              : const [],
         ),
         child: Material(
           type: MaterialType.transparency,
-          borderRadius: BorderRadius.circular(Glass.radius),
+          borderRadius: BorderRadius.circular(Radii.card),
           clipBehavior: Clip.antiAlias,
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -350,7 +371,8 @@ class _Details extends StatelessWidget {
   Widget build(BuildContext context) {
     final tx = row.tx;
     final t = context.tokens;
-    final muted = TextStyle(color: t.onSecondMuted, fontSize: 13);
+    final muted = TextStyle(color: t.onSecondMuted, fontSize: 13.5, fontWeight: FontWeight.w500);
+    final body = TextStyle(color: t.onSecond, fontSize: 13.5, fontWeight: FontWeight.w500);
     String account(int? id, PaymentCard? c) => id == null ? 'Cash' : (c?.shortLabel ?? 'Card');
     final lines = <(IconData, String)>[
       (Icons.event_rounded, DateFormat('EEEE, MMMM d, yyyy · h:mm a').format(tx.date)),
@@ -388,6 +410,8 @@ class _Details extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Divider(height: 1, color: t.outline),
+          const SizedBox(height: 10),
           Text(tx.description, style: TextStyle(color: t.onSecond, fontWeight: FontWeight.w600)),
           if (tx.notes != null && tx.notes!.trim().isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -396,7 +420,7 @@ class _Details extends StatelessWidget {
           const SizedBox(height: 8),
           for (final (icon, text) in lines)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(bottom: 6),
               child: Builder(builder: (context) {
                 // A loan that came back the same month is called out in green.
                 final good = tx.isLoanCancelledByRepayment && text.startsWith('Not counted');
@@ -404,10 +428,10 @@ class _Details extends StatelessWidget {
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ExcludeSemantics(child: Icon(icon, size: 16, color: color)),
-                    const SizedBox(width: 8),
+                    ExcludeSemantics(child: Icon(icon, size: 18, color: color)),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Text(text, style: good ? muted.copyWith(color: color, fontWeight: FontWeight.w600) : muted),
+                      child: Text(text, style: good ? body.copyWith(color: color, fontWeight: FontWeight.w700) : body),
                     ),
                   ],
                 );

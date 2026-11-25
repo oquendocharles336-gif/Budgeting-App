@@ -123,13 +123,15 @@ Migrations live in `lib/data/db/migrations.dart` as numbered steps. v1 = core sc
 - The Android icon/splash resources in `android/app/src/main/res` were generated from these. After replacing the PNGs, run `dart run flutter_launcher_icons` and `dart run flutter_native_splash:create` (configs are in `pubspec.yaml`).
 - iOS: the project has no `ios/` folder yet. After `flutter create --platforms=ios .`, add `NSFaceIDUsageDescription` to `ios/Runner/Info.plist`, set `CFBundleDisplayName` to `Pitaka`, and set `ios: true` in both generator configs.
 
-## Theme (60 / 30 / 10)
+## Design system: Pitaka (Figma "Pitaka — Loans & Budget redesign")
 
-- `presentation/theme/app_palette.dart` holds every color as tokens: **main** (60%: backgrounds), **second** (30%: cards, containers, sheets, inputs), **accent** (10%: buttons, FAB, highlights, key numbers), plus `on*` text colors, status colors and the scrim.
-- Default theme "Midnight": dark = midnight black / electric blue / sunset orange. The other palettes are built with the same structure from their hue.
-- `_finish` nudges every text color to WCAG AA (4.5:1) on the surfaces it sits on; `test/presentation/theme_contrast_test.dart` checks all palettes in light and dark.
-- `AppTheme` maps tokens onto the Material `ColorScheme` and component themes. Screens use the scheme or `context.tokens`; the only literal colors left are user data (card and category colors).
-- Dialogs and bottom sheets dim the screen behind them with the `scrim` token.
+- `presentation/theme/app_palette.dart`: the Figma variables. `PitakaColors` holds the raw values (Theme · Light, Theme · Dark, Accent · Sunset, Accent · Teal); `ThemeTokens` is one resolved theme: **main** (background `#F5F7FB` / `#0A0E1A`), **second** (flat cards, sheets, bars: white / navy `#111C38`), **secondHigh** (tracks, skeletons, icon bubbles), **outline** (1px card border), **accent** (brand fill `#FF6B35` or `#0D9488`), **accentContainer** (tonal pill: "Paid", selected tab, nav pill), hero gradient, status colors with containers (badges, banners), `infoContainer` (preview panel), `inverseSurface` (toasts) and the scrim.
+- Settings offers the two Figma accents (Sunset, Teal). Any other saved or custom color (older versions offered more) gets the same structure from its hue (`AppPalettes.fromSeed`); the old default id opens Sunset.
+- Text colors are nudged to WCAG AA on the surfaces they sit on; `test/presentation/theme_contrast_test.dart` checks every accent in light and dark and pins the Figma values. The brand fill itself is used exactly as designed (white bold labels on `#FF6B35` measure 2.84:1); the test records that value so changing it is deliberate.
+- `presentation/theme/app_theme.dart`: `Space`, `Radii` and `Motion` (Figma dimensions and motion notes: 200 ms fades, 450 ms count-up, 600 ms bar ease, 6 s Undo), and `AppTheme`, which maps the tokens onto the Material `ColorScheme` and component themes (pill buttons, flat bordered cards, 28px sheets with a grab handle, 24px dialogs, dark toasts). Typeface: Plus Jakarta Sans, bundled in `assets/fonts` (OFL).
+- Components (`presentation/widgets/common.dart`, `status_badge.dart`): `AppCard`, `HeroCard`, `PillTabs`, `TonalPillButton`, `IconBubble`, `StatusBadge`, `EmptyState`, `SectionHeader`, `BudgetProgressBar`, `MonthSwitcher`, `confirm()` (tonal or red action), `showSnack` / `showSavedSnack` (toast with green check and accent action).
+- Navigation: a flat five-tab bar (Home, Activity, Budget, Wallets, Insights; Business is added at the end in Business Mode) with a tonal pill behind the selected icon. "+" is a floating button on Home and Activity. Insights only moves the shared selected month while it is the visible tab (`AnalyticsScreen.syncMonth`), so Budget can still browse earlier months.
+- Screens read colors from the scheme or `context.tokens`; the only literal colors left are user data (card and category colors).
 
 ## Motion (`presentation/widgets/motion/`)
 
@@ -204,4 +206,4 @@ Migration v7 only adds columns and tables (no rebuilds), so existing rows are un
 - Budget: `monthSummaryProvider` lays transactions still being saved over the database rows, so "Left to spend" changes the moment one is added, edited or deleted; `spentByAccount` feeds the "Paid with" line on Home.
 - "Clear history" (`BackupService.clearHistory`) deletes every transaction without moving balances; capital history and "added to budget" orders are kept.
 - Updates: `GitHubReleaseFeed` + `ReleaseInfo.parseGitHub` + `AppVersion` (SemVer, leading "v" ignored). `UpdateService.checkNow` never throws and returns up to date / available / error. "What's new" compares the installed version name with `whats_new_seen_version`, saved before the sheet opens.
-- Glass theme: `presentation/theme/glass.dart` (`Glass` constants, `GlassBackground`, `GlassSurface`, `GlassBar`, `GlassPageTransitionsBuilder`, which gives every page route the gradient background so Scaffolds are transparent). `AppCard` is a `GlassSurface`. Tabs switch with `FadeIndexedStack` (fade + slight slide, 300 ms, state kept).
+- Glass theme (replaced by the Pitaka design system, see above): `glass.dart` and the gradient page background were removed. Tabs still switch with `FadeIndexedStack` (fade + slight slide, 300 ms, state kept).

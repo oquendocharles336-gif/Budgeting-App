@@ -10,10 +10,12 @@ import '../../domain/services/update_service.dart';
 import '../providers/app_state_providers.dart';
 import '../providers/core_providers.dart';
 import '../providers/data_providers.dart';
-import '../theme/glass.dart';
+import '../theme/app_palette.dart';
+import '../theme/app_theme.dart';
 import '../widgets/motion/animated_icons.dart';
 import '../widgets/motion/cascade.dart';
 import '../widgets/update_sheets.dart';
+import 'analytics/analytics_screen.dart';
 import 'budget/budget_screen.dart';
 import 'business/business_shell.dart';
 import 'business/inventory_screen.dart';
@@ -23,16 +25,18 @@ import 'dashboard/dashboard_screen.dart';
 import 'transactions/transaction_form_screen.dart';
 import 'transactions/transactions_screen.dart';
 
-/// The tabs of the home screen.
-enum HomeTab { home, activity, budget, wallets, business }
+/// The tabs of the home screen (Figma bottom bar: Home, Activity, Budget,
+/// Wallets, Insights).
+enum HomeTab { home, activity, budget, wallets, insights, business }
 
 /// Icon and label of each tab in the bottom bar.
 const _tabInfo = <HomeTab, ({IconData icon, String label, String semantics})>{
-  HomeTab.home: (icon: Icons.home_rounded, label: 'Home', semantics: 'Home'),
-  HomeTab.activity: (icon: Icons.receipt_long_rounded, label: 'Activity', semantics: 'Activity'),
-  HomeTab.budget: (icon: Icons.pie_chart_rounded, label: 'Budget', semantics: 'Budget'),
-  HomeTab.wallets: (icon: Icons.account_balance_wallet_rounded, label: 'Wallets', semantics: 'Wallets'),
-  HomeTab.business: (icon: Icons.storefront_rounded, label: 'Business', semantics: 'Business'),
+  HomeTab.home: (icon: Icons.home_outlined, label: 'Home', semantics: 'Home'),
+  HomeTab.activity: (icon: Icons.format_list_bulleted_rounded, label: 'Activity', semantics: 'Activity'),
+  HomeTab.budget: (icon: Icons.pie_chart_outline_rounded, label: 'Budget', semantics: 'Budget'),
+  HomeTab.wallets: (icon: Icons.account_balance_wallet_outlined, label: 'Wallets', semantics: 'Wallets'),
+  HomeTab.insights: (icon: Icons.show_chart_rounded, label: 'Insights', semantics: 'Insights'),
+  HomeTab.business: (icon: Icons.storefront_outlined, label: 'Business', semantics: 'Business'),
 };
 
 /// The tabs in bar order. The nav items, the pages and their indexes are
@@ -43,20 +47,23 @@ List<HomeTab> homeTabs({required bool business}) => [
       HomeTab.activity,
       HomeTab.budget,
       HomeTab.wallets,
+      HomeTab.insights,
       if (business) HomeTab.business,
     ];
 
-/// Bottom navigation with a centered "+" button for quick add. Tabs switch
-/// by tapping the bar (animated slide) or by swiping the page sideways.
+/// Tabs that show the "+" (add transaction) button.
+const _addTabs = {HomeTab.home, HomeTab.activity};
+
+/// Flat bottom navigation (Figma): five tabs with a tonal pill behind the
+/// selected icon, and a floating "+" for quick add on Home and Activity.
+/// Tabs switch by tapping the bar (animated slide) or by swiping the page
+/// sideways.
 ///
 /// Back button: screens pushed on top (add transaction, settings, ...)
 /// close first, as usual. On a tab, back returns to the previously visited
 /// tab, then to Home; on Home it asks before leaving the app.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
-
-  /// How many tabs sit left of the "+" button.
-  static const leftCount = 2;
 
   /// Tab switch animation (taps and Back).
   static const switchDuration = Duration(milliseconds: 280);
@@ -312,11 +319,18 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onSeeAllTransactions: () => _go(HomeTab.activity),
                   onOpenBudget: () => _go(HomeTab.budget),
                   onOpenWallets: () => _go(HomeTab.wallets),
+                  onOpenInsights: () => _go(HomeTab.insights),
                   onOpenBusiness: _openBusiness,
                 ),
               HomeTab.activity => const TransactionsScreen(),
               HomeTab.budget => const BudgetScreen(),
               HomeTab.wallets => const CardsScreen(asTab: true),
+              // Insights shares the selected month with Budget; it only
+              // adjusts that month while it is the tab on screen.
+              HomeTab.insights => ValueListenableBuilder<HomeTab>(
+                  valueListenable: _current,
+                  builder: (context, current, _) => AnalyticsScreen(syncMonth: current == HomeTab.insights),
+                ),
               HomeTab.business => const BusinessShell(asTab: true),
             },
           ),
@@ -391,44 +405,70 @@ class _HomeShellState extends ConsumerState<HomeShell> {
             return i < 0 ? null : i;
           },
         ),
-        floatingActionButton: FloatingActionButton(
-          tooltip: 'Add transaction',
-          // Round so it sits in the CircularNotchedRectangle notch.
-          shape: const CircleBorder(),
-          onPressed: _adding ? null : _openAdd,
-          child: AnimatedPlusIcon(open: _adding),
+        floatingActionButton: ValueListenableBuilder<HomeTab>(
+          valueListenable: _current,
+          builder: (context, current, _) {
+            final show = _addTabs.contains(current);
+            return ExcludeSemantics(
+              excluding: !show,
+              child: AnimatedScale(
+                scale: show ? 1 : 0,
+                duration: Cascade.reduced(context) ? Duration.zero : Motion.fade,
+                curve: Motion.curve,
+                child: FloatingActionButton(
+                  tooltip: 'Add transaction',
+                  shape: const CircleBorder(),
+                  onPressed: !show || _adding ? null : _openAdd,
+                  child: AnimatedPlusIcon(open: _adding),
+                ),
+              ),
+            );
+          },
         ),
-        floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-        bottomNavigationBar: BottomAppBar(
-          shape: const CircularNotchedRectangle(),
-          notchMargin: 8,
-          height: 68,
-          padding: EdgeInsets.zero,
-          // Clips the frosted bar to the notched shape.
-          clipBehavior: Clip.antiAlias,
-          child: GlassBar(
-            child: ValueListenableBuilder<HomeTab>(
-              valueListenable: _current,
-              builder: (context, current, _) {
-                Widget item(HomeTab t) => _NavItem(
-                      icon: _tabInfo[t]!.icon,
-                      label: _tabInfo[t]!.label,
-                      semanticsLabel: _tabInfo[t]!.semantics,
-                      selected: t == current,
-                      onTap: () => _go(t),
-                    );
-                final left = tabs.take(HomeShell.leftCount).toList();
-                final right = tabs.skip(HomeShell.leftCount).toList();
-                // Two equal halves keep the gap centred under the "+",
-                // whatever the number of tabs on each side.
-                return Row(
-                  children: [
-                    Expanded(child: Row(children: [for (final t in left) item(t)])),
-                    const SizedBox(width: 72),
-                    Expanded(child: Row(children: [for (final t in right) item(t)])),
-                  ],
-                );
-              },
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        bottomNavigationBar: _BottomBar(
+          tabs: tabs,
+          current: _current,
+          onTap: _go,
+        ),
+      ),
+    );
+  }
+}
+
+/// Figma bottom bar: white (navy) surface with a top border; each item is
+/// an icon in a 56×32 pill (tonal accent when selected) over its label.
+class _BottomBar extends StatelessWidget {
+  const _BottomBar({required this.tabs, required this.current, required this.onTap});
+  final List<HomeTab> tabs;
+  final ValueListenable<HomeTab> current;
+  final ValueChanged<HomeTab> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = context.tokens;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: t.second,
+        border: Border(top: BorderSide(color: t.outline)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 72,
+          child: ValueListenableBuilder<HomeTab>(
+            valueListenable: current,
+            builder: (context, selected, _) => Row(
+              children: [
+                for (final tab in tabs)
+                  _NavItem(
+                    icon: _tabInfo[tab]!.icon,
+                    label: _tabInfo[tab]!.label,
+                    semanticsLabel: _tabInfo[tab]!.semantics,
+                    selected: tab == selected,
+                    onTap: () => onTap(tab),
+                  ),
+              ],
             ),
           ),
         ),
@@ -483,8 +523,8 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = selected ? scheme.primary : scheme.onSurfaceVariant;
+    final t = context.tokens;
+    final reduced = Cascade.reduced(context);
     return Expanded(
       child: Semantics(
         selected: selected,
@@ -500,22 +540,27 @@ class _NavItem extends StatelessWidget {
               FittedBox(
                 fit: BoxFit.scaleDown,
                 child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                  duration: reduced ? Duration.zero : Motion.fade,
+                  width: 56,
+                  height: 32,
                   decoration: BoxDecoration(
-                    color: selected ? scheme.primaryContainer : Colors.transparent,
-                    borderRadius: BorderRadius.circular(14),
+                    color: selected ? t.accentContainer : t.accentContainer.withValues(alpha: 0),
+                    borderRadius: BorderRadius.circular(Radii.chip),
                   ),
-                  child: Icon(icon, color: selected ? scheme.onPrimaryContainer : color),
+                  child: Icon(icon, size: 24, color: selected ? t.onAccentContainer : t.onSecondMuted),
                 ),
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: Space.xxs),
               FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
                   label,
                   maxLines: 1,
-                  style: TextStyle(fontSize: 12, color: color, fontWeight: selected ? FontWeight.w700 : FontWeight.w500),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: selected ? t.onSecond : t.onSecondMuted,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
                 ),
               ),
             ],

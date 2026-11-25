@@ -8,7 +8,7 @@ import 'core_providers.dart';
 
 /// Bump this when the privacy policy or terms change in a way users must
 /// accept again.
-const currentTermsVersion = '6'; // 2: password + encryption; 3: business side, photos; 4: encrypted photos in backups; 5: optional update check (internet); 6: in-app updates, Business Mode, cards/e-wallets
+const currentTermsVersion = '7'; // 2: password + encryption; 3: business side, photos; 4: encrypted photos in backups; 5: optional update check (internet); 6: in-app updates, Business Mode, cards/e-wallets; 7: loans in the budget, appearance settings, open-source components
 
 // -----------------------------------------------------------------------------
 // Theme

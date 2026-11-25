@@ -10,6 +10,8 @@ import '../../../data/models/payment_card.dart';
 import '../../../data/models/transaction_entry.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
+import '../../theme/app_palette.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/activity_row.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/animated_icons.dart';
@@ -85,7 +87,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Activity'),
+        title: Text('Activity', style: Theme.of(context).textTheme.headlineMedium),
         actions: [
           IconButton(
             tooltip: _searchOpen ? 'Close search' : 'Search',
@@ -332,15 +334,24 @@ class _GroupedListState extends ConsumerState<_GroupedList> {
           return CascadeIn(
             index: i,
             child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
             child: Row(
               children: [
-                Expanded(child: Text(_dayLabel(item), style: Theme.of(context).textTheme.labelLarge)),
+                Expanded(
+                  child: Semantics(
+                    header: true,
+                    child: Text(
+                      _dayLabel(item),
+                      style: TextStyle(color: context.tokens.onMainMuted, fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+                // "−₱250.00 spent" (the day's spending; loans that came
+                // back the same month are left out).
                 if ((dayTotals[Dates.dayKey(item)] ?? 0) > 0)
-                  AmountText(
-                    dayTotals[Dates.dayKey(item)]!,
-                    kind: TransactionKind.expense,
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
+                  Text(
+                    '\u2212${formatMoney(ref, dayTotals[Dates.dayKey(item)]!)} spent',
+                    style: TextStyle(color: context.tokens.onMainMuted, fontSize: 13.5, fontWeight: FontWeight.w600),
                   ),
               ],
             ),
@@ -352,7 +363,7 @@ class _GroupedListState extends ConsumerState<_GroupedList> {
           key: ValueKey('row-${t.id}'),
           index: i,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.fromLTRB(Space.screen, 0, Space.screen, Space.md),
             child: ActivityRow(
               tx: t,
               selection: _selection,

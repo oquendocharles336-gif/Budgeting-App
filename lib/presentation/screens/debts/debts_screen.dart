@@ -48,41 +48,25 @@ class DebtsScreen extends ConsumerWidget {
               icon: Icons.handshake_rounded,
               title: 'No debts',
               message: 'Track money you owe: loans, installments, or that ₱500 from a friend.',
-              action: FilledButton.tonal(
-                style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+              action: FilledButton(
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
                 onPressed: openAdd,
-                child: const Text('Add debt'),
+                child: const Text('+ Add debt', semanticsLabel: 'Add debt'),
               ),
             );
           }
           final open = list.where((d) => !d.isSettled).toList();
           final paid = list.where((d) => d.isSettled).toList();
           final total = open.fold<int>(0, (a, d) => a + d.remaining);
-          final scheme = Theme.of(context).colorScheme;
           return ListView(
             padding: EdgeInsets.fromLTRB(16, 8, 16, 100 + bottomInset),
             children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: AppTheme.heroGradient(scheme),
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Total outstanding', style: TextStyle(color: context.tokens.onSecondMuted)),
-                    const SizedBox(height: 4),
-                    AmountText(total, style: TextStyle(color: context.tokens.accentOnSecond, fontSize: 32, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${open.length} open · ${paid.length} paid',
-                      style: TextStyle(color: context.tokens.onSecondMuted),
-                    ),
-                  ],
-                ),
+              HeroCard(
+                label: 'Total outstanding',
+                value: AmountText(total),
+                caption: '${open.length} open · ${paid.length} paid',
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
               for (final (i, d) in open.indexed) CascadeIn(index: i, child: _DebtCard(status: d)),
               if (paid.isNotEmpty) ...[
                 const SectionHeader('Paid off'),

@@ -6,7 +6,7 @@
 class LegalText {
   LegalText._();
 
-  static const effectiveDate = 'November 22, 2026';
+  static const effectiveDate = 'November 25, 2026';
 
   static const privacySummary = [
     'Everything you enter stays on this phone, in a local encrypted SQLite database. There is no online account, no sign-up and no cloud server.',
@@ -26,7 +26,7 @@ Effective date: $effectiveDate
 Pitaka is an offline-first budgeting app. All of your data is stored only on this device, in a local SQLite database that is encrypted. There is no online account and no sign-up, no analytics, no ads, no tracking, and no server that receives your data. We do not collect any data, so we have nothing to sell or share. Its only internet use is the optional update check and update download described below. The PIN, password or phone lock you choose only unlocks the app and its encrypted data on this phone; it is not an online login. Your data is never uploaded or sent to us or to anyone else.
 
 2. What the app stores
-On this device only: your Cash amount; the cards and e-wallets you add (a nickname, the last 4 digits or the e-wallet mobile number, type, color and the balance you enter); your transactions, categories, keyword rules, debts, loans and payments, budgets, SMS patterns, and app settings (such as theme, currency and whether Business Mode is on). If you use the business side, also: business capital entries, inventory items, products, and orders (including the buyer names you type). The app never asks for or stores full card numbers, CVV codes, bank passwords or PINs to your bank.
+On this device only: your Cash amount; the cards and e-wallets you add (a nickname, the last 4 digits or the e-wallet mobile number, type, color and the balance you enter); your transactions, categories, keyword rules, debts, loans and payments, budgets, SMS patterns, and app settings (such as light or dark mode, accent color, currency and whether Business Mode is on). If you use the business side, also: business capital entries, inventory items, products, and orders (including the buyer names you type). The app never asks for or stores full card numbers, CVV codes, bank passwords or PINs to your bank.
 
 2a. Cards, e-wallets and your available balance
 The balance of a card or e-wallet is a number you type and keep up to date; transactions you record add to it or take from it. The app does not connect to your bank, card issuer or e-wallet (for example GCash or Maya) and cannot see your real balance or move money. Available balance is your Cash plus your debit, prepaid and e-wallet balances, worked out on this phone. Credit cards are shown separately as available credit.
@@ -51,6 +51,9 @@ The QR images shown for Maya, MariBank and BDO are pictures you add to the app. 
 
 4c. Update check and download (optional)
 Once a day, if "Check for updates" is on (Settings > App updates), and whenever you tap "Check now", the app reads the public "latest release" information of the app's GitHub repository to see whether a newer version exists and what changed. If you choose to update, the app downloads the new installer file (APK) from that release, checks that it is complete and unchanged (SHA-256), and hands it to Android's own installer, which asks you to confirm. These requests contain no account, device ID, budget data or other personal information; like any web request, GitHub can see your phone's IP address and the time of the request. You can turn the automatic check off at any time; the app works fully without it.
+
+4f. Fonts and open-source components
+The app's typeface (Plus Jakarta Sans) and its other open-source components are built into the app. Nothing is downloaded to show them, and no request is made to a font or content service. Their licenses are listed in Settings > Legal > Open-source licenses.
 
 5. Password and encryption
 Your data is stored in an encrypted database (SQLCipher, AES-256). The key that unlocks it is protected by your password and by a recovery key that is shown to you once. Neither your password nor your recovery key is stored, and nothing is sent anywhere, so we cannot see your data or reset your password. If you lose both your password and your recovery key, your data cannot be recovered by anyone.
@@ -92,6 +95,9 @@ The app shows totals, charts and budget alerts based on what you enter or import
 4. Accuracy of imports
 CSV and SMS imports depend on the file format and message wording of your bank. Parsed amounts, dates or merchants may be wrong. You agree to review imported items before saving them.
 
+4a. Loans and your budget
+Loans are transactions in the "Loan" category. A loan you gave counts as spending in the month you lent it. If you mark it paid back in that same month, it is taken out of that month's spending; if it is paid back in a later month, it stays counted in the month you lent it. Marking a loan unpaid again reverses this. The amounts, dates and payment accounts are the ones you enter, and the app does not contact the person you lent to or check that you were paid.
+
 5. No warranty
 The app is provided "as is", without warranties of any kind. To the extent allowed by law, the developer is not liable for any loss arising from use of the app, including missed payments or inaccurate figures.
 
@@ -101,7 +107,10 @@ Business Mode only shows or hides the Business buttons and tab; it never deletes
 6. Third parties
 The app does not connect to your bank or to any payment service. Any future feature that does will have its own terms and an updated privacy policy that you must accept first.
 
-7. Changes
+7. Open-source components
+The app includes open-source software and the Plus Jakarta Sans typeface (SIL Open Font License 1.1). These are used under their own licenses, listed in Settings > Legal > Open-source licenses; nothing in these terms limits your rights under those licenses.
+
+8. Changes
 These terms may be updated. The app will ask you to accept the new version before you continue.
 ''';
 }

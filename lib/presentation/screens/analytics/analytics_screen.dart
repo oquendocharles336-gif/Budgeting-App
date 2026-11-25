@@ -18,7 +18,12 @@ import '../../widgets/common.dart';
 import '../../widgets/motion/skeleton.dart';
 
 class AnalyticsScreen extends ConsumerWidget {
-  const AnalyticsScreen({super.key});
+  const AnalyticsScreen({super.key, this.syncMonth = true});
+
+  /// Moves the shared selected month into Insights' range. Off while the
+  /// Insights tab is kept alive off screen, so Budget can still browse
+  /// months before the first one with chart data.
+  final bool syncMonth;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -30,7 +35,7 @@ class AnalyticsScreen extends ConsumerWidget {
     final data = ref.watch(analyticsProvider(Dates.monthKey(shown)));
     final cats = ref.watch(categoryMapProvider).asDataOrNull ?? const <int, Category>{};
     final notifier = ref.read(selectedMonthProvider.notifier);
-    if (loadedRange != null && shown != Dates.monthStart(month)) {
+    if (syncMonth && loadedRange != null && shown != Dates.monthStart(month)) {
       // Budget can browse further back; Insights stops at the first month
       // with chart data.
       WidgetsBinding.instance.addPostFrameCallback((_) => notifier.set(shown));
@@ -65,7 +70,7 @@ class AnalyticsScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Insights')),
+      appBar: AppBar(title: Text('Insights', style: Theme.of(context).textTheme.headlineMedium)),
       // Swipe left / right to change month, within the same limits.
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,

@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
-import '../../theme/glass.dart';
+import '../../theme/app_palette.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/motion/cascade.dart';
 import '../../widgets/motion/fade_indexed_stack.dart';
 import '../../widgets/photo_migration_line.dart';
@@ -96,7 +97,9 @@ class _BusinessShellState extends State<BusinessShell> {
       ),
       bottomNavigationBar: widget.asTab
           ? null
-          : GlassBar(
+          : DecoratedBox(
+              // Same flat bar as the home screen: surface + top border.
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: context.tokens.outline))),
               child: NavigationBar(
                 selectedIndex: _index,
                 onDestinationSelected: _select,
@@ -119,7 +122,7 @@ class _SectionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final t = context.tokens;
     return SizedBox(
       height: 56,
       child: Row(
@@ -136,7 +139,16 @@ class _SectionRow extends StatelessWidget {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(sections[i].icon, size: 22, color: i == selected ? scheme.primary : scheme.onSurfaceVariant),
+                      AnimatedContainer(
+                        duration: Motion.fade,
+                        width: 48,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: i == selected ? t.accentContainer : t.accentContainer.withValues(alpha: 0),
+                          borderRadius: BorderRadius.circular(Radii.chip),
+                        ),
+                        child: Icon(sections[i].icon, size: 20, color: i == selected ? t.onAccentContainer : t.onMainMuted),
+                      ),
                       const SizedBox(height: 2),
                       FittedBox(
                         fit: BoxFit.scaleDown,
@@ -145,7 +157,7 @@ class _SectionRow extends StatelessWidget {
                           maxLines: 1,
                           style: TextStyle(
                             fontSize: 12,
-                            color: i == selected ? scheme.primary : scheme.onSurfaceVariant,
+                            color: i == selected ? t.onMain : t.onMainMuted,
                             fontWeight: i == selected ? FontWeight.w700 : FontWeight.w500,
                           ),
                         ),
