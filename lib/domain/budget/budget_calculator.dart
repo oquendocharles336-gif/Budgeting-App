@@ -39,13 +39,25 @@ class BudgetCalculator {
     return BudgetLevel.ok;
   }
 
-  /// Total expenses, optionally for one category. Income is ignored.
+  /// Total expenses, optionally for one category. Income is ignored, and so
+  /// are loans you gave that were paid back in the same month
+  /// ([TransactionEntry.isLoanCancelledByRepayment]).
   static int spent(Iterable<TransactionEntry> txs, {int? categoryId}) {
     var total = 0;
     for (final t in txs) {
-      if (!t.isExpense) continue;
+      if (!t.isExpense || t.isLoanCancelledByRepayment) continue;
       if (categoryId != null && t.categoryId != categoryId) continue;
       total += t.amount;
+    }
+    return total;
+  }
+
+  /// Loans you gave in these transactions that came back in the same month,
+  /// so they were taken out of [spent] ("Loans returned this month").
+  static int loansReturned(Iterable<TransactionEntry> txs) {
+    var total = 0;
+    for (final t in txs) {
+      if (t.isLoanCancelledByRepayment) total += t.amount;
     }
     return total;
   }

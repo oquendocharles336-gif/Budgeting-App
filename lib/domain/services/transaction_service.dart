@@ -1,3 +1,4 @@
+import '../../core/dates.dart';
 import '../../data/models/raw_transaction.dart';
 import '../../data/models/transaction_entry.dart';
 import '../../data/repositories/account_ledger.dart';
@@ -200,6 +201,11 @@ class TransactionService {
     if (method == LoanPayMethod.ewallet && accountId == null) throw ArgumentError('Pick an e-wallet');
     final now = _clock();
     final date = paidAt ?? now;
+    // "Paid on" can be any day from the day it was lent up to today.
+    if (date.isAfter(now)) throw ArgumentError('Paid-on date is in the future');
+    if (Dates.startOfDay(date).isBefore(Dates.startOfDay(loan.date))) {
+      throw ArgumentError('Paid-on date is before the loan date');
+    }
     final repaidToYou = !loan.isIncome;
     final payment = TransactionEntry(
       amount: loan.amount,
@@ -220,8 +226,13 @@ class TransactionService {
   }
 
   /// Marks a loan unpaid: its payment is removed and the account goes back
-  /// to what it was before.
-  Future<void> unpayLoan(int loanId) => _repo.markLoanUnpaid(loanId);
+  /// to what it was before. A loan you gave that was paid back in the same
+  /// month counts as spending again, so that month's alerts are re-checked
+  /// when [loan] is given.
+  Future<void> unpayLoan(int loanId, {TransactionEntry? loan}) async {
+    await _repo.markLoanUnpaid(loanId);
+    if (loan != null && loan.isLoanCancelledByRepayment) await _alerts.checkMonth(loan.date);
+  }
 
   /// The payment expense of a paid loan (for its history line).
   Future<TransactionEntry?> loanPaymentOf(int loanId) => _repo.loanPaymentOf(loanId);

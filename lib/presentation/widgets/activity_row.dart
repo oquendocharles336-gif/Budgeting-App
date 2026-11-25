@@ -370,9 +370,17 @@ class _Details extends StatelessWidget {
         Icons.category_rounded,
         (tx.customCategory?.trim().isNotEmpty ?? false) ? tx.customCategory!.trim() : (row.category?.name ?? 'Uncategorized'),
         ),
-      if (tx.isExpense) (Icons.pie_chart_rounded, 'Counted in ${DateFormat('MMMM').format(tx.date)}\'s budget'),
-      if (tx.isLoanPaid)
+      if (tx.isLoanCancelledByRepayment)
+        (
+        Icons.check_circle_rounded,
+        'Not counted in ${DateFormat('MMMM').format(tx.date)}\'s budget — repaid ${DateFormat('MMM d').format(tx.loanPaidAt!)}',
+        )
+      else if (tx.isExpense)
+        (Icons.pie_chart_rounded, 'Counted in ${DateFormat('MMMM').format(tx.date)}\'s budget'),
+      if (tx.isLoanPaid && !tx.isLoanCancelledByRepayment)
         (Icons.check_circle_rounded, 'Loan paid ${DateFormat('MMM d').format(tx.loanPaidAt!)}${tx.loanPaidMethod == null ? '' : ' · ${tx.loanPaidMethod!.label}'}'),
+      if (tx.isLoanPayment)
+        (Icons.link_rounded, tx.isIncome ? 'Repayment of a loan you gave' : 'Payment of a loan you received'),
       if (tx.source != TransactionSourceType.manual) (Icons.file_download_rounded, 'Imported from ${tx.source.label}'),
     ];
     return Padding(
@@ -389,14 +397,21 @@ class _Details extends StatelessWidget {
           for (final (icon, text) in lines)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ExcludeSemantics(child: Icon(icon, size: 16, color: t.onSecondMuted)),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(text, style: muted)),
-                ],
-              ),
+              child: Builder(builder: (context) {
+                // A loan that came back the same month is called out in green.
+                final good = tx.isLoanCancelledByRepayment && text.startsWith('Not counted');
+                final color = good ? t.success : t.onSecondMuted;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ExcludeSemantics(child: Icon(icon, size: 16, color: color)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(text, style: good ? muted.copyWith(color: color, fontWeight: FontWeight.w600) : muted),
+                    ),
+                  ],
+                );
+              }),
             ),
           const SizedBox(height: 4),
           Text('Swipe right to edit or delete', style: muted.copyWith(fontSize: 12, fontStyle: FontStyle.italic)),

@@ -12,6 +12,8 @@ import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../providers/optimistic_providers.dart';
+import '../../theme/app_palette.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/available_balance_card.dart';
 import '../../widgets/common.dart';
 import '../../widgets/motion/cascade.dart';
@@ -45,6 +47,10 @@ class BudgetScreen extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _OverallCard(summary: s, onEdit: () => _editBudget(context, ref, key, null, s.overall.budget)),
+                if (s.loansReturned > 0) ...[
+                  const SizedBox(height: 12),
+                  _LoansReturnedRow(amount: s.loansReturned),
+                ],
                 const SizedBox(height: 12),
                 // Income goes into an account, so it raises what's available to spend.
                 AvailableBalanceCard(
@@ -265,9 +271,15 @@ class _OverallCard extends ConsumerWidget {
               Icon(Icons.edit_rounded, size: 18, color: scheme.onSurfaceVariant),
             ],
           ),
-          AmountText(
-            p.remaining.abs(),
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: p.remaining < 0 ? color : null),
+          // Counts up or down to the new amount (e.g. after a loan comes back).
+          TweenAnimationBuilder<int>(
+            tween: IntTween(begin: p.remaining.abs(), end: p.remaining.abs()),
+            duration: Cascade.reduced(context) ? Duration.zero : const Duration(milliseconds: 450),
+            curve: Curves.easeOutCubic,
+            builder: (context, value, _) => AmountText(
+              value,
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: p.remaining < 0 ? color : null),
+            ),
           ),
           const SizedBox(height: 12),
           BudgetProgressBar(progress: p),
@@ -363,6 +375,92 @@ class _CategoryRow extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Loans returned this month  -P1,000.00  (i)": loans you gave and got
+/// back this month, which aren't counted as spending. Tap for why.
+class _LoansReturnedRow extends ConsumerWidget {
+  const _LoansReturnedRow({required this.amount});
+  final int amount;
+
+  void _explain(BuildContext context) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (ctx) {
+          final t = ctx.tokens;
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Loans returned', style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Money you lent and got back in the same month isn\'t counted as spending.',
+                    style: TextStyle(color: t.onSecond, fontSize: 15),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'If it comes back in a later month, it stays counted in the month you lent it. '
+                    'Marking a loan unpaid again brings the deduction back.',
+                    style: TextStyle(color: t.onSecond, fontSize: 15),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.tonal(
+                    style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Got it'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = context.tokens;
+    final ok = StatusColors.ok(context);
+    final background = Color.alphaBlend(t.success.withValues(alpha: 0.14), t.second);
+    return Semantics(
+      button: true,
+      label: 'Loans returned this month, minus ${formatMoney(ref, amount)}. Tap to learn more.',
+      excludeSemantics: true,
+      child: Material(
+        color: background,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: t.success.withValues(alpha: 0.35)),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _explain(context),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 56),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.handshake_rounded, color: ok, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text('Loans returned this month', style: TextStyle(color: t.onSecond, fontWeight: FontWeight.w600)),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('-${formatMoney(ref, amount)}', style: TextStyle(color: ok, fontWeight: FontWeight.w800)),
+                  const SizedBox(width: 6),
+                  Icon(Icons.info_outline_rounded, size: 18, color: t.onSecondMuted),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

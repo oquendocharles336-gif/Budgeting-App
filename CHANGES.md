@@ -1,3 +1,32 @@
+# Loans & Budget redesign
+
+`flutter analyze` and `flutter test` were **not** run here (no Flutter SDK). Run first:
+
+```bash
+flutter analyze && flutter test
+```
+
+- **Budget rule:** a loan you gave that is paid back in the same month you lent it no longer counts as spending
+  (`TransactionEntry.isLoanCancelledByRepayment`). Paid back in a later month, it stays counted in the month it was
+  lent. Applied in `BudgetCalculator.spent`, Insights (`SpendingAnalytics`), spending by account, and Activity day
+  totals, so every screen agrees. Marking the loan unpaid brings it back and re-checks budget alerts.
+- **Loans:** hero shows "₱X deducted from <month>'s budget"; Unpaid / Paid tabs; rows show "Lent <date> · <account>",
+  an Unpaid or "Paid <date> · <account>" chip, "Not in budget" when it cancelled out, and a hint ("Counts in Nov budget
+  · Repaid this month cancels it" / "Already counted in Oct" / "Counted in Oct"). Paid amounts are muted, not struck
+  through. "Paid" shows a spinner while saving. New empty state with "Add a loan" (opens the form with Loan picked) and
+  a skeleton in the screen's shape.
+- **Mark as paid sheet:** Cash / e-wallet radio cards with balances, a "Paid on" date (lent date to today), and a live
+  preview of the balance and the budget. Confirm = light haptic. Snack: "Marked paid with Cash · November spent back
+  to ₱…" with Undo; failures show a red snack with "Try again".
+- **Mark as unpaid:** the dialog says what happens to the account and the budget.
+- **Budget:** "Loans returned this month −₱X" row (tap for an explainer sheet); remaining counts to its new value
+  (450 ms) and the bar's length and color ease (600 ms). Instant with reduce motion.
+- **Activity:** a cancelled loan says "Not counted in <month>'s budget — repaid <date>" in green; a repayment says
+  which loan it belongs to.
+- `TransactionFormScreen` takes `initialCategoryId`. `TransactionService.payLoan` rejects a paid-on date before the
+  loan or in the future; `unpayLoan` takes an optional `loan`.
+- New tests in `test/domain/budget_calculator_test.dart`. No DB migration.
+
 # Material import migration (Flutter 3.50)
 
 `flutter analyze` and `flutter test` were **not** run here (no Flutter SDK). Run first:

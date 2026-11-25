@@ -264,6 +264,7 @@ class MonthSummary {
     required this.overall,
     required this.categoryRows,
     required this.income,
+    this.loansReturned = 0,
     this.spentByAccount = const {},
     this.prep = PrepReport.empty,
   });
@@ -282,6 +283,10 @@ class MonthSummary {
   /// Categories with a budget or with spending, budgets first.
   final List<CategoryBudgetRow> categoryRows;
   final int income;
+
+  /// Loans you gave this month that came back this month, so they aren't
+  /// counted as spending ("Loans returned this month").
+  final int loansReturned;
 }
 
 /// What a month's summary is computed from (database side).
@@ -365,6 +370,7 @@ final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, m
     overall: BudgetProgress(budget: overallBudget, spent: BudgetCalculator.spent(txs)),
     categoryRows: rows,
     income: txs.where((t) => t.isIncome).fold<int>(0, (a, t) => a + t.amount),
+    loansReturned: BudgetCalculator.loansReturned(txs),
     spentByAccount: _spentByAccount(txs),
     prep: prepared.report,
   );
@@ -373,7 +379,7 @@ final monthSummaryProvider = FutureProvider.family<MonthSummary, String>((ref, m
 Map<int?, int> _spentByAccount(List<TransactionEntry> txs) {
   final totals = <int?, int>{};
   for (final t in txs) {
-    if (!t.isExpense) continue;
+    if (!t.isExpense || t.isLoanCancelledByRepayment) continue;
     totals[t.cardId] = (totals[t.cardId] ?? 0) + t.amount;
   }
   final sorted = totals.entries.toList()..sort((a, b) => b.value.compareTo(a.value));

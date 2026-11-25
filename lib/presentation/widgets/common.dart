@@ -195,19 +195,27 @@ class BudgetProgressBar extends StatelessWidget {
     // On a hero card the track is one step up from the card color.
     final color = budgetColor(context, progress.level);
     final track = onDark ? context.tokens.main.withValues(alpha: 0.35) : context.tokens.secondHigh;
+    final reduced = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     return Semantics(
       label: '${progress.percentUsed} percent of budget used',
       child: ClipRRect(
         borderRadius: BorderRadius.circular(height),
-        child: TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0, end: progress.ratio.clamp(0.0, 1.0).toDouble()),
-          duration: const Duration(milliseconds: 600),
+        // Length and color ease together (e.g. amber to green when a loan
+        // comes back and spending drops). Instant with reduce motion.
+        child: TweenAnimationBuilder<Color?>(
+          tween: ColorTween(begin: color, end: color),
+          duration: reduced ? Duration.zero : const Duration(milliseconds: 600),
           curve: Curves.easeOutCubic,
-          builder: (context, v, _) => LinearProgressIndicator(
-            value: v,
-            minHeight: height,
-            backgroundColor: track,
-            valueColor: AlwaysStoppedAnimation(color),
+          builder: (context, c, _) => TweenAnimationBuilder<double>(
+            tween: Tween(begin: reduced ? progress.ratio.clamp(0.0, 1.0).toDouble() : 0, end: progress.ratio.clamp(0.0, 1.0).toDouble()),
+            duration: reduced ? Duration.zero : const Duration(milliseconds: 600),
+            curve: Curves.easeOutCubic,
+            builder: (context, v, _) => LinearProgressIndicator(
+              value: v,
+              minHeight: height,
+              backgroundColor: track,
+              valueColor: AlwaysStoppedAnimation(c ?? color),
+            ),
           ),
         ),
       ),

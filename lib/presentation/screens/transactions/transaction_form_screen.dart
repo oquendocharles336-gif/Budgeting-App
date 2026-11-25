@@ -25,10 +25,14 @@ import '../debts/debt_form_screen.dart';
 
 /// Add a new transaction, or edit/delete an existing one.
 class TransactionFormScreen extends ConsumerStatefulWidget {
-  const TransactionFormScreen({super.key, this.existing, this.initialCardId, this.draft});
+  const TransactionFormScreen({super.key, this.existing, this.initialCardId, this.initialCategoryId, this.draft});
 
   final TransactionEntry? existing;
   final int? initialCardId;
+
+  /// New transactions only: the category to start with (e.g. "Loan" from
+  /// the Loans screen's "Add a loan").
+  final int? initialCategoryId;
 
   /// Values to start a new transaction with (e.g. "Try again" after a
   /// save failed). Ignored when editing.
@@ -84,10 +88,10 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
     _customCategory = TextEditingController(text: e?.customCategory ?? '');
     _kind = e?.kind ?? TransactionKind.expense;
     _date = e?.date ?? DateTime.now();
-    _categoryId = e?.categoryId;
+    _categoryId = e?.categoryId ?? widget.initialCategoryId;
     _cardId = e?.cardId ?? widget.initialCardId;
     _toCardId = e?.toCardId;
-    _categoryTouched = e != null;
+    _categoryTouched = e != null || widget.initialCategoryId != null;
     final existing = widget.existing;
     if (existing != null && existing.isTransfer && existing.id != null) {
       _existingFee = ref.read(transactionServiceProvider).feeOf(existing.id!);

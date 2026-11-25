@@ -140,6 +140,13 @@ class TransactionEntry {
   bool get isLoanPaid => loanPaidAt != null;
   bool get isLoanPayment => loanPaymentOfId != null;
 
+  /// A loan you gave (an expense in "Loan") that was paid back in the same
+  /// month you lent it. It cancels out: it isn't counted as spending in
+  /// that month's budget. Paid back in a later month, it stays counted in
+  /// the month it was lent.
+  bool get isLoanCancelledByRepayment =>
+      isExpense && loanPaidAt != null && loanPaidAt!.year == date.year && loanPaidAt!.month == date.month;
+
   /// Signed amount: negative for expenses, zero for transfers (net worth
   /// doesn't change when money moves between your own accounts).
   int get signedAmount => switch (kind) {

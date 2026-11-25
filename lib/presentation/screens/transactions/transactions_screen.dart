@@ -320,7 +320,7 @@ class _GroupedListState extends ConsumerState<_GroupedList> {
     }
     final dayTotals = <String, int>{};
     for (final t in txs) {
-      if (t.isExpense) dayTotals[Dates.dayKey(t.date)] = (dayTotals[Dates.dayKey(t.date)] ?? 0) + t.amount;
+      if (t.isExpense && !t.isLoanCancelledByRepayment) dayTotals[Dates.dayKey(t.date)] = (dayTotals[Dates.dayKey(t.date)] ?? 0) + t.amount;
     }
 
     return ListView.builder(

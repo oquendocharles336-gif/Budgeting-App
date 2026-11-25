@@ -143,4 +143,60 @@ void main() {
       expect(c.changeRatio, -0.25);
     });
   });
+
+  group('loans repaid in the same month', () {
+    TransactionEntry loan(int amount, {required DateTime lent, DateTime? paid, TransactionKind kind = TransactionKind.expense}) =>
+        TransactionEntry(
+          id: 9,
+          amount: amount,
+          kind: kind,
+          description: 'Ana — groceries',
+          categoryId: 7,
+          date: lent,
+          loanPaidAt: paid,
+          createdAt: lent,
+          updatedAt: lent,
+        );
+
+    final food = tx(185000, categoryId: 1);
+
+    test('a loan you gave and got back the same month is not spending', () {
+      final l = loan(100000, lent: DateTime(2026, 11, 3), paid: DateTime(2026, 11, 20));
+      expect(l.isLoanCancelledByRepayment, isTrue);
+      expect(BudgetCalculator.spent([food, l]), 185000);
+      expect(BudgetCalculator.spent([food, l], categoryId: 7), 0);
+      expect(BudgetCalculator.loansReturned([food, l]), 100000);
+    });
+
+    test('an unpaid loan you gave still counts', () {
+      final l = loan(100000, lent: DateTime(2026, 11, 3));
+      expect(l.isLoanCancelledByRepayment, isFalse);
+      expect(BudgetCalculator.spent([food, l]), 285000);
+      expect(BudgetCalculator.loansReturned([l]), 0);
+    });
+
+    test('paid back in a later month stays counted in the month it was lent', () {
+      final l = loan(50000, lent: DateTime(2026, 10, 28), paid: DateTime(2026, 11, 2));
+      expect(l.isLoanCancelledByRepayment, isFalse);
+      expect(BudgetCalculator.spent([l]), 50000);
+    });
+
+    test('same month number in another year is not the same month', () {
+      final l = loan(50000, lent: DateTime(2025, 11, 28), paid: DateTime(2026, 11, 2));
+      expect(l.isLoanCancelledByRepayment, isFalse);
+    });
+
+    test('a loan you received is never cancelled (its payment is the expense)', () {
+      final l = loan(100000, kind: TransactionKind.income, lent: DateTime(2026, 11, 3), paid: DateTime(2026, 11, 10));
+      expect(l.isLoanCancelledByRepayment, isFalse);
+      expect(BudgetCalculator.loansReturned([l]), 0);
+    });
+
+    test('Insights totals agree with the budget', () {
+      final l = loan(100000, lent: DateTime(2026, 11, 3), paid: DateTime(2026, 11, 20));
+      expect(SpendingAnalytics.total([food, l]), 185000);
+      expect(SpendingAnalytics.dailyTotals([food, l], DateTime(2026, 11))[2], 0);
+      expect(SpendingAnalytics.byCategory([food, l]).map((c) => c.categoryId), [1]);
+    });
+  });
 }

@@ -32,7 +32,7 @@ class SpendingAnalytics {
     final days = Dates.daysInMonth(month);
     final totals = List<int>.filled(days, 0);
     for (final t in txs) {
-      if (!t.isExpense) continue;
+      if (!t.isExpense || t.isLoanCancelledByRepayment) continue;
       if (t.date.year != month.year || t.date.month != month.month) continue;
       totals[t.date.day - 1] += t.amount;
     }
@@ -44,7 +44,7 @@ class SpendingAnalytics {
     final totals = <int?, int>{};
     final counts = <int?, int>{};
     for (final t in txs) {
-      if (!t.isExpense) continue;
+      if (!t.isExpense || t.isLoanCancelledByRepayment) continue;
       totals[t.categoryId] = (totals[t.categoryId] ?? 0) + t.amount;
       counts[t.categoryId] = (counts[t.categoryId] ?? 0) + 1;
     }
