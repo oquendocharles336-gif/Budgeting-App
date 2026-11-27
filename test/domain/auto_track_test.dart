@@ -2,6 +2,7 @@ import 'package:budgeting_app/core/wallet_apps.dart';
 import 'package:budgeting_app/data/db/default_data.dart';
 import 'package:budgeting_app/data/models/business.dart';
 import 'package:budgeting_app/data/models/payment_card.dart';
+import 'package:budgeting_app/data/models/sms_pattern.dart';
 import 'package:budgeting_app/data/models/transaction_entry.dart';
 import 'package:budgeting_app/data/sources/wallet_notifications.dart';
 import 'package:budgeting_app/domain/services/auto_track_service.dart';
@@ -57,6 +58,77 @@ void main() {
 
     test('OTP notifications are ignored', () {
       expect(parser.parse(note('Maya', 'Your OTP is 123456. Never share it.').toMessage()), isNull);
+    });
+  });
+
+  group('received money from notifications and SMS', () {
+    test('GCash "received PHP x of GCash from NAME" notification is income', () {
+      final r = parser.parse(note('GCash', 'You have received PHP 500.00 of GCash from JUAN DELA CRUZ. Ref. No. 1012345678901.',
+              pkg: 'com.globe.gcash.android')
+          .toMessage())!;
+      expect(r.kind, TransactionKind.income);
+      expect(r.amount, 50000);
+      expect(r.merchant, 'JUAN DELA CRUZ');
+      expect(r.reference, '1012345678901');
+    });
+
+    test('Maya "NAME sent you ₱x" notification is income', () {
+      final r = parser.parse(note('Money received', 'ANA SANTOS sent you ₱1,250.00.').toMessage())!;
+      expect(r.kind, TransactionKind.income);
+      expect(r.amount, 125000);
+      expect(r.merchant, 'ANA SANTOS');
+    });
+
+    test('a notification whose whole alert is the title still parses', () {
+      // The listener sends the title as the text when the text is empty.
+      final r = parser.parse(note('', 'You received ₱300.00').toMessage())!;
+      expect(r.kind, TransactionKind.income);
+      expect(r.amount, 30000);
+    });
+
+    test('bank credit SMS with the account number goes to that account', () {
+      final r = parser.parse(SmsMessage(
+        id: 's1',
+        address: 'BDO',
+        body: 'Your account ending 1111 has been credited with PHP 2,000.00 on 11/27/26.',
+        date: DateTime(2026, 11, 27, 9),
+      ))!;
+      expect(r.kind, TransactionKind.income);
+      expect(AutoTrackService.cardForSms([card(1), card(2, last4: '1111', app: null)], r)!.id, 2);
+    });
+
+    test('an e-wallet SMS without an account number goes to the account linked to the sender', () {
+      final r = parser.parse(SmsMessage(
+        id: 's2',
+        address: 'GCash',
+        body: 'You have received PHP 250.00 of GCash from LIZA M. Ref. No. 9001',
+        date: DateTime(2026, 11, 27, 9),
+      ))!;
+      expect(r.kind, TransactionKind.income);
+      expect(r.last4, isNull);
+      expect(AutoTrackService.cardForSms([card(1), card(2, last4: '2222', app: 'gcash')], r)!.id, 2);
+      // Two GCash accounts: ambiguous, so nothing is guessed.
+      expect(AutoTrackService.cardForSms([card(2, app: 'gcash'), card(3, last4: '3333', app: 'gcash')], r), isNull);
+      // No GCash account tracked: skipped.
+      expect(AutoTrackService.cardForSms([card(1)], r), isNull);
+    });
+
+    test('an SMS for a card number that isn\'t tracked is never moved to another account', () {
+      final r = parser.parse(SmsMessage(
+        id: 's3',
+        address: 'BDO',
+        body: 'PHP 5,000.00 has been credited to your account ending 9999.',
+        date: DateTime(2026, 11, 27, 9),
+      ))!;
+      expect(r.last4, '9999');
+      expect(AutoTrackService.cardForSms([card(1, app: 'bdo_pay')], r), isNull);
+    });
+
+    test('SMS senders map to apps', () {
+      expect(WalletApp.forSmsSender('GCash'), WalletApp.gcash);
+      expect(WalletApp.forSmsSender('PayMaya'), WalletApp.maya);
+      expect(WalletApp.forSmsSender('SeaBank'), WalletApp.maribank);
+      expect(WalletApp.forSmsSender('+639171234567'), isNull);
     });
   });
 

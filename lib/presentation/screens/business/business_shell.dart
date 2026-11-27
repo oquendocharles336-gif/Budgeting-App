@@ -21,18 +21,27 @@ import 'sales_screen.dart';
 /// of a second bottom bar. Same lazy sections either way: each is built the
 /// first time it's opened, so its list cascade plays then.
 class BusinessShell extends StatefulWidget {
-  const BusinessShell({super.key, this.asTab = false});
+  const BusinessShell({super.key, this.asTab = false, this.initialSection = 0});
 
   /// Shown as the "Business" tab of the home screen.
   final bool asTab;
+
+  /// Section shown first ([salesSection] ... [capitalSection]).
+  final int initialSection;
+
+  static const salesSection = 0;
+  static const ordersSection = 1;
+  static const productsSection = 2;
+  static const inventorySection = 3;
+  static const capitalSection = 4;
 
   @override
   State<BusinessShell> createState() => _BusinessShellState();
 }
 
 class _BusinessShellState extends State<BusinessShell> {
-  int _index = 0;
-  final Set<int> _built = {0};
+  late int _index = widget.initialSection.clamp(0, _sections.length - 1);
+  late final Set<int> _built = {_index};
 
   static const _sections = <({String title, IconData icon})>[
     (title: 'Sales', icon: Icons.bar_chart_rounded),

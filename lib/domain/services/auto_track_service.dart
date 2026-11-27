@@ -118,8 +118,8 @@ class AutoTrackService {
     return out;
   }
 
-  /// Bank texts for tracked cards (matched by last 4 digits). Each text is
-  /// only read once ([SettingsRepository.autoTrackSmsSeen]).
+  /// Bank / e-wallet texts for tracked accounts ([cardForSms]). Each text
+  /// is only read once ([SettingsRepository.autoTrackSmsSeen]).
   Future<List<RawTransaction>> _fromSms(List<PaymentCard> cards, SmsParser parser) async {
     if (!_sms.isSupported || !await _sms.hasPermission()) return const [];
     final earliest = cards.map((c) => c.autoTrackSince!).reduce((a, b) => a.isBefore(b) ? a : b);
@@ -137,11 +137,8 @@ class AutoTrackService {
     await _settings.set(SettingsRepository.autoTrackSmsSeen, '$newest');
     final out = <RawTransaction>[];
     for (final p in parser.parseAll(messages)) {
-      final last4 = p.last4;
-      if (last4 == null) continue;
-      final matches = [for (final c in cards) if (c.last4 == last4) c];
-      if (matches.length != 1) continue; // unknown or ambiguous card
-      final card = matches.single;
+      final card = cardForSms(cards, p);
+      if (card == null) continue; // unknown or ambiguous account
       if (p.message.date.isBefore(card.autoTrackSince!)) continue;
       out.add(RawTransaction(
         date: p.message.date,
@@ -157,6 +154,24 @@ class AutoTrackService {
       ));
     }
     return out;
+  }
+
+  /// The tracked account a parsed SMS belongs to: the only one with the
+  /// last 4 digits it mentions. Texts with no account number (e-wallet
+  /// "You have received PHP 500.00 of GCash from ...") go to the only
+  /// tracked account connected to the sender's app. Null when unknown or
+  /// ambiguous, so nothing is saved to the wrong account.
+  static PaymentCard? cardForSms(List<PaymentCard> cards, ParsedSms p) {
+    final last4 = p.last4;
+    if (last4 != null) {
+      final matches = [for (final c in cards) if (c.last4 == last4) c];
+      // A number that isn't one tracked account is some other card.
+      return matches.length == 1 ? matches.single : null;
+    }
+    final app = WalletApp.forSmsSender(p.message.address);
+    if (app == null) return null;
+    final linked = [for (final c in cards) if (c.walletApp == app) c];
+    return linked.length == 1 ? linked.single : null;
   }
 
   /// The account a notification belongs to: the one whose last 4 digits

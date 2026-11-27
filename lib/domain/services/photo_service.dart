@@ -120,15 +120,28 @@ class PhotoService {
     }
   }
 
-  /// Removes photo files nothing points at any more (payment QR codes are
-  /// kept).
+  /// Removes photo files nothing points at any more. Kept: payment QR
+  /// codes, the photo of a form waiting to reopen (camera draft, or a form
+  /// that was open when the app locked) and anything saved in the last
+  /// hour, so a photo picked a moment ago, or recovered right after
+  /// unlocking, is never deleted before its form is saved. Runs on every
+  /// unlock, so it waits for the start-up recovery first.
   Future<int> cleanUp() async {
+    try {
+      await _recoveryRun;
+    } catch (_) {
+      // Recovery never throws; ignore just in case.
+    }
+    final draft = PhotoDraft.fromJson(await _settings.get(SettingsRepository.photoDraft));
     final inUse = {
       ...await _inventory.photoPaths(),
       ...await _products.photoPaths(),
       ...await _settings.paymentQrPaths(),
+      ?draft?.photoPath,
+      ?_pendingRecovery?.photoPath,
+      ?_pendingRecovery?.draft.photoPath,
     };
-    return _store.deleteUnused(inUse);
+    return _store.deleteUnused(inUse, keepNewerThan: const Duration(hours: 1));
   }
 
   // ---------------------------------------------------------------------------
@@ -149,6 +162,20 @@ class PhotoService {
   Future<String?> setPaymentQr(String methodId, {PhotoSource source = PhotoSource.gallery}) async {
     final path = await pick(source);
     if (path == null) return null;
+    try {
+      return await replacePaymentQr(methodId, path);
+    } catch (_) {
+      // The new file isn't used by anything: don't leave it behind.
+      await delete(path);
+      rethrow;
+    }
+  }
+
+  /// Makes the already-saved photo [path] the QR for [methodId] and deletes
+  /// the previous one. Every new QR is a new file name, so a screen showing
+  /// the old QR can never keep showing it from a cache; the old file and
+  /// its cached bytes go only after the new path is saved.
+  Future<String> replacePaymentQr(String methodId, String path) async {
     final old = await paymentQrPath(methodId);
     await _settings.set(SettingsRepository.paymentQrKey(methodId), path);
     if (old != null && old != path) await delete(old);
@@ -281,6 +308,15 @@ class PhotoService {
   /// After a save or cancel.
   Future<void> clearDraft() => _settings.remove(SettingsRepository.photoDraft);
 
+  /// The app is locking while [form] is open: keep it (and its photo) so
+  /// it reopens after unlocking. A camera that is still open stays marked
+  /// as such, so a photo Android kept can still be attached.
+  Future<void> keepDraftForUnlock(PhotoDraft form) async {
+    final saved = PhotoDraft.fromJson(await _settings.get(SettingsRepository.photoDraft));
+    final camera = saved != null && saved.awaitingCamera && saved.form == form.form && saved.recordId == form.recordId;
+    await saveDraft(form.copyWith(awaitingCamera: camera, interrupted: true));
+  }
+
   PhotoRecovery get _recovery => PhotoRecovery(
         loadDraft: () => _settings.get(SettingsRepository.photoDraft),
         saveDraft: (json) => json == null ? clearDraft() : _settings.set(SettingsRepository.photoDraft, json),
@@ -297,10 +333,15 @@ class PhotoService {
   /// On start-up: a form to reopen with its recovered photo, if the app was
   /// closed while the camera was open. Kept until a form takes it.
   Future<RecoveredForm?> recoverLost() async {
-    final r = await _recovery.recover();
+    final run = _recovery.recover();
+    _recoveryRun = run;
+    final r = await run;
     if (r != null) _pendingRecovery = r;
     return _pendingRecovery;
   }
+
+  /// The start-up recovery in progress (photo clean-up waits for it).
+  Future<RecoveredForm?>? _recoveryRun;
 
   /// For a photo form being built: the recovered draft meant for it, once.
   RecoveredForm? takeRecovery(String form, int? recordId) {

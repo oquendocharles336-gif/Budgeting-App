@@ -1,3 +1,59 @@
+# Business payments, received money, payment QR, inventory unlock
+
+`flutter analyze` and `flutter test` were **not** run here (no Flutter SDK: the Dart SDK download and pub.dev are
+blocked in the environment this was made in). All changed Dart files pass a syntax parse, and the SMS regexes were
+checked against every test message with the same regex engine Dart uses (V8 irregexp). Run first:
+
+```bash
+flutter pub get && flutter analyze && flutter test
+```
+
+No DB migration, no new packages, no terms change. **Android:** `PaymentNotificationListener.java` changed, so
+rebuild the APK (a hot restart doesn't load Java changes).
+
+- **Partial payments:** order rows show the balance due ("₱300 due · of ₱500") instead of the full total while money
+  is owed, plus a "Total · Paid · Balance" line for partly paid orders. Sales tiles: "Balance due" is the sum of
+  remaining balances (with "N partly paid · M unpaid", or how much is owed on delivered orders), and "Received by
+  payment method" counts money actually received, not totals of unpaid orders (`SalesSummary` gains
+  `paidCount / partialCount / unpaidCount / partialBalance / deliveredBalance`).
+- **Pay on delivery:** an order can be saved Unpaid or with a deposit (the form explains this). New "Collect
+  payment…" in the order menu (`collect_payment_sheet.dart`): amount (prefilled with the balance), method, QR,
+  change, and "Also mark as Delivered". Marking an order with a balance Delivered asks "Paid on delivery?"
+  (Collect payment / Not paid yet). `BusinessService.recordPayment` takes `fulfillment`, so paid + delivered is one
+  write; it refuses cancelled orders. Payments never touch stock. Choosing Paid / Partially Paid with no amount
+  typed now asks for the amount instead of silently saving no payment.
+- **Received money:** `SmsParser` reads the wording's direction (`IncomingPatterns.directionOf`), prefers an income
+  pattern for "received / credited / cash in / sent you" alerts, never saves a clear credit alert as spending, and
+  falls back to built-in incoming rules (GCash "received PHP x of GCash from", InstaPay, "NAME sent you", bank
+  "credited" alerts, cash in, refunds). The pattern tester in Settings uses only the pattern being edited.
+  Auto-tracked SMS without an account number go to the one tracked account linked to the sender's app (GCash,
+  Maya...). "Reset to defaults" keeps the e-wallet notification patterns. The Android listener also reads inbox /
+  messaging-style notifications and alerts whose text is only in the title (these were dropped).
+- **Payment QR:** changing a QR replaces it cleanly (new file, old file and its cached bytes removed only after the
+  new path is saved; a failed save keeps the old QR). Buttons show progress and can't open the picker twice; the
+  screen refreshes through the provider container, so it updates even if the button's widget was rebuilt while the
+  gallery was open. Remove is also on the checkout QR card. `PhotoCrypto` no longer caches a failed key load (which
+  made every later photo / QR save fail until restart).
+- **Inventory unlock:** the photo clean-up that runs on every unlock deleted the photo of a form being recovered
+  (inventory / product) before it was saved; it now keeps draft photos and anything from the last hour. If the app
+  locks while an inventory or product form is open, the form is kept (`SessionTeardown`, `PhotoDraft.interrupted`)
+  and reopens after unlocking inside Business > Inventory / Products. The phone-lock and fingerprint prompts open
+  only once Pitaka is in front (they were fired while the app was still in the background, failed as "canceled"
+  and left the user on an error).
+- Tests: `sms_parser_test`, `auto_track_test`, `stock_ledger_test` (pay on delivery), `sales_to_budget_test`,
+  `photo_recovery_test`, `photo_crypto_test`, new `payment_qr_test`.
+
+## Manual tests
+1. Order ₱500, Partially Paid ₱200 → row shows "₱300 due · of ₱500"; Sales "Balance due" ₱300.
+2. Order saved Unpaid → menu → Delivered → "Collect payment" → ₱500 cash, ₱1,000 handed → change ₱500, Paid +
+   Delivered; Inventory stock unchanged by the payment.
+3. GCash: receive money → Activity shows income on the GCash account (notification and SMS).
+4. Business > Payment QR → upload, then Change twice → each new QR shows at once; Remove → upload again.
+5. Inventory → Add item → type a name, pick a photo → leave the app (it locks) → unlock → the form reopens in
+   Inventory with the name and photo.
+
+---
+
 # Loans & Budget redesign
 
 `flutter analyze` and `flutter test` were **not** run here (no Flutter SDK). Run first:

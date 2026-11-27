@@ -27,14 +27,42 @@ class DeviceLockScreen extends StatefulWidget {
   State<DeviceLockScreen> createState() => _DeviceLockScreenState();
 }
 
-class _DeviceLockScreenState extends State<DeviceLockScreen> {
+class _DeviceLockScreenState extends State<DeviceLockScreen> with WidgetsBindingObserver {
   bool _busy = false;
   String? _error;
+
+  /// The phone prompt opens by itself once per lock screen. The app locks
+  /// as it goes to the background, so this screen is usually built while
+  /// Pitaka isn't visible; asking then fails ("canceled") and left the
+  /// user on an error. Wait until Pitaka is in front instead. Only once:
+  /// closing the prompt resumes the app, and re-asking on every resume
+  /// would loop.
+  bool _autoAsked = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _unlock());
+    WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoUnlock());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _autoUnlock();
+  }
+
+  void _autoUnlock() {
+    if (_autoAsked || !mounted) return;
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) return;
+    _autoAsked = true;
+    _unlock();
   }
 
   Future<void> _unlock() async {

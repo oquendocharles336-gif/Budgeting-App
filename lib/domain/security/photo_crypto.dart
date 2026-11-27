@@ -59,7 +59,19 @@ class PhotoCrypto {
   Future<SecretKey>? _key;
 
   /// One key load at a time, so two first photos can't create two keys.
-  Future<SecretKey> _secret() => _key ??= _keys.loadOrCreate().then(SecretKey.new);
+  /// A load that fails (keystore busy right after unlocking, for example)
+  /// is not kept: the next photo tries again instead of every photo and
+  /// payment QR failing until the app is restarted.
+  Future<SecretKey> _secret() {
+    final cached = _key;
+    if (cached != null) return cached;
+    final loading = _keys.loadOrCreate().then(SecretKey.new);
+    _key = loading;
+    loading.then((_) {}, onError: (Object _) {
+      if (identical(_key, loading)) _key = null;
+    });
+    return loading;
+  }
 
   /// Drop the cached key (after "Delete all my data").
   void forgetKey() => _key = null;

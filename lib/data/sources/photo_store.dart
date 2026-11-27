@@ -178,15 +178,24 @@ class PhotoStore {
     }
   }
 
-  /// Removes photos no item or product points at any more.
-  Future<int> deleteUnused(Set<String> inUse) async {
+  /// Removes photos no item or product points at any more. Files written
+  /// within [keepNewerThan] are kept: they may belong to a form that is
+  /// still open (or reopening after unlock) and not saved yet.
+  Future<int> deleteUnused(Set<String> inUse, {Duration keepNewerThan = Duration.zero}) async {
     final dir = await folder();
+    final cutoff = DateTime.now().subtract(keepNewerThan);
     var removed = 0;
     await for (final e in dir.list()) {
-      if (e is File && !inUse.contains(e.path)) {
-        await e.delete();
-        removed++;
+      if (e is! File || inUse.contains(e.path)) continue;
+      if (keepNewerThan > Duration.zero) {
+        try {
+          if ((await e.lastModified()).isAfter(cutoff)) continue;
+        } catch (_) {
+          continue; // Can't tell its age: keep it for now.
+        }
       }
+      await e.delete();
+      removed++;
     }
     return removed;
   }

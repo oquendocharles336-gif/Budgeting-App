@@ -297,14 +297,21 @@ class _BootstrapState extends State<_Bootstrap> {
   Future<void> _lock() async {
     if (_stage != _Stage.unlocked) return;
     final db = _db;
+    // Open forms (e.g. an inventory item being added) see this while they
+    // close and keep their data for after unlocking.
+    SessionTeardown.begin();
     // Tear down the app (and every provider holding data) right away.
     setState(() => _stage = _Stage.loading);
     _db = null;
     _dataKey = null;
     _settings = const {};
+    // Close after the app's widgets (and their providers) are gone, and
+    // after the writes they handed over have finished.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await SessionTeardown.finish();
+      await db?.close();
+    });
     await _goToLogin();
-    // Close after the app's widgets (and their providers) are gone.
-    WidgetsBinding.instance.addPostFrameCallback((_) => db?.close());
   }
 
   // ---------------------------------------------------------------------------

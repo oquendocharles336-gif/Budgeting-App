@@ -197,7 +197,16 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     }
     if (form == null || !mounted) return;
     final page = form;
-    await Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    final nav = Navigator.of(context);
+    // Reopen it where it was started (Business > Inventory / Products), so
+    // saving or closing the form lands back in that list, not on Home.
+    nav.push(MaterialPageRoute(
+      builder: (_) => BusinessShell(
+        initialSection:
+            draft.form == PhotoDraft.inventoryForm ? BusinessShell.inventorySection : BusinessShell.productsSection,
+      ),
+    ));
+    await nav.push(MaterialPageRoute(builder: (_) => page));
   }
 
   void _prefetch() {

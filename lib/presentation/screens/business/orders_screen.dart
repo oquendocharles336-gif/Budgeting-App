@@ -2,8 +2,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../../core/money.dart';
 import '../../../core/op_key.dart';
 import '../../../data/models/business.dart';
+import '../../providers/app_state_providers.dart';
 import '../../providers/business_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/pending_providers.dart';
@@ -12,6 +14,7 @@ import '../../widgets/motion/cascade.dart';
 import '../../widgets/motion/skeleton.dart';
 import '../../widgets/optimistic.dart';
 import '../../widgets/status_badge.dart';
+import 'collect_payment_sheet.dart';
 import 'inventory_screen.dart' show BusinessSearchField;
 import 'order_form_screen.dart';
 
@@ -110,11 +113,42 @@ class OrderCard extends ConsumerWidget {
 
   static const _cancel = 'cancel';
   static const _markPaid = 'paid';
+  static const _collect = 'collect';
   static const _fulfillPrefix = 'fulfill:';
 
-  /// Delivered / For Pick-up / Pending, whatever the payment status.
-  void _changeFulfillment(BuildContext context, WidgetRef ref, FulfillmentStatus f) {
+  /// Delivered / For Pick-up / Pending, whatever the payment status. An
+  /// order delivered with a balance (pay on delivery) asks whether the
+  /// buyer paid, so the money isn't forgotten.
+  Future<void> _changeFulfillment(BuildContext context, WidgetRef ref, FulfillmentStatus f) async {
     if (f == order.fulfillment) return;
+    if (f == FulfillmentStatus.delivered && order.balanceDue > 0) {
+      final symbol = ref.read(currencyProvider).symbol;
+      final choice = await showDialog<_DeliveredChoice>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Paid on delivery?'),
+          content: Text(
+            '${order.buyer} still owes ${Money.format(order.balanceDue, symbol: symbol)} '
+            '(${Money.format(order.paidAmount, symbol: symbol)} paid of ${Money.format(order.total, symbol: symbol)}).',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, _DeliveredChoice.unpaid), child: const Text('Not paid yet')),
+            FilledButton(
+              style: FilledButton.styleFrom(minimumSize: const Size(88, 44)),
+              onPressed: () => Navigator.pop(ctx, _DeliveredChoice.collect),
+              child: const Text('Collect payment'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || !context.mounted) return;
+      if (choice == _DeliveredChoice.collect) {
+        await showCollectPaymentSheet(context, order, markDelivered: true);
+        return;
+      }
+    }
+    if (!context.mounted) return;
     final service = ref.read(businessServiceProvider);
     final key = newOpKey('order_fulfillment');
     OptimisticWrite.run(
@@ -196,7 +230,11 @@ class OrderCard extends ConsumerWidget {
           tone: BadgeTone.warning,
           icon: Icons.timelapse_rounded,
         ),
-      OrderStatus.unpaid => const StatusBadge(label: 'Unpaid', tone: BadgeTone.danger, icon: Icons.error_outline_rounded),
+      OrderStatus.unpaid => StatusBadge(
+          label: order.fulfillment == FulfillmentStatus.delivered ? 'Unpaid · delivered' : 'Unpaid',
+          tone: BadgeTone.danger,
+          icon: Icons.error_outline_rounded,
+        ),
     };
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -224,14 +262,7 @@ class OrderCard extends ConsumerWidget {
                     ],
                   ),
                 ),
-                AmountText(
-                  order.total,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 16,
-                    decoration: order.isCancelled ? TextDecoration.lineThrough : null,
-                  ),
-                ),
+                _OrderAmount(order: order),
                 if (!saving && !order.isCancelled)
                   PopupMenuButton<String>(
                     tooltip: 'Delivery and payment for ${order.buyer}\'s order',
@@ -241,6 +272,8 @@ class OrderCard extends ConsumerWidget {
                         _cancelOrder(context, ref);
                       } else if (v == _markPaid) {
                         _changeStatus(context, ref, OrderStatus.paid);
+                      } else if (v == _collect) {
+                        showCollectPaymentSheet(context, order);
                       } else if (v.startsWith(_fulfillPrefix)) {
                         _changeFulfillment(context, ref, FulfillmentStatus.fromDb(v.substring(_fulfillPrefix.length)));
                       }
@@ -253,6 +286,7 @@ class OrderCard extends ConsumerWidget {
                           child: Text(f.label),
                         ),
                       const PopupMenuDivider(),
+                      if (order.balanceDue > 0) const PopupMenuItem(value: _collect, child: Text('Collect payment…')),
                       if (!order.status.claimsPaid)
                         PopupMenuItem(value: _markPaid, child: Text(markPaidLabel)),
                       if (!order.addedToBudget) const PopupMenuItem(value: _cancel, child: Text('Cancel order')),
@@ -262,6 +296,14 @@ class OrderCard extends ConsumerWidget {
             ),
             const SizedBox(height: 6),
             Text(order.itemsSummary, maxLines: 2, overflow: TextOverflow.ellipsis),
+            if (!order.isCancelled && order.isPartiallyPaid) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Total ${formatMoney(ref, order.total)} · Paid ${formatMoney(ref, order.paidAmount)} · '
+                'Balance ${formatMoney(ref, order.balanceDue)}',
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+              ),
+            ],
             const SizedBox(height: 10),
             Wrap(
               spacing: 8,
@@ -283,6 +325,44 @@ class OrderCard extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+enum _DeliveredChoice { collect, unpaid }
+
+/// The amount on an order row. Paid (or cancelled): the total. With money
+/// still owed: the balance due, big, and the total under it, so a partly
+/// paid ₱500 order with ₱200 paid reads "₱300 due · of ₱500".
+class _OrderAmount extends ConsumerWidget {
+  const _OrderAmount({required this.order});
+  final BusinessOrder order;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    if (order.isCancelled || order.balanceDue == 0) {
+      return AmountText(
+        order.total,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 16,
+          decoration: order.isCancelled ? TextDecoration.lineThrough : null,
+        ),
+      );
+    }
+    final due = formatMoney(ref, order.balanceDue);
+    final total = formatMoney(ref, order.total);
+    return Semantics(
+      label: '$due due of $total',
+      excludeSemantics: true,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Text('$due due', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+          if (order.paidAmount > 0) Text('of $total', style: TextStyle(color: muted, fontSize: 12)),
+        ],
       ),
     );
   }

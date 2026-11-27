@@ -2,12 +2,12 @@
 /// free, on the phone (Android "Notification access"). Stored by [id] in
 /// `cards.notify_app`.
 enum WalletApp {
-  maya('maya', 'Maya', 'com.paymaya'),
-  gcash('gcash', 'GCash', 'com.globe.gcash.android'),
-  maribank('maribank', 'MariBank', 'ph.seabank.seabank'),
-  bdoPay('bdo_pay', 'BDO Pay', 'www.pay.bdo.com.ph');
+  maya('maya', 'Maya', 'com.paymaya', r'maya'),
+  gcash('gcash', 'GCash', 'com.globe.gcash.android', r'g-?cash'),
+  maribank('maribank', 'MariBank', 'ph.seabank.seabank', r'mari\s?bank|seabank'),
+  bdoPay('bdo_pay', 'BDO Pay', 'www.pay.bdo.com.ph', r'bdo');
 
-  const WalletApp(this.id, this.label, this.packageName);
+  const WalletApp(this.id, this.label, this.packageName, this._smsSender);
 
   /// Saved in the database.
   final String id;
@@ -15,6 +15,20 @@ enum WalletApp {
 
   /// The Android app whose notifications are read.
   final String packageName;
+
+  /// What the app's SMS sender id looks like ("GCash", "PayMaya").
+  final String _smsSender;
+
+  /// True when an SMS from [address] comes from this app.
+  bool sentSms(String address) => RegExp(_smsSender, caseSensitive: false).hasMatch(address);
+
+  /// The app an SMS sender belongs to, or null.
+  static WalletApp? forSmsSender(String address) {
+    for (final a in WalletApp.values) {
+      if (a.sentSms(address)) return a;
+    }
+    return null;
+  }
 
   static WalletApp? fromId(String? id) {
     for (final a in WalletApp.values) {

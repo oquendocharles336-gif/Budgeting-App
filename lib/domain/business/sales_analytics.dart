@@ -151,10 +151,17 @@ class ProductSales {
   final int revenue;
 }
 
+/// Money actually received with one payment method. Unpaid orders (and
+/// the unpaid part of partly paid ones) aren't counted: their method is
+/// only what the owner picked, not money that came in.
 class MethodSales {
   const MethodSales({required this.method, required this.orders, required this.total});
   final PaymentMethod method;
+
+  /// Orders with something paid by this method.
   final int orders;
+
+  /// Collected, in centavos.
   final int total;
 }
 
@@ -175,6 +182,11 @@ class SalesSummary {
     required this.byMethod,
     required this.readyForBudget,
     required this.readyForBudgetCount,
+    this.paidCount = 0,
+    this.partialCount = 0,
+    this.unpaidCount = 0,
+    this.partialBalance = 0,
+    this.deliveredBalance = 0,
   });
 
   /// Sum of order totals.
@@ -183,8 +195,19 @@ class SalesSummary {
   /// Money actually received.
   final int collected;
 
-  /// Still owed by buyers.
+  /// Still owed by buyers (the remaining balances, not the totals).
   final int unpaid;
+
+  /// Orders paid in full / partly paid / with nothing paid yet.
+  final int paidCount;
+  final int partialCount;
+  final int unpaidCount;
+
+  /// What partly paid orders still owe (part of [unpaid]).
+  final int partialBalance;
+
+  /// Owed on orders already delivered or picked up (collect now).
+  final int deliveredBalance;
   final int orderCount;
   final List<ProductSales> bestSellers;
   final List<MethodSales> byMethod;
@@ -202,16 +225,30 @@ class SalesAnalytics {
     final products = <String, ({String name, int qty, int revenue})>{};
     final methods = <PaymentMethod, ({int orders, int total})>{};
     var total = 0, collected = 0, unpaid = 0, ready = 0, readyCount = 0;
+    var paidCount = 0, partialCount = 0, unpaidCount = 0, partialBalance = 0, deliveredBalance = 0;
     for (final o in orders) {
       total += o.total;
-      collected += o.paidAmount > o.total ? o.total : o.paidAmount;
+      final got = o.paidAmount > o.total ? o.total : o.paidAmount;
+      collected += got;
       unpaid += o.balanceDue;
+      switch (o.status) {
+        case OrderStatus.paid:
+          paidCount++;
+        case OrderStatus.partiallyPaid:
+          partialCount++;
+          partialBalance += o.balanceDue;
+        case OrderStatus.unpaid:
+          unpaidCount++;
+      }
+      if (o.fulfillment == FulfillmentStatus.delivered) deliveredBalance += o.balanceDue;
       if (o.isFullyPaid && !o.addedToBudget) {
         ready += o.total;
         readyCount++;
       }
-      final m = methods[o.method] ?? (orders: 0, total: 0);
-      methods[o.method] = (orders: m.orders + 1, total: m.total + o.total);
+      if (got > 0) {
+        final m = methods[o.method] ?? (orders: 0, total: 0);
+        methods[o.method] = (orders: m.orders + 1, total: m.total + got);
+      }
       for (final i in o.items) {
         final key = i.name.toLowerCase();
         final p = products[key] ?? (name: i.name, qty: 0, revenue: 0);
@@ -236,6 +273,11 @@ class SalesAnalytics {
       byMethod: byMethod,
       readyForBudget: ready,
       readyForBudgetCount: readyCount,
+      paidCount: paidCount,
+      partialCount: partialCount,
+      unpaidCount: unpaidCount,
+      partialBalance: partialBalance,
+      deliveredBalance: deliveredBalance,
     );
   }
 

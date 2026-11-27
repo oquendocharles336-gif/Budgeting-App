@@ -280,4 +280,79 @@ void main() {
       expect(StockPlan.adjustTo(itemId: sugar, current: 10, target: 4, now: now)!.change, -6);
     });
   });
+
+  group('pay on delivery', () {
+    test('an unpaid order is saved without any payment and still uses stock once', () async {
+      final id = await service.saveOrder(order(cakes: 2));
+      final o = repo.orders[id]!;
+      expect(o.status, OrderStatus.unpaid);
+      expect(o.paidAmount, 0);
+      expect(o.balanceDue, 100000);
+      expect(repo.stock(eggs), 8);
+    });
+
+    test('deposit now, balance on delivery: status, amounts and stock stay consistent', () async {
+      final id = await service.saveOrder(order(cakes: 2).copyWith(paidAmount: 30000));
+      expect(repo.orders[id]!.status, OrderStatus.partiallyPaid);
+      expect(repo.orders[id]!.balanceDue, 70000);
+      final ledgerBefore = repo.ledger.length;
+
+      // Buyer pays the rest in cash when it's delivered (hands over 1,000).
+      final r = await service.recordPayment(
+        id,
+        tendered: 100000,
+        method: PaymentMethod.cash,
+        fulfillment: FulfillmentStatus.delivered,
+        opKey: 'deliver-1',
+      );
+      expect(r.applied, 70000);
+      expect(r.change, 30000);
+      final o = repo.orders[id]!;
+      expect(o.paidAmount, 100000);
+      expect(o.balanceDue, 0);
+      expect(o.status, OrderStatus.paid);
+      expect(o.fulfillment, FulfillmentStatus.delivered);
+      expect(o.changeGiven, 30000);
+      // Payment never uses ingredients again.
+      expect(repo.ledger.length, ledgerBefore);
+      expect(repo.stock(eggs), 8);
+    });
+
+    test('part of the balance on delivery keeps the rest due', () async {
+      final id = await service.saveOrder(order(cakes: 1));
+      await service.recordPayment(id, tendered: 20000, method: PaymentMethod.maya, fulfillment: FulfillmentStatus.delivered);
+      final o = repo.orders[id]!;
+      expect(o.status, OrderStatus.partiallyPaid);
+      expect(o.paidAmount, 20000);
+      expect(o.balanceDue, 30000);
+      expect(o.method, PaymentMethod.maya);
+      expect(o.tendered, isNull); // not cash: no change counted
+      expect(o.fulfillment, FulfillmentStatus.delivered);
+    });
+
+    test('an already settled order only changes its delivery status', () async {
+      final id = await service.saveOrder(order(cakes: 1).copyWith(paidAmount: 50000));
+      final r = await service.recordPayment(id, tendered: 0, method: PaymentMethod.cash, fulfillment: FulfillmentStatus.delivered);
+      expect(r.due, 0);
+      expect(repo.orders[id]!.fulfillment, FulfillmentStatus.delivered);
+      expect(repo.orders[id]!.paidAmount, 50000);
+    });
+
+    test('nothing entered is rejected; a cancelled order can\'t be paid', () async {
+      final id = await service.saveOrder(order(cakes: 1));
+      await expectLater(service.recordPayment(id, tendered: 0, method: PaymentMethod.cash), throwsArgumentError);
+      await service.cancelOrder(id);
+      await expectLater(service.recordPayment(id, tendered: 50000, method: PaymentMethod.cash), throwsStateError);
+      expect(repo.orders[id]!.paidAmount, 0);
+    });
+
+    test('delivered but still unpaid is allowed and keeps the full balance', () async {
+      final id = await service.saveOrder(order(cakes: 1));
+      await service.setFulfillment(id, FulfillmentStatus.delivered);
+      final o = repo.orders[id]!;
+      expect(o.fulfillment, FulfillmentStatus.delivered);
+      expect(o.status, OrderStatus.unpaid);
+      expect(o.balanceDue, 50000);
+    });
+  });
 }

@@ -411,8 +411,12 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
                   switch (_status) {
-                    OrderStatus.unpaid => 'Unpaid: the buyer pays later. Choose Partially Paid or Paid to enter a payment.',
-                    OrderStatus.partiallyPaid => 'Enter what the buyer paid now. It\'s taken off the total and the balance stays due.',
+                    OrderStatus.unpaid => _alreadyPaid > 0
+                        ? 'Balance due ${m(due)}. Collect it later or on delivery from the order\'s menu (Collect payment).'
+                        : 'Unpaid / pay on delivery: nothing is paid now. Collect ${m(_total)} later or on delivery '
+                            'from the order\'s menu (Collect payment).',
+                    OrderStatus.partiallyPaid => 'Deposit / part payment: enter what the buyer paid now. It\'s taken off the total '
+                        'and the balance stays due until it\'s collected (e.g. on delivery).',
                     OrderStatus.paid => 'Enter what the buyer paid. Less than the total is saved as Partially Paid.',
                   },
                   style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
@@ -454,7 +458,10 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                     ),
                     validator: (v) {
                       if (v == null || v.trim().isEmpty) {
-                        return _status == OrderStatus.partiallyPaid && _alreadyPaid == 0 ? 'Enter the amount received' : null;
+                        // "Paid" or "Partially Paid" with nothing typed would
+                        // quietly save no payment; ask instead. (An order that
+                        // already has a payment can be saved as it is.)
+                        return _status.takesPayment && _alreadyPaid == 0 ? 'Enter the amount received' : null;
                       }
                       return validateAmount(v, allowZero: true);
                     },
@@ -462,7 +469,7 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                   ),
                   if (pay != null) ...[
                     const SizedBox(height: 10),
-                    _ChangeLine(result: pay, cash: _method.isCash),
+                    PaymentChangeLine(result: pay, cash: _method.isCash),
                   ],
                 ],
               ],
@@ -511,8 +518,8 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
 }
 
 /// "Change: ₱380" for cash, or a warning when the amount is short.
-class _ChangeLine extends ConsumerWidget {
-  const _ChangeLine({required this.result, required this.cash});
+class PaymentChangeLine extends ConsumerWidget {
+  const PaymentChangeLine({super.key, required this.result, required this.cash});
   final PaymentResult result;
   final bool cash;
 

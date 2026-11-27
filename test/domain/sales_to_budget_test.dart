@@ -169,4 +169,25 @@ void main() {
     expect(s.readyForBudget, 12000);
     expect(s.readyForBudgetCount, 1);
   });
+
+  test('sales summary: balances, partial counts and money received by method', () {
+    final partial = order(2, total: 50000, paid: 20000);
+    final delivered = BusinessOrder.fromMap({...order(4, total: 8000, paid: 0).toMap(), 'fulfillment': 'delivered'}, const []);
+    final maya = BusinessOrder.fromMap({...order(5, total: 3000, paid: 3000).toMap(), 'method': 'maya'}, const []);
+    final s = SalesAnalytics.summarize([order(1, total: 12000, paid: 12000), partial, delivered, maya]);
+    expect(s.totalSales, 73000);
+    expect(s.collected, 35000);
+    // Remaining balances, not order totals: 30,000 + 8,000.
+    expect(s.unpaid, 38000);
+    expect(s.paidCount, 2);
+    expect(s.partialCount, 1);
+    expect(s.unpaidCount, 1);
+    expect(s.partialBalance, 30000);
+    expect(s.deliveredBalance, 8000);
+    // Only money received counts per method; the unpaid order adds nothing.
+    final cash = s.byMethod.firstWhere((m) => m.method == PaymentMethod.cash);
+    expect(cash.total, 32000);
+    expect(cash.orders, 2);
+    expect(s.byMethod.firstWhere((m) => m.method == PaymentMethod.maya).total, 3000);
+  });
 }

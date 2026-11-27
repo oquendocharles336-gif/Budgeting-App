@@ -1,6 +1,9 @@
 import '../../core/money.dart';
 import '../../data/models/sms_pattern.dart';
 import '../../data/models/transaction_entry.dart';
+import 'incoming_patterns.dart';
+
+export 'incoming_patterns.dart' show IncomingPatterns, MoneyDirection;
 
 /// A transaction read out of one SMS alert.
 class ParsedSms {
@@ -23,27 +26,58 @@ class ParsedSms {
   final TransactionKind kind;
   final String? last4;
   final String? reference;
+
+  bool get isIncome => kind == TransactionKind.income;
+
+  ParsedSms copyWith({TransactionKind? kind, String? last4, String? reference}) => ParsedSms(
+        message: message,
+        pattern: pattern,
+        amount: amount,
+        merchant: merchant,
+        kind: kind ?? this.kind,
+        last4: last4 ?? this.last4,
+        reference: reference ?? this.reference,
+      );
 }
 
 /// Reads bank/card SMS alerts with user-configurable regex patterns.
 ///
+/// Money received is handled on purpose, not left to pattern order:
+///
+///  * when an alert's wording says money came in ("received", "credited",
+///    "cash in", "sent you") an income pattern is preferred over an
+///    expense pattern that happens to match first, and vice versa;
+///  * when only a pattern of the wrong kind matches an alert that is
+///    clearly one way, the result takes the alert's direction (a credit
+///    alert is never saved as spending);
+///  * when no user pattern matches a clearly incoming alert, the built-in
+///    [IncomingPatterns] are tried, so received money isn't dropped.
+///
 /// Everything happens on the device; messages are never sent anywhere.
 class SmsParser {
-  SmsParser(List<SmsPattern> patterns) {
-    for (final p in patterns.where((p) => p.enabled)) {
+  SmsParser(List<SmsPattern> patterns, {bool builtInIncoming = true}) {
+    _compileAll(patterns.where((p) => p.enabled), _compiled, report: true);
+    if (builtInIncoming) _compileAll(IncomingPatterns.patterns, _fallbacks, report: false);
+  }
+
+  void _compileAll(Iterable<SmsPattern> patterns, List<_CompiledPattern> into, {required bool report}) {
+    for (final p in patterns) {
       try {
         final body = RegExp(p.bodyPattern, caseSensitive: false);
         final sender = p.senderPattern.trim().isEmpty
             ? null
             : RegExp(p.senderPattern, caseSensitive: false);
-        _compiled.add(_CompiledPattern(p, body, sender));
+        into.add(_CompiledPattern(p, body, sender));
       } on FormatException catch (e) {
-        invalidPatterns[p.bankName] = e.message;
+        if (report) invalidPatterns[p.bankName] = e.message;
       }
     }
   }
 
   final _compiled = <_CompiledPattern>[];
+
+  /// Built-in rules for received money, tried after the user's patterns.
+  final _fallbacks = <_CompiledPattern>[];
 
   /// Patterns that failed to compile, by name -> error.
   final invalidPatterns = <String, String>{};
@@ -58,33 +92,70 @@ class SmsParser {
     caseSensitive: false,
   );
 
-  /// Returns the first pattern match, or null when nothing matches.
+  /// The best pattern match (see the class comment), or null when nothing
+  /// matches.
   ParsedSms? parse(SmsMessage message) {
     final body = message.body.replaceAll(RegExp(r'\s+'), ' ').trim();
     if (body.isEmpty || _otp.hasMatch(body)) return null;
 
+    final direction = IncomingPatterns.directionOf(body);
+    final wanted = switch (direction) {
+      MoneyDirection.incoming => TransactionKind.income,
+      MoneyDirection.outgoing => TransactionKind.expense,
+      null => null,
+    };
+
+    ParsedSms? first;
     for (final c in _compiled) {
-      if (c.sender != null && !c.sender!.hasMatch(message.address)) continue;
-      final m = c.body.firstMatch(body);
-      if (m == null) continue;
-
-      final amountText = _group(m, 'amount');
-      if (amountText == null) continue;
-      final amount = Money.parse(amountText);
-      if (amount == null || amount == 0) continue;
-
-      final merchant = _group(m, 'merchant')?.trim();
-      return ParsedSms(
-        message: message,
-        pattern: c.pattern,
-        amount: amount.abs(),
-        merchant: (merchant == null || merchant.isEmpty) ? c.pattern.bankName : merchant,
-        kind: c.pattern.kind,
-        last4: _group(m, 'last4'),
-        reference: _group(m, 'ref'),
-      );
+      final p = _try(c, message, body);
+      if (p == null) continue;
+      // The first match whose kind agrees with the wording wins (a
+      // transfer pattern is the user's explicit choice either way).
+      if (wanted == null || p.kind == wanted || p.kind == TransactionKind.transfer) return p;
+      first ??= p;
     }
-    return null;
+
+    // Received money that no user pattern read (or only an expense
+    // pattern did): the built-in rules.
+    if (direction == MoneyDirection.incoming) {
+      for (final c in _fallbacks) {
+        final p = _try(c, message, body, noMerchant: IncomingPatterns.defaultDescription);
+        if (p == null) continue;
+        // Keep what the user's pattern knew that the built-in one doesn't.
+        return first == null ? p : p.copyWith(last4: p.last4 ?? first.last4, reference: p.reference ?? first.reference);
+      }
+    }
+
+    if (first == null) return null;
+    // Only a pattern of the other kind matched. Trust the wording when it
+    // is one-sided ("credited", "received" and nothing about paying).
+    if (first.kind == TransactionKind.expense && IncomingPatterns.clearlyIncoming(body)) {
+      return first.copyWith(kind: TransactionKind.income);
+    }
+    if (first.kind == TransactionKind.income && IncomingPatterns.clearlyOutgoing(body)) {
+      return first.copyWith(kind: TransactionKind.expense);
+    }
+    return first;
+  }
+
+  static ParsedSms? _try(_CompiledPattern c, SmsMessage message, String body, {String? noMerchant}) {
+    if (c.sender != null && !c.sender!.hasMatch(message.address)) return null;
+    final m = c.body.firstMatch(body);
+    if (m == null) return null;
+    final amountText = _group(m, 'amount');
+    if (amountText == null) return null;
+    final amount = Money.parse(amountText);
+    if (amount == null || amount == 0) return null;
+    final merchant = _group(m, 'merchant')?.trim();
+    return ParsedSms(
+      message: message,
+      pattern: c.pattern,
+      amount: amount.abs(),
+      merchant: (merchant == null || merchant.isEmpty) ? (noMerchant ?? c.pattern.bankName) : merchant,
+      kind: c.pattern.kind,
+      last4: _group(m, 'last4'),
+      reference: _group(m, 'ref'),
+    );
   }
 
   List<ParsedSms> parseAll(Iterable<SmsMessage> messages) =>

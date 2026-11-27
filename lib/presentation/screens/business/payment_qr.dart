@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -12,18 +13,74 @@ import '../../widgets/photo_widgets.dart';
 /// The QR payment methods (Maya, MariBank, BDO).
 List<PaymentMethod> get qrPaymentMethods => [for (final m in PaymentMethod.values) if (m.usesQr) m];
 
-/// Picks the owner's QR image for [method] from the gallery and saves it
-/// (encrypted, on this phone only). Shows a message for the result.
-Future<void> setUpPaymentQr(BuildContext context, WidgetRef ref, PaymentMethod method) async {
+/// Payment methods whose QR is being picked or saved right now. Their
+/// buttons are disabled meanwhile, so a second tap can't open a second
+/// picker (the picker refuses that with "already_active").
+class PaymentQrBusy extends Notifier<Set<PaymentMethod>> {
+  @override
+  Set<PaymentMethod> build() => const {};
+
+  /// False when [m] is already busy.
+  bool start(PaymentMethod m) {
+    if (state.contains(m)) return false;
+    state = {...state, m};
+    return true;
+  }
+
+  void finish(PaymentMethod m) => state = {...state}..remove(m);
+}
+
+final paymentQrBusyProvider = NotifierProvider<PaymentQrBusy, Set<PaymentMethod>>(PaymentQrBusy.new);
+
+/// Reloads the QR for [method] everywhere it is shown. Uses the container,
+/// not the widget's ref: the button's widget may have been rebuilt or
+/// closed while the gallery was open.
+void _refreshQr(ProviderContainer container, PaymentMethod method) {
   try {
-    final path = await ref.read(photoServiceProvider).setPaymentQr(method.dbValue);
-    if (path == null) return; // cancelled
-    ref.refreshData();
-    if (context.mounted) showSnack(context, '${method.shortLabel} QR saved');
-  } on PhotoAccessDenied catch (e) {
-    if (context.mounted) showSnack(context, e.message, error: true);
+    container.invalidate(paymentQrPathProvider(method));
+    container.read(dataRevisionProvider.notifier).bump();
   } catch (e) {
-    if (context.mounted) showSnack(context, 'Could not save the QR: $e', error: true);
+    debugPrint('Session closed before the QR screen refreshed: $e');
+  }
+}
+
+/// Picks the owner's QR image for [method] from the gallery and saves it
+/// (encrypted, on this phone only), replacing any QR set before. Shows a
+/// message for the result.
+Future<void> setUpPaymentQr(BuildContext context, WidgetRef ref, PaymentMethod method) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final busy = container.read(paymentQrBusyProvider.notifier);
+  if (!busy.start(method)) return;
+  final messenger = ScaffoldMessenger.of(context);
+  void tell(String text, {bool error = false}) {
+    if (context.mounted) {
+      showSnack(context, text, error: error);
+    } else {
+      messenger.showSnackBar(SnackBar(content: Text(text)));
+    }
+  }
+
+  final hadOne = container.read(paymentQrPathProvider(method)).asDataOrNull != null;
+  try {
+    final path = await container.read(photoServiceProvider).setPaymentQr(method.dbValue);
+    if (path == null) return; // cancelled: the current QR stays
+    _refreshQr(container, method);
+    tell(hadOne ? '${method.shortLabel} QR changed' : '${method.shortLabel} QR saved');
+  } on PhotoAccessDenied catch (e) {
+    tell(e.message, error: true);
+  } on PlatformException catch (e) {
+    tell(
+      e.code == 'already_active' ? 'The photo picker is already open.' : 'Could not open your photos: ${e.message ?? e.code}',
+      error: true,
+    );
+  } catch (e) {
+    tell('Could not save the QR: $e', error: true);
+  } finally {
+    try {
+      busy.finish(method);
+    } catch (_) {
+      // Locked meanwhile: the whole session state is gone anyway.
+    }
   }
 }
 
@@ -34,12 +91,19 @@ Future<void> removePaymentQr(BuildContext context, WidgetRef ref, PaymentMethod 
     message: 'Buyers won\'t see a QR for ${method.shortLabel} until you upload one again.',
     confirmLabel: 'Remove',
   );
-  if (!ok) return;
+  if (!ok || !context.mounted) return;
+  final container = ProviderScope.containerOf(context, listen: false);
+  final busy = container.read(paymentQrBusyProvider.notifier);
+  if (!busy.start(method)) return;
   try {
-    await ref.read(photoServiceProvider).removePaymentQr(method.dbValue);
-    ref.refreshData();
+    await container.read(photoServiceProvider).removePaymentQr(method.dbValue);
+    _refreshQr(container, method);
   } catch (e) {
     if (context.mounted) showSnack(context, 'Could not remove the QR: $e', error: true);
+  } finally {
+    try {
+      busy.finish(method);
+    } catch (_) {}
   }
 }
 
@@ -54,6 +118,7 @@ class PaymentQrCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.tokens;
     final path = ref.watch(paymentQrPathProvider(method)).asDataOrNull;
+    final busy = ref.watch(paymentQrBusyProvider).contains(method);
     final name = method.shortLabel;
     return AppCard(
       child: Column(
@@ -66,12 +131,23 @@ class PaymentQrCard extends ConsumerWidget {
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
-              if (path != null)
+              if (busy)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5)),
+                )
+              else if (path != null) ...[
                 IconButton(
                   tooltip: 'Change $name QR',
                   icon: const Icon(Icons.edit_rounded),
                   onPressed: () => setUpPaymentQr(context, ref, method),
                 ),
+                IconButton(
+                  tooltip: 'Remove $name QR',
+                  icon: const Icon(Icons.delete_outline_rounded),
+                  onPressed: () => removePaymentQr(context, ref, method),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
@@ -93,7 +169,7 @@ class PaymentQrCard extends ConsumerWidget {
                   ),
                   const SizedBox(height: 12),
                   FilledButton.tonalIcon(
-                    onPressed: () => setUpPaymentQr(context, ref, method),
+                    onPressed: busy ? null : () => setUpPaymentQr(context, ref, method),
                     icon: const Icon(Icons.upload_rounded),
                     label: const Text('Set up QR'),
                   ),
@@ -101,7 +177,9 @@ class PaymentQrCard extends ConsumerWidget {
               ),
             )
           else
-            _QrImage(path: path, size: size, label: '$name payment QR code'),
+            // Keyed by path: a new QR is a new file, so the image is rebuilt
+            // from the new bytes instead of reusing the old picture.
+            _QrImage(key: ValueKey(path), path: path, size: size, label: '$name payment QR code'),
           const SizedBox(height: 8),
           Text(
             'Check the payment in your $name app before saving.',
@@ -116,7 +194,7 @@ class PaymentQrCard extends ConsumerWidget {
 
 /// The decrypted QR, shown at full quality (not cropped) so it scans.
 class _QrImage extends ConsumerWidget {
-  const _QrImage({required this.path, required this.size, required this.label});
+  const _QrImage({super.key, required this.path, required this.size, required this.label});
   final String path;
   final double size;
   final String label;
@@ -139,7 +217,7 @@ class _QrImage extends ConsumerWidget {
           ? box(Text('QR could not be opened. Upload it again.', textAlign: TextAlign.center, style: TextStyle(color: t.onSecond)))
           : ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.memory(data, width: size, height: size, fit: BoxFit.contain, semanticLabel: label, gaplessPlayback: true),
+              child: Image.memory(data, width: size, height: size, fit: BoxFit.contain, semanticLabel: label),
             ),
     );
   }
@@ -178,6 +256,7 @@ class _QrSlot extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final path = ref.watch(paymentQrPathProvider(method)).asDataOrNull;
+    final busy = ref.watch(paymentQrBusyProvider).contains(method);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: AppCard(
@@ -186,7 +265,12 @@ class _QrSlot extends ConsumerWidget {
           contentPadding: EdgeInsets.zero,
           leading: path == null
               ? const Icon(Icons.qr_code_2_rounded, size: 40)
-              : PhotoThumb(path: path, label: '${method.shortLabel} QR', fallbackIcon: Icons.qr_code_2_rounded),
+              : PhotoThumb(
+                  key: ValueKey(path),
+                  path: path,
+                  label: '${method.shortLabel} QR',
+                  fallbackIcon: Icons.qr_code_2_rounded,
+                ),
           title: Text(method.label),
           subtitle: Text(path == null ? 'Not set up' : 'Shown to buyers at checkout'),
           trailing: Wrap(
@@ -196,11 +280,13 @@ class _QrSlot extends ConsumerWidget {
                 IconButton(
                   tooltip: 'Remove ${method.shortLabel} QR',
                   icon: const Icon(Icons.delete_outline_rounded),
-                  onPressed: () => removePaymentQr(context, ref, method),
+                  onPressed: busy ? null : () => removePaymentQr(context, ref, method),
                 ),
               FilledButton.tonal(
-                onPressed: () => setUpPaymentQr(context, ref, method),
-                child: Text(path == null ? 'Upload QR image' : 'Change'),
+                onPressed: busy ? null : () => setUpPaymentQr(context, ref, method),
+                child: busy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.2))
+                    : Text(path == null ? 'Upload QR image' : 'Change'),
               ),
             ],
           ),

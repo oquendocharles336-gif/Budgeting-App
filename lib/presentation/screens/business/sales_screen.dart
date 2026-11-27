@@ -115,7 +115,7 @@ class _SalesScreenState extends ConsumerState<SalesScreen> {
                 ],
               ),
             )),
-            const SectionHeader('Payment methods'),
+            const SectionHeader('Received by payment method'),
             cascade(AppCard(child: _MethodBreakdown(summary: s))),
           ],
         );
@@ -149,10 +149,10 @@ class _Tiles extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    Widget tile(String label, String value) => AppCard(
+    Widget tile(String label, String value, {String? note}) => AppCard(
           padding: const EdgeInsets.all(14),
           child: Semantics(
-            label: '$label: $value',
+            label: '$label: $value${note == null ? '' : ', $note'}',
             excludeSemantics: true,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -165,22 +165,42 @@ class _Tiles extends ConsumerWidget {
                   alignment: Alignment.centerLeft,
                   child: Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
                 ),
+                if (note != null)
+                  Text(
+                    note,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(color: context.tokens.onSecondMuted, fontSize: 11.5),
+                  ),
               ],
             ),
           ),
         );
+    final s = summary;
+    // What is still owed is the remaining balance of each order, not its
+    // total: a ₱500 order with ₱200 paid adds ₱300 here.
+    final owedNote = [
+      if (s.partialCount > 0) '${s.partialCount} partly paid',
+      if (s.unpaidCount > 0) '${s.unpaidCount} unpaid',
+    ].join(' · ');
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
-      childAspectRatio: 1.8,
+      childAspectRatio: 1.6,
       children: [
-        tile('Total sales', formatMoney(ref, summary.totalSales)),
-        tile('Orders', '${summary.orderCount}'),
-        tile('Collected', formatMoney(ref, summary.collected)),
-        tile('Unpaid by buyers', formatMoney(ref, summary.unpaid)),
+        tile('Total sales', formatMoney(ref, s.totalSales), note: '${s.orderCount} order${s.orderCount == 1 ? '' : 's'}'),
+        tile('Paid in full', '${s.paidCount}', note: s.orderCount == 0 ? null : 'of ${s.orderCount} orders'),
+        tile('Collected', formatMoney(ref, s.collected)),
+        tile(
+          'Balance due',
+          formatMoney(ref, s.unpaid),
+          note: s.deliveredBalance > 0
+              ? '${formatMoney(ref, s.deliveredBalance)} on delivered orders'
+              : (owedNote.isEmpty ? 'Nothing owed' : owedNote),
+        ),
       ],
     );
   }
@@ -336,14 +356,18 @@ class _MethodBreakdown extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final total = summary.totalSales;
+    // Shares of the money received (unpaid balances aren't in any method).
+    final total = summary.collected;
+    if (summary.byMethod.isEmpty) {
+      return Text('No payments received yet.', style: TextStyle(color: scheme.onSurfaceVariant));
+    }
     return Column(
       children: [
         for (final m in summary.byMethod)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Semantics(
-              label: '${m.method.label}: ${m.orders} orders, ${formatMoney(ref, m.total)}',
+              label: '${m.method.label}: ${formatMoney(ref, m.total)} received from ${m.orders} orders',
               excludeSemantics: true,
               child: Row(
                 children: [

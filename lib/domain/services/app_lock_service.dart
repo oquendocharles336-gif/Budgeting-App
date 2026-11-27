@@ -322,3 +322,38 @@ class LockGuard {
     return ended != null && DateTime.now().difference(ended) < const Duration(seconds: 2);
   }
 }
+
+/// The app is locking: its screens are being closed and the database
+/// closes right after. Forms use [active] to keep what was typed (instead
+/// of discarding it as on Cancel), and hand their last database write to
+/// [track] so it finishes before the database closes. After unlocking,
+/// the form reopens with its data (see `PhotoRecovery`).
+class SessionTeardown {
+  SessionTeardown._();
+
+  static bool _active = false;
+  static final _pending = <Future<void>>[];
+
+  static bool get active => _active;
+
+  static void begin() => _active = true;
+
+  /// Runs [work] before the database closes. Errors are logged, never thrown.
+  static void track(Future<void> work) {
+    _pending.add(work.catchError((Object e) => debugPrint('Could not keep the form for after unlocking: $e')));
+  }
+
+  /// Waits (briefly) for tracked work, then ends the teardown.
+  static Future<void> finish({Duration timeout = const Duration(seconds: 3)}) async {
+    final work = List.of(_pending);
+    _pending.clear();
+    try {
+      await Future.wait(work).timeout(timeout);
+    } catch (e) {
+      debugPrint('Lock: unfinished work dropped: $e');
+    } finally {
+      _active = false;
+    }
+  }
+}
+

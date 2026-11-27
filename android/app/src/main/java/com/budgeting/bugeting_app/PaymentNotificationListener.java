@@ -4,6 +4,7 @@ import android.app.Notification;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Parcelable;
 import android.service.notification.NotificationListenerService;
 import android.service.notification.StatusBarNotification;
 
@@ -65,24 +66,74 @@ public class PaymentNotificationListener extends NotificationListenerService {
             if (n == null || (n.flags & Notification.FLAG_GROUP_SUMMARY) != 0) return;
             Bundle extras = n.extras;
             if (extras == null) return;
-            CharSequence title = extras.getCharSequence(Notification.EXTRA_TITLE);
-            CharSequence text = extras.getCharSequence(Notification.EXTRA_BIG_TEXT);
-            if (text == null || text.length() == 0) text = extras.getCharSequence(Notification.EXTRA_TEXT);
-            if (text == null || text.length() == 0) return;
-            String body = text.toString();
+            String title = firstNonEmpty(
+                    extras.getCharSequence(Notification.EXTRA_TITLE_BIG),
+                    extras.getCharSequence(Notification.EXTRA_TITLE));
+            String body = textOf(n, extras);
+            // Some apps put the whole alert in the title ("You received
+            // P500.00") and leave the text empty; that is still a payment.
+            if (body.isEmpty()) body = title;
+            if (body.isEmpty()) return;
+            if (body.equals(title)) title = "";
             long when = sbn.getPostTime();
             JSONObject o = new JSONObject();
             // Same app + same text within the same minute = the same payment
             // (apps often re-post or update a notification).
             o.put("id", pkg + "|" + Integer.toHexString(body.hashCode()) + "|" + (when / 60000L));
             o.put("package", pkg);
-            o.put("title", title == null ? "" : title.toString());
+            o.put("title", title);
             o.put("text", body);
             o.put("date", when);
             append(this, o);
         } catch (Exception ignored) {
             // Never crash the listener over one notification.
         }
+    }
+
+    /**
+     * The notification's message. Apps word and style these differently:
+     * big text (most), plain text, inbox lines (several transfers in one
+     * notification) or a messaging style. Received-money alerts often use
+     * the last two, which were dropped before.
+     */
+    static String textOf(Notification n, Bundle extras) {
+        String text = firstNonEmpty(
+                extras.getCharSequence(Notification.EXTRA_BIG_TEXT),
+                extras.getCharSequence(Notification.EXTRA_TEXT));
+        if (!text.isEmpty()) return text;
+        CharSequence[] lines = extras.getCharSequenceArray(Notification.EXTRA_TEXT_LINES);
+        if (lines != null && lines.length > 0) {
+            StringBuilder sb = new StringBuilder();
+            for (CharSequence line : lines) {
+                if (line == null || line.length() == 0) continue;
+                if (sb.length() > 0) sb.append(". ");
+                sb.append(line);
+            }
+            if (sb.length() > 0) return sb.toString();
+        }
+        Parcelable[] messages = extras.getParcelableArray(Notification.EXTRA_MESSAGES);
+        if (messages != null && messages.length > 0) {
+            // The newest message is last.
+            for (int i = messages.length - 1; i >= 0; i--) {
+                if (messages[i] instanceof Bundle) {
+                    CharSequence t = ((Bundle) messages[i]).getCharSequence("text");
+                    if (t != null && t.length() > 0) return t.toString();
+                }
+            }
+        }
+        return firstNonEmpty(
+                extras.getCharSequence(Notification.EXTRA_SUMMARY_TEXT),
+                n.tickerText);
+    }
+
+    private static String firstNonEmpty(CharSequence... values) {
+        for (CharSequence v : values) {
+            if (v != null) {
+                String s = v.toString().trim();
+                if (!s.isEmpty()) return s;
+            }
+        }
+        return "";
     }
 
     private static File queueFile(Context context) {

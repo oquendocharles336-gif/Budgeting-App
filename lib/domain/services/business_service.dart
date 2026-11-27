@@ -264,17 +264,29 @@ class BusinessService {
   /// confirmation; pass [allowPartial] false to get a
   /// [ShortPaymentException] instead. Each [opKey] is recorded once (a
   /// retry can't pay twice).
+  ///
+  /// Pay on delivery: the order is saved Unpaid (or with a deposit) and
+  /// the balance is recorded here when the buyer pays. Pass [fulfillment]
+  /// (usually Delivered) to change the delivery status in the same write,
+  /// so "delivered and paid" can never be half saved. Only the order row
+  /// changes: stock was used when the order was created and is never
+  /// touched by a payment.
   Future<PaymentResult> recordPayment(
     int orderId, {
     required int tendered,
     required PaymentMethod method,
     bool allowPartial = true,
+    FulfillmentStatus? fulfillment,
     String? opKey,
   }) async {
     final order = await _orders.byId(orderId);
     if (order == null) throw StateError('This order no longer exists');
+    if (order.isCancelled) throw StateError('This order was cancelled');
     final result = PaymentCalculator.compute(total: order.total, alreadyPaid: order.paidAmount, tendered: tendered);
-    if (result.due == 0) return result;
+    if (result.due == 0) {
+      if (fulfillment != null && fulfillment != order.fulfillment) await _orders.setFulfillment(orderId, fulfillment);
+      return result;
+    }
     if (result.applied == 0) throw ArgumentError('Enter the amount received');
     if (result.isShort && !allowPartial) throw ShortPaymentException(result);
     final paid = order.paidAmount + result.applied;
@@ -286,6 +298,7 @@ class BusinessService {
         changeGiven: () => method.isCash ? result.change : null,
         // Unpaid / Partially Paid / Paid follows paidAmount.
         status: statusFor(paidAmount: paid, total: order.total),
+        fulfillment: fulfillment,
         updatedAt: _clock(),
       ),
       opKey: opKey,

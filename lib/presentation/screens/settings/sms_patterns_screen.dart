@@ -119,12 +119,15 @@ class _SmsPatternEditorState extends ConsumerState<SmsPatternEditor> {
     final err = SmsParser.validate(_body.text);
     if (err != null) return err;
     if (_sample.text.trim().isEmpty) return 'Paste an SMS above to test.';
+    // Only this pattern: the built-in "money received" rules would hide
+    // whether the pattern itself matches.
     final parser = SmsParser([
       SmsPattern(bankName: _name.text.isEmpty ? 'Test' : _name.text, bodyPattern: _body.text, kind: _kind),
-    ]);
+    ], builtInIncoming: false);
     final r = parser.parse(SmsMessage(id: 't', address: '', body: _sample.text, date: DateTime.now()));
     if (r == null) return 'No match (or the message looks like an OTP).';
-    return 'Amount: ${r.amount / 100}\nMerchant: ${r.merchant}\nCard last 4: ${r.last4 ?? '—'}\nRef: ${r.reference ?? '—'}';
+    return 'Amount: ${r.amount / 100} (${r.isIncome ? 'money in' : 'money out'})\nMerchant: ${r.merchant}\n'
+        'Card last 4: ${r.last4 ?? '—'}\nRef: ${r.reference ?? '—'}';
   }
 
   Future<void> _save() async {

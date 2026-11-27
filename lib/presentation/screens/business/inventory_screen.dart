@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -8,6 +9,7 @@ import 'package:intl/intl.dart';
 
 import '../../../core/op_key.dart';
 import '../../../data/models/business.dart';
+import '../../../domain/services/app_lock_service.dart' show SessionTeardown;
 import '../../../domain/services/photo_service.dart';
 import '../../providers/business_providers.dart';
 import '../../providers/core_providers.dart';
@@ -315,6 +317,11 @@ class _InventoryFormScreenState extends ConsumerState<InventoryFormScreen> {
   late bool _custom;
   String? _photo;
   final _picked = PickedPhotos();
+
+  /// For keeping the form when the app locks while it is open.
+  late final Map<String, String> _initialFields;
+  String? _initialPhoto;
+  bool _recovered = false;
   late final PhotoService _photos;
   String? _savedPhoto;
   bool _saving = false;
@@ -335,8 +342,14 @@ class _InventoryFormScreenState extends ConsumerState<InventoryFormScreen> {
     _savedPhoto = e?.photoPath;
     // Rebuilt after Android closed the app during the camera: put the typed
     // values and the recovered photo back.
+    // What the form starts with, to tell later whether anything was typed.
+    _initialFields = _draft().fields;
+    _initialPhoto = _photo;
     final r = widget.recovered ?? _photos.takeRecovery(PhotoDraft.inventoryForm, e?.id);
-    if (r != null) _restore(r);
+    if (r != null) {
+      _restore(r);
+      _recovered = true;
+    }
   }
 
   void _restore(RecoveredForm r) {
@@ -374,9 +387,18 @@ class _InventoryFormScreenState extends ConsumerState<InventoryFormScreen> {
 
   @override
   void dispose() {
-    // Photos picked but not saved are deleted; the camera draft is done.
-    _picked.discardExcept(_photos, _savedPhoto);
-    _photos.clearDraft();
+    if (SessionTeardown.active) {
+      // The app is locking, not the user cancelling: keep what was typed
+      // and the picked photo, and reopen the form after unlocking.
+      final d = _draft();
+      if (_recovered || d.photoPath != _initialPhoto || !mapEquals(d.fields, _initialFields)) {
+        SessionTeardown.track(_photos.keepDraftForUnlock(d));
+      }
+    } else {
+      // Photos picked but not saved are deleted; the camera draft is done.
+      _picked.discardExcept(_photos, _savedPhoto);
+      _photos.clearDraft();
+    }
     _name.dispose();
     _quantity.dispose();
     _customUnit.dispose();

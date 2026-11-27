@@ -16,6 +16,21 @@ class MemoryKeys implements PhotoKeyStore {
   Future<void> delete() async => key = null;
 }
 
+/// Fails the first [failures] loads, like a keystore that isn't ready.
+class FlakyKeys extends MemoryKeys {
+  FlakyKeys(this.failures);
+  int failures;
+
+  @override
+  Future<List<int>> loadOrCreate() async {
+    if (failures > 0) {
+      failures--;
+      throw Exception('keystore not ready');
+    }
+    return super.loadOrCreate();
+  }
+}
+
 void main() {
   final photo = List<int>.generate(5000, (i) => (i * 31) % 256); // stands in for JPEG bytes
 
@@ -52,5 +67,14 @@ void main() {
     final a = await crypto.encrypt(photo);
     final b = await crypto.encrypt(photo);
     expect(a.sublist(5, 17), isNot(b.sublist(5, 17)));
+  });
+
+  test('a failed key load is retried on the next photo (not cached)', () async {
+    final keys = FlakyKeys(1);
+    final crypto = PhotoCrypto(keys);
+    await expectLater(crypto.encrypt(photo), throwsException);
+    final enc = await crypto.encrypt(photo);
+    expect(await crypto.decrypt(enc), photo);
+    expect(keys.created, 1);
   });
 }

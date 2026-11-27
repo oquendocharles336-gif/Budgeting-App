@@ -33,7 +33,7 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends State<LoginScreen> with WidgetsBindingObserver {
   final _password = TextEditingController();
   bool _busy = false;
   String? _error;
@@ -41,20 +41,39 @@ class _LoginScreenState extends State<LoginScreen> {
   DateTime? _waitUntil;
   Timer? _tick;
 
+  /// The fingerprint prompt opens by itself once, and only while Pitaka is
+  /// in front (see DeviceLockScreen).
+  bool _autoAsked = false;
+
   @override
   void initState() {
     super.initState();
     _restoreAttempts();
     if (widget.onBiometric != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _biometric());
+      WidgetsBinding.instance.addObserver(this);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _autoBiometric());
     }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
     _password.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _autoBiometric();
+  }
+
+  void _autoBiometric() {
+    if (_autoAsked || !mounted || widget.onBiometric == null) return;
+    final state = WidgetsBinding.instance.lifecycleState;
+    if (state != null && state != AppLifecycleState.resumed) return;
+    _autoAsked = true;
+    _biometric();
   }
 
   Future<void> _restoreAttempts() async {
@@ -86,8 +105,13 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _biometric() async {
     final f = widget.onBiometric;
     if (f == null || _busy) return;
-    setState(() => _busy = true);
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
+      // On success the app replaces this screen; if it is still here the
+      // buttons must work again, so busy is always cleared below.
       await f();
     } catch (e) {
       debugPrint('Biometric unlock failed: $e');

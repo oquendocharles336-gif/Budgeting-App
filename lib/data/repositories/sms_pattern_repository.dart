@@ -25,7 +25,9 @@ class SmsPatternRepository {
   Future<void> resetToDefaults() async {
     await _db.transaction((txn) async {
       await txn.delete('sms_patterns');
-      for (final p in DefaultData.smsPatterns) {
+      // Both default sets: resetting used to drop the e-wallet notification
+      // patterns (including "You received PHP 100" with no sender name).
+      for (final p in [...DefaultData.smsPatterns, ...DefaultData.notificationPatterns]) {
         await txn.insert('sms_patterns', p.toMap());
       }
     });

@@ -454,7 +454,8 @@ class BusinessOrder {
     this.tendered,
     this.changeGiven,
     this.method = PaymentMethod.cash,
-    OrderStatus? status,
+    // Private named parameter: callers still pass `status:`.
+    this._status,
     this.fulfillment = FulfillmentStatus.pending,
     this.notes,
     this.budgetTxId,
@@ -462,7 +463,7 @@ class BusinessOrder {
     this.cancelledAt,
     required this.createdAt,
     required this.updatedAt,
-  }) : _status = status;
+  });
 
   final int? id;
   final String buyer;

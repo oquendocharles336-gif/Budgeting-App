@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show mapEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
@@ -7,6 +8,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../core/money.dart';
 import '../../../core/op_key.dart';
 import '../../../data/models/business.dart';
+import '../../../domain/services/app_lock_service.dart' show SessionTeardown;
 import '../../../domain/services/photo_service.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/business_providers.dart';
@@ -94,6 +96,11 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
   String? _photo;
   String? _savedPhoto;
   final _picked = PickedPhotos();
+
+  /// For keeping the form when the app locks while it is open.
+  late Map<String, String> _initialFields;
+  String? _initialPhoto;
+  bool _recovered = false;
   late final PhotoService _photos;
   final _opKey = newOpKey('product');
 
@@ -111,15 +118,27 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
     _photo = e?.photoPath;
     _savedPhoto = e?.photoPath;
     if (e?.id == null) _recipe = [];
+    // What the form starts with, to tell later whether anything was typed.
+    _initialFields = _draft().fields;
+    _initialPhoto = _photo;
     final r = widget.recovered ?? _photos.takeRecovery(PhotoDraft.productForm, e?.id);
-    if (r != null) _restore(r);
+    if (r != null) {
+      _restore(r);
+      _recovered = true;
+    }
     if (_recipe == null) _loadRecipe(e!.id!);
   }
 
   Future<void> _loadRecipe(int id) async {
     try {
       final lines = await ref.read(businessServiceProvider).recipe(id);
-      if (mounted) setState(() => _recipe ??= List.of(lines));
+      if (!mounted) return;
+      setState(() {
+        if (_recipe != null) return;
+        _recipe = List.of(lines);
+        // The saved recipe isn't a change the user made.
+        if (!_recovered) _initialFields = _draft().fields;
+      });
     } catch (_) {
       if (mounted) setState(() => _recipe ??= []);
     }
@@ -172,8 +191,18 @@ class _ProductFormScreenState extends ConsumerState<ProductFormScreen> {
 
   @override
   void dispose() {
-    _picked.discardExcept(_photos, _savedPhoto);
-    _photos.clearDraft();
+    if (SessionTeardown.active) {
+      // The app is locking, not the user cancelling: keep what was typed
+      // and the picked photo, and reopen the form after unlocking.
+      final d = _draft();
+      if (_recovered || d.photoPath != _initialPhoto || !mapEquals(d.fields, _initialFields)) {
+        SessionTeardown.track(_photos.keepDraftForUnlock(d));
+      }
+    } else {
+      // Photos picked but not saved are deleted; the camera draft is done.
+      _picked.discardExcept(_photos, _savedPhoto);
+      _photos.clearDraft();
+    }
     _name.dispose();
     _price.dispose();
     super.dispose();

@@ -82,4 +82,49 @@ void main() {
     expect(PhotoDraft.fromJson('{not json'), isNull);
     expect(PhotoDraft.fromJson(null), isNull);
   });
+
+  group('the app locked while an inventory form was open', () {
+    const typed = PhotoDraft(
+      form: PhotoDraft.inventoryForm,
+      fields: {'name': 'Flour', 'quantity': '2', 'unit': 'kg'},
+      photoPath: '/app/business_photos/picked.enc',
+      interrupted: true,
+    );
+
+    test('the form reopens after unlocking with what was typed and its photo', () async {
+      final r = await recovery(draft: typed).recover();
+      expect(r, isNotNull);
+      expect(r!.draft.form, PhotoDraft.inventoryForm);
+      expect(r.draft.fields['name'], 'Flour');
+      expect(r.draft.photoPath, '/app/business_photos/picked.enc');
+      expect(r.photoPath, isNull); // nothing new from the camera
+      expect(r.message, PhotoRecovery.lockedMessage);
+      // Handled: a second unlock doesn't reopen it again.
+      final saved = PhotoDraft.fromJson(stored)!;
+      expect(saved.interrupted, isFalse);
+      expect(saved.pending, isFalse);
+      expect(await recovery(draft: saved).recover(), isNull);
+    });
+
+    test('locked while the camera was open: the form comes back and says to retake the photo', () async {
+      final r = await recovery(draft: typed.copyWith(awaitingCamera: true)).recover();
+      expect(r!.draft.fields['quantity'], '2');
+      expect(r.message, contains('take the photo again'));
+      expect(PhotoDraft.fromJson(stored)!.pending, isFalse);
+    });
+
+    test('a photo Android kept is still attached', () async {
+      final r = await recovery(draft: typed.copyWith(awaitingCamera: true), lost: const LostPhoto(path: '/cache/img.jpg')).recover();
+      expect(r!.photoPath, '/app/business_photos/new.enc');
+      expect(r.message, isNull);
+    });
+
+    test('the flag survives saving and reading the draft', () {
+      final back = PhotoDraft.fromJson(typed.toJson())!;
+      expect(back.interrupted, isTrue);
+      expect(back.pending, isTrue);
+      // Drafts saved before this version have no flag.
+      expect(PhotoDraft.fromJson('{"form":"inventory","fields":{}}')!.interrupted, isFalse);
+    });
+  });
 }
