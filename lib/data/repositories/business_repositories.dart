@@ -316,10 +316,8 @@ class OrderRepository {
       where.add("buyer LIKE ? ESCAPE '\\'");
       args.add(_like(q));
     }
-    if (status != null) {
-      where.add('status = ?');
-      args.add(status.dbValue);
-    }
+    // Payment status follows the amounts (see OrderStatus).
+    if (status != null) where.add(status.sqlWhere);
     final rows = await _db.query(
       'orders',
       where: where.isEmpty ? null : where.join(' AND '),
@@ -431,6 +429,7 @@ class OrderRepository {
                 'change_given': o.changeGiven,
                 'method': o.method.dbValue,
                 'status': o.status.dbValue,
+                'fulfillment': o.fulfillment.dbValue,
                 'notes': o.notes,
                 'updated_at': o.updatedAt.millisecondsSinceEpoch,
               },
@@ -444,6 +443,16 @@ class OrderRepository {
     await _db.update(
       'orders',
       {'status': status.dbValue, 'updated_at': DateTime.now().millisecondsSinceEpoch},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Delivered / For Pick-up / Pending. Never touches payment or stock.
+  Future<void> setFulfillment(int id, FulfillmentStatus fulfillment) async {
+    await _db.update(
+      'orders',
+      {'fulfillment': fulfillment.dbValue, 'updated_at': DateTime.now().millisecondsSinceEpoch},
       where: 'id = ?',
       whereArgs: [id],
     );

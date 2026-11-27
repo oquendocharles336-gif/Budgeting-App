@@ -3,8 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../core/dates.dart';
+import '../../../data/models/debt.dart';
 import '../../../domain/budget/budget_calculator.dart';
-import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
 import '../../theme/app_palette.dart';
@@ -16,7 +16,6 @@ import '../../widgets/motion/skeleton.dart';
 import '../../widgets/payment_card_view.dart';
 import '../../widgets/phone_access_widgets.dart';
 import '../analytics/analytics_screen.dart';
-import '../business/business_shell.dart';
 import '../cards/card_detail_screen.dart';
 import '../debts/debts_screen.dart';
 import '../loans/loans_screen.dart';
@@ -30,7 +29,6 @@ class DashboardScreen extends ConsumerWidget {
     required this.onOpenBudget,
     required this.onOpenWallets,
     this.onOpenInsights,
-    this.onOpenBusiness,
   });
 
   final VoidCallback onSeeAllTransactions;
@@ -40,25 +38,11 @@ class DashboardScreen extends ConsumerWidget {
   /// The Insights tab. Null: open Insights on top.
   final VoidCallback? onOpenInsights;
 
-  /// Opens the business side (the Business tab when Business Mode is on).
-  /// Null: open it on top.
-  final VoidCallback? onOpenBusiness;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final monthKey = Dates.monthKey(DateTime.now());
     final summary = ref.watch(monthSummaryProvider(monthKey));
-    // Business Mode (Settings): off hides every Business button on Home.
-    final business = ref.watch(businessModeProvider);
-    void openBusiness() {
-      final open = onOpenBusiness;
-      if (open != null) {
-        open();
-      } else {
-        _push(context, const BusinessShell());
-      }
-    }
-
     return Scaffold(
       body: SafeArea(
         bottom: false,
@@ -74,10 +58,7 @@ class DashboardScreen extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
             children: [
-              _Header(
-                onSettings: () => _push(context, const SettingsScreen()),
-                onBusiness: business ? openBusiness : null,
-              ),
+              _Header(onSettings: () => _push(context, const SettingsScreen())),
               const SizedBox(height: 16),
               // "Allow" buttons when the phone hasn't allowed what Pitaka needs.
               const PhoneAccessCard(),
@@ -98,7 +79,6 @@ class DashboardScreen extends ConsumerWidget {
                 onDebts: () => _push(context, const DebtsScreen()),
                 onInsights: onOpenInsights ?? () => _push(context, const AnalyticsScreen()),
                 onLoans: () => _push(context, const LoansScreen()),
-                onBusiness: business ? openBusiness : null,
               ),
               const SizedBox(height: 12),
               _CardsStrip(onOpenWallets: onOpenWallets),
@@ -118,12 +98,11 @@ class DashboardScreen extends ConsumerWidget {
       Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
 }
 
+/// Greeting and Settings. Business Mode is opened only from the Business
+/// tab in the bottom bar (one entry point, since 1.6.0).
 class _Header extends StatelessWidget {
-  const _Header({required this.onSettings, this.onBusiness});
+  const _Header({required this.onSettings});
   final VoidCallback onSettings;
-
-  /// Null when Business Mode is off: the button is hidden.
-  final VoidCallback? onBusiness;
 
   @override
   Widget build(BuildContext context) {
@@ -144,10 +123,6 @@ class _Header extends StatelessWidget {
             ],
           ),
         ),
-        if (onBusiness != null) ...[
-          IconButton.filledTonal(onPressed: onBusiness, icon: const Icon(Icons.storefront_rounded), tooltip: 'Switch to Business'),
-          const SizedBox(width: 8),
-        ],
         IconButton.filledTonal(onPressed: onSettings, icon: const Icon(Icons.settings_rounded), tooltip: 'Settings'),
       ],
     );
@@ -165,7 +140,6 @@ class _HeroBudgetCard extends ConsumerWidget {
     final t = context.tokens;
     final p = summary.overall;
     final now = DateTime.now();
-    final safe = BudgetCalculator.safeDailySpend(budget: p.budget, spent: p.spent, month: summary.month, now: now);
     final caption = TextStyle(color: t.onHeroMuted, fontSize: 13, fontWeight: FontWeight.w500);
     final warn = p.level == BudgetLevel.warning || p.level == BudgetLevel.exceeded;
 
@@ -194,18 +168,7 @@ class _HeroBudgetCard extends ConsumerWidget {
                 children: [
                   BudgetProgressBar(progress: p, onDark: true),
                   const SizedBox(height: Space.sm + 2),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text('${formatMoney(ref, p.spent)} of ${formatMoney(ref, p.budget)} · ${p.percentUsed}%', style: caption),
-                      ),
-                      if (safe > 0)
-                        Text(
-                          '${formatMoney(ref, safe)}/day',
-                          style: TextStyle(color: t.onHero, fontWeight: FontWeight.w700, fontSize: 13),
-                        ),
-                    ],
-                  ),
+                  Text('${formatMoney(ref, p.spent)} of ${formatMoney(ref, p.budget)} · ${p.percentUsed}%', style: caption),
                   if (summary.spentByAccount.isNotEmpty) ...[
                     const SizedBox(height: Space.sm),
                     _PaidWithLine(spent: summary.spentByAccount, color: t.onHeroMuted),
@@ -222,19 +185,13 @@ class _QuickActions extends StatelessWidget {
     required this.onDebts,
     required this.onInsights,
     required this.onLoans,
-    this.onBusiness,
   });
   final VoidCallback onDebts;
   final VoidCallback onInsights;
   final VoidCallback onLoans;
 
-  /// Null when Business Mode is off: the button is hidden and the other
-  /// three share the row.
-  final VoidCallback? onBusiness;
-
   @override
   Widget build(BuildContext context) {
-    final business = onBusiness;
     return Row(
       children: [
         Expanded(child: _Action(icon: Icons.insights_rounded, label: 'Insights', onTap: onInsights)),
@@ -246,10 +203,6 @@ class _QuickActions extends StatelessWidget {
         Expanded(
           child: _Action(icon: Icons.request_quote_rounded, label: 'Loans', onTap: onLoans, badge: _OpenCount.loans),
         ),
-        if (business != null) ...[
-          const SizedBox(width: 10),
-          Expanded(child: _Action(icon: Icons.storefront_rounded, label: 'Business', onTap: business)),
-        ],
       ],
     );
   }
@@ -369,8 +322,9 @@ class _DebtSummary extends ConsumerWidget {
         if (active.isEmpty) return const SizedBox.shrink();
         final total = active.fold<int>(0, (a, d) => a + d.remaining);
         final now = DateTime.now();
-        final withDue = active.where((d) => d.debt.dueDate != null).toList()
-          ..sort((a, b) => a.debt.dueDate!.compareTo(b.debt.dueDate!));
+        // Overdue months first, then the soonest monthly payment day.
+        DateTime? key(DebtStatus d) => d.overdueSince(now) ?? d.nextDue(now);
+        final withDue = active.where((d) => key(d) != null).toList()..sort((a, b) => key(a)!.compareTo(key(b)!));
         final next = withDue.isEmpty ? null : withDue.first;
         final scheme = Theme.of(context).colorScheme;
         return Column(
@@ -398,7 +352,7 @@ class _DebtSummary extends ConsumerWidget {
                           Text(
                             next.isOverdue(now)
                                 ? '${next.debt.creditor} is overdue'
-                                : 'Next: ${next.debt.creditor}, ${DateFormat('MMM d').format(next.debt.dueDate!)}',
+                                : 'Next: ${next.debt.creditor}, ${DateFormat('MMM d').format(next.nextDue(now)!)}',
                             style: TextStyle(
                               color: next.isOverdue(now) ? scheme.error : scheme.onSurfaceVariant,
                               fontSize: 13,

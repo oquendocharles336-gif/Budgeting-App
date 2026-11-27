@@ -115,12 +115,51 @@ class PhotoService {
     await _keys.delete();
     _crypto.forgetKey();
     await _settings.remove(SettingsRepository.photoDraft);
+    for (final key in SettingsRepository.paymentQrKeys) {
+      await _settings.remove(key);
+    }
   }
 
-  /// Removes photo files nothing points at any more.
+  /// Removes photo files nothing points at any more (payment QR codes are
+  /// kept).
   Future<int> cleanUp() async {
-    final inUse = {...await _inventory.photoPaths(), ...await _products.photoPaths()};
+    final inUse = {
+      ...await _inventory.photoPaths(),
+      ...await _products.photoPaths(),
+      ...await _settings.paymentQrPaths(),
+    };
     return _store.deleteUnused(inUse);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Payment QR codes (Business): the owner's own Maya / MariBank / BDO QR
+  // ---------------------------------------------------------------------------
+
+  /// The saved QR photo for a payment method ('maya', 'maribank', 'bdo'),
+  /// or null when none was set up.
+  Future<String?> paymentQrPath(String methodId) async {
+    final v = await _settings.get(SettingsRepository.paymentQrKey(methodId));
+    return (v == null || v.isEmpty) ? null : v;
+  }
+
+  /// Picks a QR image (usually a screenshot from the gallery), saves it
+  /// encrypted like other business photos and makes it the QR shown at
+  /// checkout. Returns the new path, or null if cancelled. The previous
+  /// QR image is deleted. Throws [PhotoAccessDenied].
+  Future<String?> setPaymentQr(String methodId, {PhotoSource source = PhotoSource.gallery}) async {
+    final path = await pick(source);
+    if (path == null) return null;
+    final old = await paymentQrPath(methodId);
+    await _settings.set(SettingsRepository.paymentQrKey(methodId), path);
+    if (old != null && old != path) await delete(old);
+    return path;
+  }
+
+  /// Removes the owner's QR for [methodId].
+  Future<void> removePaymentQr(String methodId) async {
+    final old = await paymentQrPath(methodId);
+    await _settings.remove(SettingsRepository.paymentQrKey(methodId));
+    await delete(old);
   }
 
   // ---------------------------------------------------------------------------

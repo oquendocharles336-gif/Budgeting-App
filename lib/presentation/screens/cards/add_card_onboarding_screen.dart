@@ -51,6 +51,15 @@ class AddCardOnboardingScreen extends ConsumerWidget {
                         'turn them into transactions for you to review. It\'s off until you allow it, and texts never '
                         'leave your phone.',
                   ),
+                  if (Platform.isAndroid)
+                    const _Option(
+                      icon: Icons.notifications_active_rounded,
+                      title: 'Connect App Notifications (Free)',
+                      badge: 'New',
+                      body: 'For Maya, GCash, MariBank or BDO Pay: turn on "Track payments automatically" when you add '
+                          'the account, then allow Notification access. When the app shows a payment, Pitaka records '
+                          'it and takes it from that balance. Free, offline, and only that app\'s notifications are read.',
+                    ),
                   _Option(
                     icon: Icons.sync_rounded,
                     title: 'Automatic bank sync',

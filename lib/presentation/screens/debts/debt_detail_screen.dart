@@ -6,6 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import '../../../core/money.dart';
 import '../../../data/models/debt.dart';
 import '../../../domain/debt/interest_calculator.dart';
+import '../../../domain/debt/monthly_due.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
@@ -78,13 +79,18 @@ class DebtDetailScreen extends ConsumerWidget {
                     if (d.lenderLabel != null) _row('Borrowed from', d.lenderLabel!),
                     _row('Total', Money.format(d.totalAmount, symbol: symbol)),
                     _row('Paid so far', Money.format(s.paid, symbol: symbol)),
-                    if (d.dueDate != null) _row('Due', DateFormat('MMMM d, yyyy').format(d.dueDate!)),
+                    if (d.dueDay != null) _row('Payment day', MonthlyDue.everyLabel(d.dueDay!)),
+                    if (s.overdueSince(DateTime.now()) case final missed?)
+                      _row('Overdue since', DateFormat('MMMM d, yyyy').format(missed))
+                    else if (s.nextDue(DateTime.now()) case final next?)
+                      _row('Next payment', DateFormat('MMMM d, yyyy').format(next)),
                     if (d.interestRateBp != null)
                       _row(
                         'Interest',
                         '${(d.interestRateBp! / 100).toStringAsFixed(2)}% ${d.interestPeriod.label} · ${d.interestType.label.toLowerCase()}',
                       ),
-                    if (d.termMonths != null) _row('Term', '${d.termMonths} monthly payments'),
+                    if (d.termMonths != null)
+                      _row('Loan term', '${d.termMonths} month${d.termMonths == 1 ? '' : 's'} · ${s.paymentsCount} paid'),
                     if (d.notes != null) _row('Notes', d.notes!),
                   ],
                 ),

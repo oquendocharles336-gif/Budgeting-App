@@ -47,6 +47,17 @@ class SettingsRepository {
   /// "Not now" on Home's "Allow" card: hidden until this time (ms).
   static const phoneAccessSnoozedUntil = 'phone_access_snoozed_until';
 
+  /// The owner's own payment QR images (encrypted photo paths), one per
+  /// QR payment method ('maya', 'maribank', 'bdo'). Paths on this phone,
+  /// so they are private (not in backups).
+  static const paymentQrPrefix = 'payment_qr_';
+  static String paymentQrKey(String methodId) => '$paymentQrPrefix$methodId';
+  static const paymentQrKeys = {'${paymentQrPrefix}maya', '${paymentQrPrefix}maribank', '${paymentQrPrefix}bdo'};
+
+  /// Automatic tracking: newest SMS already read (ms), so each text is
+  /// only looked at once.
+  static const autoTrackSmsSeen = 'auto_track_sms_seen';
+
   /// Keys that are device-specific and never exported in backups.
   static const privateKeys = {
     pinHash,
@@ -61,6 +72,8 @@ class SettingsRepository {
     whatsNewSeenVersion,
     businessMode,
     phoneAccessSnoozedUntil,
+    ...paymentQrKeys,
+    autoTrackSmsSeen,
   };
 
   /// Leftovers of the old PIN lock (before the password + encryption
@@ -91,5 +104,11 @@ class SettingsRepository {
 
   Future<void> remove(String key) async {
     await _db.delete('settings', where: 'key = ?', whereArgs: [key]);
+  }
+
+  /// Every saved payment QR photo path (kept by photo clean-up).
+  Future<Set<String>> paymentQrPaths() async {
+    final rows = await _db.query('settings', where: 'key LIKE ?', whereArgs: ['$paymentQrPrefix%']);
+    return {for (final r in rows) if ((r['value'] as String?)?.isNotEmpty ?? false) r['value'] as String};
   }
 }

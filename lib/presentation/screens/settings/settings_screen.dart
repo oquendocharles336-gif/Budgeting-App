@@ -26,8 +26,8 @@ import '../../widgets/update_sheets.dart';
 import '../../widgets/photo_migration_line.dart';
 import '../auth/recovery_key_screen.dart';
 import '../auth/sign_up_screen.dart';
+import '../business/payment_qr.dart';
 import '../cards/cards_screen.dart';
-import '../business/business_shell.dart';
 import '../debts/debts_screen.dart';
 import '../import/import_hub_screen.dart';
 import '../legal/legal_document_screen.dart';
@@ -222,16 +222,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 SwitchListTile(
                   secondary: const Icon(Icons.business_center_rounded),
                   title: const Text('Business Mode'),
-                  subtitle: const Text('Show Business on Home and as a tab in the bottom bar'),
+                  subtitle: const Text('Show the Business tab in the bottom bar'),
                   value: businessMode,
                   onChanged: _setBusinessMode,
                 ),
-                ListTile(
-                  leading: const Icon(Icons.storefront_rounded),
-                  title: const Text('Business'),
-                  subtitle: const Text('Capital, inventory, products, orders and sales'),
-                  onTap: () => _push(const BusinessShell()),
-                ),
+                if (businessMode)
+                  ListTile(
+                    leading: const Icon(Icons.qr_code_2_rounded),
+                    title: const Text('Payment QR codes'),
+                    subtitle: const Text('Your Maya, MariBank and BDO QR for buyers'),
+                    onTap: () => _push(const PaymentQrScreen()),
+                  ),
                 if (Platform.isAndroid)
                   ListTile(
                     leading: const Icon(Icons.sms_rounded),

@@ -6,6 +6,7 @@ import '../../data/models/transaction_entry.dart';
 import '../../data/repositories/category_repository.dart';
 import '../../data/repositories/debt_repository.dart';
 import '../debt/debt_reminder.dart';
+import '../debt/interest_calculator.dart';
 
 /// What the debt logic needs from the notification plugin (a fake in tests).
 abstract interface class DebtReminderScheduler {
@@ -19,7 +20,8 @@ abstract interface class DebtReminderScheduler {
   Future<void> cancelDebtReminders(int debtId);
 }
 
-/// Debt changes, the expense a new debt creates, and deadline reminders.
+/// Debt changes, the expense a new debt creates, and monthly due-day
+/// reminders.
 ///
 /// * **New debt** (money just received or spent): also saved as an expense
 ///   in the "Debt" category with the debt's amount, date and name, linked
@@ -30,6 +32,9 @@ abstract interface class DebtReminderScheduler {
 /// * **Payments** are recorded against the debt only (remaining balance and
 ///   total debt go down). They never create a new expense, so the money
 ///   isn't counted twice.
+/// * **Due day** recurs every month ("every 15th") until the debt is
+///   settled. Each recorded payment covers one month, so after a payment
+///   the reminder moves to the next month's due date.
 class DebtService {
   DebtService({
     required DebtRepository repository,
@@ -77,6 +82,10 @@ class DebtService {
     if (debt.initialPaid < 0 || debt.initialPaid > debt.totalAmount) {
       throw ArgumentError('Amount already paid must be between zero and the total');
     }
+    final day = debt.dueDay;
+    if (day != null && (day < 1 || day > 31)) throw ArgumentError('Due day must be 1 to 31');
+    final term = debt.termMonths;
+    if (term != null && term <= 0) throw ArgumentError('Loan term must be a whole number of months');
     final now = _clock();
     final int id;
     var deadlineChanged = true;
@@ -91,7 +100,7 @@ class DebtService {
     } else {
       id = debt.id!;
       final before = await _repo.statusById(id);
-      deadlineChanged = before?.debt.dueDate != debt.dueDate;
+      deadlineChanged = before?.debt.dueDay != debt.dueDay;
       final categoryId = debt.isNew ? await _categories.debtCategoryId() : null;
       await _repo.update(
         debt,
@@ -160,18 +169,21 @@ class DebtService {
     final id = debt.id;
     if (id == null) return;
     try {
-      final deadline = debt.dueDate;
-      final at = (status.isSettled || deadline == null)
-          ? null
-          : DebtReminders.scheduleTime(deadline, _clock(), allowImmediate: allowImmediate);
+      final now = _clock();
+      // This month's (or the next unpaid month's) due date.
+      final deadline = status.nextDue(now);
+      final at = deadline == null ? null : DebtReminders.scheduleTime(deadline, now, allowImmediate: allowImmediate);
       if (at == null) {
-        // Paid, no deadline, or deadline passed: nothing should fire.
+        // Paid, or no due day: nothing should fire.
         await _notifications.cancelDebtReminders(id);
         return;
       }
+      // The monthly amount when a term is set, otherwise what's left.
+      final monthly = InterestCalculator.forStatus(status)?.monthlyPayment;
+      final amount = monthly != null && monthly > 0 && monthly < status.remaining ? monthly : status.remaining;
       final text = DebtReminders.message(
         name: debt.creditor,
-        amountText: Money.format(status.remaining, symbol: symbol),
+        amountText: Money.format(amount, symbol: symbol),
         deadline: deadline!,
         at: at,
       );

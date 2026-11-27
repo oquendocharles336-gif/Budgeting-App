@@ -1,3 +1,5 @@
+import '../../domain/debt/monthly_due.dart';
+
 /// What kind of debt this is. Stored in `debts.debt_type`.
 enum DebtType {
   loan('Loan'),
@@ -65,7 +67,8 @@ class Debt {
     this.lenderDetail,
     required this.totalAmount,
     this.initialPaid = 0,
-    this.dueDate,
+    this.dueDay,
+    this.dueFrom,
     this.interestRateBp,
     this.interestType = InterestType.simple,
     this.interestPeriod = InterestPeriod.month,
@@ -96,15 +99,32 @@ class Debt {
 
   /// Amount already paid when the debt was added (centavos).
   final int initialPaid;
-  final DateTime? dueDate;
+
+  /// Day of the month the payment is due, 1-31 ("every 15th"). Recurs
+  /// every month until the debt is settled. In a shorter month the last
+  /// day is used (31 -> Feb 28). Null = no due day. Stored in
+  /// `debts.due_day` (v12); the old one-time `due_date` column is no
+  /// longer written.
+  final int? dueDay;
+
+  /// When the monthly schedule starts counting (the first due date is the
+  /// first [dueDay] after this). Null = [createdAt]. Set when a due day is
+  /// first added to an existing debt, and by the v12 migration, so older
+  /// debts don't suddenly show months of missed payments.
+  final DateTime? dueFrom;
 
   /// Interest rate in basis points: 350 = 3.50%, per [interestPeriod].
   final int? interestRateBp;
   final InterestType interestType;
   final InterestPeriod interestPeriod;
 
-  /// Number of monthly payments, if known. Used to work out the monthly amount.
+  /// Loan term: number of monthly payments ("Gaano katagal babayaran").
+  /// Required for new and edited debts since 1.6.0; older debts may have
+  /// none. Used to work out the monthly amount.
   final int? termMonths;
+
+  /// The monthly schedule, or null without a [dueDay].
+  MonthlyDue? get schedule => dueDay == null ? null : MonthlyDue(day: dueDay!, startedAt: dueFrom ?? createdAt);
 
   /// "Bank", or the typed text for "Other".
   String? get lenderLabel {
@@ -128,7 +148,8 @@ class Debt {
     int? Function()? termMonths,
     int? totalAmount,
     int? initialPaid,
-    DateTime? Function()? dueDate,
+    int? Function()? dueDay,
+    DateTime? Function()? dueFrom,
     int? Function()? interestRateBp,
     String? Function()? notes,
     bool? isPaid,
@@ -145,7 +166,8 @@ class Debt {
         termMonths: termMonths != null ? termMonths() : this.termMonths,
         totalAmount: totalAmount ?? this.totalAmount,
         initialPaid: initialPaid ?? this.initialPaid,
-        dueDate: dueDate != null ? dueDate() : this.dueDate,
+        dueDay: dueDay != null ? dueDay() : this.dueDay,
+        dueFrom: dueFrom != null ? dueFrom() : this.dueFrom,
         interestRateBp: interestRateBp != null ? interestRateBp() : this.interestRateBp,
         notes: notes != null ? notes() : this.notes,
         isPaid: isPaid ?? this.isPaid,
@@ -165,7 +187,9 @@ class Debt {
         'term_months': termMonths,
         'total_amount': totalAmount,
         'initial_paid': initialPaid,
-        'due_date': dueDate?.millisecondsSinceEpoch,
+        'due_day': dueDay,
+        'due_from': dueFrom?.millisecondsSinceEpoch,
+        'due_date': null,
         'interest_rate_bp': interestRateBp,
         'notes': notes,
         'is_paid': isPaid ? 1 : 0,
@@ -185,9 +209,8 @@ class Debt {
         termMonths: m['term_months'] as int?,
         totalAmount: m['total_amount'] as int,
         initialPaid: m['initial_paid'] as int? ?? 0,
-        dueDate: m['due_date'] == null
-            ? null
-            : DateTime.fromMillisecondsSinceEpoch(m['due_date'] as int),
+        dueDay: _dueDayOf(m),
+        dueFrom: m['due_from'] == null ? null : DateTime.fromMillisecondsSinceEpoch(m['due_from'] as int),
         interestRateBp: m['interest_rate_bp'] as int?,
         notes: m['notes'] as String?,
         isPaid: (m['is_paid'] as int? ?? 0) == 1,
@@ -197,6 +220,16 @@ class Debt {
             ? null
             : DateTime.fromMillisecondsSinceEpoch(m['paid_at'] as int),
       );
+}
+
+/// `due_day` (v12+). A row from before v12 (an old backup being read
+/// before its fix-up, or a test map) falls back to the day of `due_date`.
+int? _dueDayOf(Map<String, Object?> m) {
+  final day = m['due_day'];
+  if (day is int && day >= 1 && day <= 31) return day;
+  final old = m['due_date'];
+  if (old is int) return DateTime.fromMillisecondsSinceEpoch(old).day;
+  return null;
 }
 
 class DebtPayment {
@@ -233,10 +266,13 @@ class DebtPayment {
 
 /// A debt plus the totals computed from its payments.
 class DebtStatus {
-  const DebtStatus({required this.debt, required this.paymentsTotal});
+  const DebtStatus({required this.debt, required this.paymentsTotal, this.paymentsCount = 0});
 
   final Debt debt;
   final int paymentsTotal;
+
+  /// How many payments were recorded (one per month is expected).
+  final int paymentsCount;
 
   int get paid => debt.initialPaid + paymentsTotal;
   int get remaining {
@@ -249,6 +285,13 @@ class DebtStatus {
 
   bool get isSettled => debt.isPaid || remaining == 0;
 
-  bool isOverdue(DateTime now) =>
-      !isSettled && debt.dueDate != null && debt.dueDate!.isBefore(now);
+  /// The due date the next reminder is for (today or later), or null when
+  /// settled or there is no due day.
+  DateTime? nextDue(DateTime now) => isSettled ? null : debt.schedule?.nextDue(now, paymentsCount);
+
+  /// The oldest monthly due date that passed without a payment, or null.
+  DateTime? overdueSince(DateTime now) => isSettled ? null : debt.schedule?.overdueSince(now, paymentsCount);
+
+  /// A monthly payment day passed and no payment was recorded for it.
+  bool isOverdue(DateTime now) => overdueSince(now) != null;
 }

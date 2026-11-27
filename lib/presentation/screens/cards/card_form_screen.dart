@@ -1,16 +1,22 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../core/ewallet_mask.dart';
 import '../../../core/money.dart';
+import '../../../core/wallet_apps.dart';
 import '../../../data/models/payment_card.dart';
+import '../../../domain/services/phone_access_service.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
 import '../../providers/data_providers.dart';
+import '../../theme/app_theme.dart';
 import '../../widgets/color_picker.dart';
 import '../../widgets/common.dart';
 import '../../widgets/payment_card_view.dart';
+import '../../widgets/phone_access_widgets.dart';
 
 class CardFormScreen extends ConsumerStatefulWidget {
   const CardFormScreen({super.key, this.existing});
@@ -35,6 +41,13 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
   late Color _color;
   bool _saving = false;
 
+  /// Free automatic tracking: on/off, and which app's notifications to
+  /// read (null = bank SMS alerts only).
+  late bool _track;
+  WalletApp? _app;
+  bool _appTouched = false;
+  bool _connecting = false;
+
   @override
   void initState() {
     super.initState();
@@ -45,7 +58,13 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
     _balance = TextEditingController(text: e == null ? '' : Money.toInput(e.balance < 0 ? 0 : e.balance));
     _type = e?.type ?? CardType.credit;
     _color = Color(e?.color ?? palette.first.toARGB32());
-    _nickname.addListener(() => setState(() {}));
+    _track = e?.tracksAutomatically ?? false;
+    _app = e?.walletApp;
+    _appTouched = e?.notifyApp != null;
+    _nickname.addListener(() => setState(() {
+          // Suggest the app from the nickname ("Maya" -> Maya) until picked.
+          if (!_appTouched) _app = WalletApp.guess(_nickname.text);
+        }));
     _last4.addListener(() => setState(() {}));
     _mobile.addListener(() => setState(() {}));
   }
@@ -77,6 +96,11 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
     final repo = ref.read(cardRepositoryProvider);
     final e = widget.existing;
     final balance = Money.parse(_balance.text)!;
+    final now = DateTime.now();
+    final notifyApp = _track ? _app?.id : null;
+    // Only payments from now on are tracked: today's balance already
+    // includes everything before.
+    final trackSince = _track ? (e?.autoTrackSince ?? now) : null;
     try {
       if (e == null) {
         await repo.insert(PaymentCard(
@@ -86,7 +110,9 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
           color: _color.toARGB32(),
           mobileNumber: _normalizedMobile,
           balance: balance,
-          createdAt: DateTime.now(),
+          notifyApp: notifyApp,
+          autoTrackSince: trackSince,
+          createdAt: now,
         ));
       } else {
         // Only overwrite the balance if the user changed the field, so money
@@ -99,8 +125,12 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
           type: _type,
           color: _color.toARGB32(),
           mobileNumber: () => _normalizedMobile,
+          notifyApp: () => notifyApp,
+          autoTrackSince: () => trackSince,
         ));
       }
+      // Tell the notification listener which apps to keep.
+      await ref.read(autoTrackServiceProvider).syncWatchList();
       ref.refreshData();
       if (mounted) Navigator.of(context).pop();
     } catch (err) {
@@ -109,6 +139,97 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
         showSnack(context, 'Could not save card: $err', error: true);
       }
     }
+  }
+
+  Future<void> _connectNotifications() async {
+    setState(() => _connecting = true);
+    final ok = await allowPhoneAccess(context, ref, PhoneAccess.walletNotifications);
+    if (!mounted) return;
+    setState(() {
+      _connecting = false;
+      if (ok) _track = true;
+    });
+  }
+
+  /// "Track automatically (free)": app notifications (Maya, GCash, ...)
+  /// and bank SMS alerts, read on this phone only.
+  Widget _autoTrackSection(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final access = ref.watch(phoneAccessProvider).asDataOrNull;
+    final listenerOn = access?.walletNotifications ?? false;
+    final smsOn = access?.sms ?? false;
+    final muted = TextStyle(color: scheme.onSurfaceVariant, fontSize: 13);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              secondary: const Icon(Icons.bolt_rounded),
+              title: const Text('Track payments automatically (free)'),
+              subtitle: const Text('Every payment is added to Activity and taken from this balance. Offline, on this phone only.'),
+              value: _track,
+              onChanged: (v) => setState(() => _track = v),
+            ),
+            if (_track) ...[
+              const SizedBox(height: 8),
+              DropdownButtonFormField<WalletApp?>(
+                initialValue: _app,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Read payment notifications from'),
+                items: [
+                  for (final a in WalletApp.values) DropdownMenuItem<WalletApp?>(value: a, child: Text('${a.label} app')),
+                  const DropdownMenuItem<WalletApp?>(value: null, child: Text('No app (bank SMS alerts only)')),
+                ],
+                onChanged: (v) => setState(() {
+                  _app = v;
+                  _appTouched = true;
+                }),
+              ),
+              const SizedBox(height: 12),
+              if (_app != null) ...[
+                if (listenerOn)
+                  Row(
+                    children: [
+                      Icon(Icons.check_circle_rounded, color: StatusColors.ok(context), size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('${_app!.label} notifications connected', style: const TextStyle(fontWeight: FontWeight.w600))),
+                    ],
+                  )
+                else
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed: _connecting ? null : _connectNotifications,
+                      icon: const Icon(Icons.notifications_active_rounded),
+                      label: const Text('Connect App Notifications (Free)'),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Text(
+                  listenerOn
+                      ? 'When the ${_app!.label} app shows a payment ("You paid ₱150 to ..."), Pitaka records it here the next time you open it.'
+                      : 'Turn on "Notification access" for Pitaka. Only ${_app!.label} notifications are kept, and they never leave '
+                          'your phone. If the switch is greyed out: App info > ⋮ > Allow restricted settings.',
+                  style: muted,
+                ),
+              ],
+              if (!_isWallet || _app == null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  smsOn
+                      ? 'Bank SMS alerts that mention ••${_effectiveLast4.isEmpty ? '1234' : _effectiveLast4} are recorded too.'
+                      : 'To also record bank SMS alerts, allow "Read bank texts" in Settings > Phone permissions.',
+                  style: muted,
+                ),
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -200,6 +321,10 @@ class _CardFormScreenState extends ConsumerState<CardFormScreen> {
             Text('Color', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 10),
             ColorPickerField(colors: palette, selected: _color, onChanged: (c) => setState(() => _color = c)),
+            if (Platform.isAndroid) ...[
+              const SizedBox(height: 24),
+              _autoTrackSection(context),
+            ],
             const SizedBox(height: 32),
             FilledButton(onPressed: _saving ? null : _save, child: const Text('Save')),
           ],

@@ -105,7 +105,12 @@ class TransactionImportService {
   /// A candidate the user ticked even though it matched by details is saved
   /// (they know best). One whose external ID already exists is always
   /// skipped, because the database can only hold it once.
-  Future<ImportResult> commit(List<ImportCandidate> candidates) async {
+  ///
+  /// [moveBalances]: automatic tracking (app notifications / SMS after the
+  /// account was connected) takes each expense from the account balance,
+  /// like a typed entry. Reviewed imports don't (their money is already in
+  /// the balance the user typed).
+  Future<ImportResult> commit(List<ImportCandidate> candidates, {bool moveBalances = false}) async {
     final chosen = candidates.where((c) => c.selected).toList();
     final seen = await _transactions.existingExternalIds(chosen.map((c) => c.raw.cardId));
     var skipped = candidates.length - chosen.length;
@@ -121,7 +126,7 @@ class TransactionImportService {
         }
         seen.add(scoped);
       }
-      rows.add(_toEntry(c.raw, c.categoryId, c.hash, now));
+      rows.add(_toEntry(c.raw, c.categoryId, c.hash, now, moveBalance: moveBalances));
     }
     final inserted = await _transactions.insertMany(rows);
     await _alerts?.checkMonth(now);
@@ -170,7 +175,7 @@ class TransactionImportService {
   Future<AutoCategorizer> _categorizer() async =>
       AutoCategorizer(await _rules.all(), fallbackCategoryId: DefaultData.other);
 
-  TransactionEntry _toEntry(RawTransaction r, int? categoryId, String hash, DateTime now) =>
+  TransactionEntry _toEntry(RawTransaction r, int? categoryId, String hash, DateTime now, {bool moveBalance = false}) =>
       TransactionEntry(
         amount: r.amount,
         kind: r.kind,
@@ -187,7 +192,7 @@ class TransactionImportService {
         // Typed entries move the account balance. Imported statement / SMS
         // rows don't: the starting balance the user typed already includes
         // them, so counting them again would take the money out twice.
-        affectsBalance: r.source == TransactionSourceType.manual,
+        affectsBalance: moveBalance || r.source == TransactionSourceType.manual,
         createdAt: now,
         updatedAt: now,
       );

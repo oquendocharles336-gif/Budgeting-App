@@ -8,7 +8,9 @@ class CategoryIcons {
   static const Map<String, IconData> all = {
     'food': Icons.restaurant_rounded,
     'transport': Icons.directions_bus_rounded,
+    // Kept so a category still using it (e.g. from an old backup) shows.
     'bills': Icons.receipt_long_rounded,
+    'utilities': Icons.home_repair_service_rounded,
     'shopping': Icons.shopping_bag_rounded,
     'health': Icons.favorite_rounded,
     'entertainment': Icons.movie_rounded,
@@ -32,6 +34,7 @@ class CategoryIcons {
     'church': Icons.volunteer_activism_rounded,
     'tools': Icons.build_rounded,
     'internet': Icons.wifi_rounded,
+    'wifi': Icons.wifi_rounded,
     'water': Icons.water_drop_rounded,
     'electricity': Icons.bolt_rounded,
     'handshake': Icons.handshake_rounded,

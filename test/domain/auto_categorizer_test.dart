@@ -8,8 +8,21 @@ void main() {
 
   test('matches keywords at the start of a word, any case', () {
     expect(c.categorize("McDonald's Katipunan"), DefaultData.food);
-    expect(c.categorize('MERALCO BILLS PAYMENT'), DefaultData.bills);
+    expect(c.categorize('MERALCO BILLS PAYMENT'), DefaultData.utilities);
     expect(c.categorize('Mercury Drug - QC'), DefaultData.health);
+  });
+
+  test('utility keywords: "globe at home" (WiFi) beats "globe" (Utilities)', () {
+    final rules = [
+      for (final (i, e) in DefaultData.utilityKeywords.entries.indexed)
+        for (final kw in e.value) CategoryRule(keyword: kw, categoryId: 100 + i),
+    ];
+    final u = AutoCategorizer(rules);
+    final id = {for (final (i, k) in DefaultData.utilityKeywords.keys.indexed) k: 100 + i};
+    expect(u.categorize('MAYNILAD WATER SERVICES'), id['Water']);
+    expect(u.categorize('Meralco bill'), id['Electricity']);
+    expect(u.categorize('GLOBE AT HOME PREPAID WIFI'), id['WiFi']);
+    expect(u.categorize('Globe load'), id['Utilities']);
   });
 
   test('longest keyword wins: grabfood beats grab', () {

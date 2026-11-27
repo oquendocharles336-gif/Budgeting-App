@@ -26,6 +26,11 @@ import 'common.dart';
           title: 'Install updates',
           why: 'Lets Pitaka install its own updates ("Install unknown apps")',
         ),
+      PhoneAccess.walletNotifications => (
+          icon: Icons.notifications_paused_rounded,
+          title: 'E-wallet notifications (free)',
+          why: 'Tracks Maya / GCash payments automatically, on this phone only',
+        ),
     };
 
 /// Asks for [access] (system question first, then the settings page) and
@@ -44,7 +49,11 @@ Future<bool> allowPhoneAccess(BuildContext context, WidgetRef ref, PhoneAccess a
   final title = phoneAccessInfo(access).title;
   showSnack(
     context,
-    allowed ? '$title allowed' : '$title still not allowed. You can allow it any time in Settings > Phone permissions.',
+    allowed
+        ? '$title allowed'
+        : access == PhoneAccess.walletNotifications
+            ? 'Notification access is still off. If its switch is greyed out: App info > ⋮ > Allow restricted settings, then try again.'
+            : '$title still not allowed. You can allow it any time in Settings > Phone permissions.',
     error: !allowed,
   );
   return allowed;
@@ -69,6 +78,7 @@ class PhoneAccessSection extends ConsumerWidget {
           for (final access in [
             PhoneAccess.notifications,
             PhoneAccess.sms,
+            PhoneAccess.walletNotifications,
             if (showInstall) PhoneAccess.installUpdates,
           ])
             _AccessTile(access: access, allowed: status?.allows(access)),
@@ -152,6 +162,8 @@ class PhoneAccessCard extends ConsumerWidget {
     final missing = [
       if (!status.notifications) PhoneAccess.notifications,
       if (needs.smsInUse && !status.sms) PhoneAccess.sms,
+      // A card / e-wallet is connected to its app but access is off.
+      if (needs.walletTrackingInUse && !status.walletNotifications) PhoneAccess.walletNotifications,
     ];
     if (missing.isEmpty) return const SizedBox.shrink();
 

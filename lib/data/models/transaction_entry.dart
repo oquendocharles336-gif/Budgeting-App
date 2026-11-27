@@ -18,7 +18,10 @@ enum TransactionSourceType {
   manual('manual', 'Manual'),
   csvImport('csv_import', 'CSV import'),
   smsParsed('sms_parsed', 'SMS'),
-  bankSync('bank_sync', 'Bank sync');
+  /// Since 1.6.0: saved by free automatic tracking (e-wallet app
+  /// notifications, bank SMS alerts). Reuses the old 'bank_sync' value
+  /// (allowed by the table's CHECK; there is no live bank sync).
+  bankSync('bank_sync', 'Auto-tracked');
 
   const TransactionSourceType(this.dbValue, this.label);
   final String dbValue;

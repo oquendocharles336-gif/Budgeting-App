@@ -123,9 +123,10 @@ docs/              ARCHITECTURE.md, RELEASING.md
 
 Schema is in `lib/data/db/migrations.dart` (tables, foreign keys, indexes). To change it:
 
-1. Add a new function, e.g. `_v12AddTags`, with the `ALTER TABLE` / `CREATE TABLE` statements
-   (the current latest version is 11).
-2. Register it: `12: _v12AddTags` in `_steps`. `latestVersion` updates automatically.
+1. Add a new function, e.g. `_v13AddTags`, with the `ALTER TABLE` / `CREATE TABLE` statements
+   (the current latest version is 12: monthly debt due day, utility categories, order
+   fulfillment, e-wallet auto-tracking).
+2. Register it: `13: _v13AddTags` in `_steps`. `latestVersion` updates automatically.
 3. Never edit a step that has already shipped.
 4. If the change affects backups, check `BackupService` (it copies whole tables).
 

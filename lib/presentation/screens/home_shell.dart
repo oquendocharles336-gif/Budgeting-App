@@ -12,6 +12,7 @@ import '../providers/core_providers.dart';
 import '../providers/data_providers.dart';
 import '../theme/app_palette.dart';
 import '../theme/app_theme.dart';
+import '../widgets/common.dart';
 import '../widgets/motion/animated_icons.dart';
 import '../widgets/motion/cascade.dart';
 import '../widgets/update_sheets.dart';
@@ -123,9 +124,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
   /// Photo recovery first (it may reopen a form), then "What's new", then
   /// the daily "newer version" check.
   Future<void> _startupFlow() async {
+    await _autoTrack();
     await _recoverPhoto();
     await _showWhatsNew();
     await _checkForUpdate();
+  }
+
+  /// Free automatic tracking: saves e-wallet / bank payments that arrived
+  /// (as app notifications or SMS) while the app was closed.
+  Future<void> _autoTrack() async {
+    final result = await ref.read(autoTrackServiceProvider).run();
+    if (result.added == 0 || !mounted) return;
+    ref.refreshData();
+    showSnack(context, 'Auto-tracked ${result.added} payment${result.added == 1 ? '' : 's'} from your e-wallets and cards');
   }
 
   /// Shown once per version, after the first frame: for a new user, and
@@ -296,16 +307,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     });
   }
 
-  /// Home's "Business" buttons: the tab when Business Mode is on,
-  /// otherwise the business screens on top, as before.
-  void _openBusiness() {
-    if (_tabs.contains(HomeTab.business)) {
-      _go(HomeTab.business);
-    } else {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const BusinessShell()));
-    }
-  }
-
   Widget _pageFor(HomeTab tab) => _pages.putIfAbsent(
         tab,
         () => _KeepAlivePage(
@@ -320,7 +321,6 @@ class _HomeShellState extends ConsumerState<HomeShell> {
                   onOpenBudget: () => _go(HomeTab.budget),
                   onOpenWallets: () => _go(HomeTab.wallets),
                   onOpenInsights: () => _go(HomeTab.insights),
-                  onOpenBusiness: _openBusiness,
                 ),
               HomeTab.activity => const TransactionsScreen(),
               HomeTab.budget => const BudgetScreen(),

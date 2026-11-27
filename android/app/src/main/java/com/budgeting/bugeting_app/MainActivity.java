@@ -2,6 +2,7 @@ package com.budgeting.bugeting_app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.database.Cursor;
@@ -43,6 +44,12 @@ import io.flutter.plugin.common.MethodChannel;
  * for each one, for the "Allow" buttons. The settings page is opened with
  * startActivityForResult, so the call only returns (with the new status)
  * when the user comes back to the app.
+ *
+ * And "pitaka/notifications": free e-wallet tracking. Tells
+ * {@link PaymentNotificationListener} which apps' notifications to keep
+ * (Maya, GCash, ...) and hands what it kept to Dart, which parses them on
+ * the phone. "Notification access" itself is opened from
+ * "pitaka/permissions" (page "listener").
  */
 public class MainActivity extends FlutterFragmentActivity {
     private static final String CHANNEL = "pitaka/sms";
@@ -60,6 +67,8 @@ public class MainActivity extends FlutterFragmentActivity {
     private static final String PERMISSIONS_CHANNEL = "pitaka/permissions";
     private static final int SETTINGS_REQUEST = 4245;
     private MethodChannel.Result pendingSettingsResult;
+
+    private static final String NOTIFY_CHANNEL = "pitaka/notifications";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -120,6 +129,32 @@ public class MainActivity extends FlutterFragmentActivity {
                             result.notImplemented();
                     }
                 });
+        new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), NOTIFY_CHANNEL)
+                .setMethodCallHandler((call, result) -> {
+                    switch (call.method) {
+                        case "isEnabled":
+                            result.success(isNotificationListenerEnabled());
+                            break;
+                        case "setWatched": {
+                            List<String> packages = call.argument("packages");
+                            PaymentNotificationListener.setWatched(this, packages);
+                            result.success(null);
+                            break;
+                        }
+                        case "drain":
+                            new Thread(() -> {
+                                List<Map<String, Object>> items = PaymentNotificationListener.drain(this);
+                                runOnUiThread(() -> result.success(items));
+                            }).start();
+                            break;
+                        default:
+                            result.notImplemented();
+                    }
+                });
+    }
+
+    private boolean isNotificationListenerEnabled() {
+        return NotificationManagerCompat.getEnabledListenerPackages(this).contains(getPackageName());
     }
 
     // ---------------------------------------------------------------------
@@ -131,6 +166,7 @@ public class MainActivity extends FlutterFragmentActivity {
         status.put("notifications", NotificationManagerCompat.from(this).areNotificationsEnabled());
         status.put("sms", hasSmsPermission());
         status.put("install", canInstallApks());
+        status.put("walletNotifications", isNotificationListenerEnabled());
         return status;
     }
 
@@ -142,7 +178,19 @@ public class MainActivity extends FlutterFragmentActivity {
         String pkg = getPackageName();
         Intent appDetails = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + pkg));
         Intent intent = appDetails;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        Intent fallback = appDetails;
+        if ("listener".equals(page)) {
+            // "Notification access" for Pitaka (straight to its switch on
+            // Android 11+). Apps installed from an APK may first need
+            // App info > ⋮ > "Allow restricted settings" on Android 13+.
+            fallback = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
+            intent = fallback;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+                        .putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                                new ComponentName(this, PaymentNotificationListener.class).flattenToString());
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if ("notifications".equals(page)) {
                 intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, pkg);
             } else if ("install".equals(page)) {
@@ -153,12 +201,17 @@ public class MainActivity extends FlutterFragmentActivity {
         try {
             startActivityForResult(intent, SETTINGS_REQUEST);
         } catch (Exception e) {
-            // Some phones don't have the specific page: fall back to the app's info page.
+            // Some phones don't have the specific page: fall back to the
+            // general list (notification access) or the app's info page.
             try {
-                startActivityForResult(appDetails, SETTINGS_REQUEST);
+                startActivityForResult(fallback, SETTINGS_REQUEST);
             } catch (Exception e2) {
-                pendingSettingsResult = null;
-                result.error("no_settings", "Could not open the phone's settings", null);
+                try {
+                    startActivityForResult(appDetails, SETTINGS_REQUEST);
+                } catch (Exception e3) {
+                    pendingSettingsResult = null;
+                    result.error("no_settings", "Could not open the phone's settings", null);
+                }
             }
         }
     }

@@ -195,10 +195,13 @@ final phoneAccessProvider = FutureProvider<PhoneAccessStatus>((ref) {
 
 /// What Home's "Allow" card needs to know, besides [phoneAccessProvider].
 class PhoneAccessNeeds {
-  const PhoneAccessNeeds({required this.smsInUse, required this.snoozedUntil});
+  const PhoneAccessNeeds({required this.smsInUse, required this.snoozedUntil, this.walletTrackingInUse = false});
 
   /// The user turned on SMS import before, so losing it matters.
   final bool smsInUse;
+
+  /// A card / e-wallet is connected to its app's notifications.
+  final bool walletTrackingInUse;
 
   /// "Not now" was tapped: hidden until then.
   final DateTime? snoozedUntil;
@@ -209,8 +212,10 @@ final phoneAccessNeedsProvider = FutureProvider<PhoneAccessNeeds>((ref) async {
   final settings = ref.watch(settingsRepositoryProvider);
   final sms = await settings.get(SettingsRepository.smsEnabled);
   final until = int.tryParse(await settings.get(SettingsRepository.phoneAccessSnoozedUntil) ?? '');
+  final cards = await ref.watch(cardRepositoryProvider).all();
   return PhoneAccessNeeds(
     smsInUse: sms == '1',
+    walletTrackingInUse: cards.any((c) => c.notifyApp != null && c.tracksAutomatically),
     snoozedUntil: until == null ? null : DateTime.fromMillisecondsSinceEpoch(until),
   );
 });

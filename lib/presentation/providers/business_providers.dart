@@ -95,3 +95,11 @@ final salesDataProvider = FutureProvider<SalesData>((ref) async {
   final prepared = BusinessDataPrep.clean(raw.orders.where((r) => r['cancelled_at'] == null), raw.items);
   return SalesData(prepared: prepared, summary: SalesAnalytics.summarize(prepared.orders));
 });
+
+/// The owner's uploaded payment QR (encrypted photo path) for a method,
+/// or null when none is set up yet.
+final paymentQrPathProvider = FutureProvider.family<String?, PaymentMethod>((ref, method) {
+  ref.watch(dataRevisionProvider);
+  if (!method.usesQr) return Future.value(null);
+  return ref.watch(photoServiceProvider).paymentQrPath(method.dbValue);
+});

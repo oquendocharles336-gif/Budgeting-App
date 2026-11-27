@@ -177,6 +177,14 @@ class BackupService {
         await DefaultData.ensureV7Categories(txn);
         // Old backups can hold the removed "Delivered" statuses.
         await txn.execute("UPDATE orders SET status = 'complete' WHERE status IN ('delivered', 'delivered_unpaid')");
+        // Backups from before v12 (app 1.6.0): one-time debt due dates
+        // become a monthly due day, and "Bills" becomes the utility
+        // categories, as the v12 migration does.
+        if (data.schemaVersion < 12) {
+          await Migrations.fillDebtDueDays(txn);
+          await DefaultData.ensureUtilityCategories(txn);
+        }
+        await DefaultData.ensureNotificationPatterns(txn);
       });
     } on BackupException {
       rethrow;
@@ -287,9 +295,12 @@ class BackupService {
       for (final r in DefaultData.rules) {
         await txn.insert('category_rules', r.toMap());
       }
+      // The v1 defaults still have "Bills": replace it, as v12 does.
+      await DefaultData.ensureUtilityCategories(txn);
       for (final p in DefaultData.smsPatterns) {
         await txn.insert('sms_patterns', p.toMap());
       }
+      await DefaultData.ensureNotificationPatterns(txn);
     });
   }
 

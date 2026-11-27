@@ -328,19 +328,34 @@ enum PaymentMethod {
   final String dbValue;
   final String label;
 
-  /// QR image shown to the buyer (placeholder until the owner adds theirs).
+  /// Bundled placeholder QR, used only until the owner uploads their own
+  /// (Business > Payment QR codes, or "Set up QR" at checkout).
   final String? qrAsset;
 
   bool get isCash => this == PaymentMethod.cash;
+
+  /// Maya, MariBank and BDO show a QR code to the buyer.
+  bool get usesQr => qrAsset != null;
+
+  /// "Maya" (without " (QR)").
+  String get shortLabel => label.replaceAll(' (QR)', '');
 
   static PaymentMethod fromDb(String? v) =>
       PaymentMethod.values.firstWhere((m) => m.dbValue == v, orElse: () => PaymentMethod.cash);
 }
 
-/// Complete = the order is done; the buyer may still owe (shown from the
-/// amounts). Paid = paid in full (the payment is entered with it).
+/// Payment status. Since 1.6.0 it always follows the money: nothing paid =
+/// Unpaid, part of the total = Partially Paid, all of it = Paid. Saving a
+/// payment that is less than the total keeps the order Partially Paid and
+/// shows the balance left; there is no separate confirmation.
+///
+/// Stored in `orders.status`, whose CHECK (v7) only allows 'complete' /
+/// 'paid' (+ two retired values): Unpaid and Partially Paid are both
+/// saved as 'complete' and told apart by `paid_amount`, so no table had
+/// to be rebuilt.
 enum OrderStatus {
-  complete('complete', 'Complete'),
+  unpaid('complete', 'Unpaid'),
+  partiallyPaid('complete', 'Partially Paid'),
   paid('paid', 'Paid');
 
   const OrderStatus(this.dbValue, this.label);
@@ -350,9 +365,40 @@ enum OrderStatus {
   /// Only "Paid" says the buyer has paid in full.
   bool get claimsPaid => this == OrderStatus.paid;
 
-  /// 'delivered' and 'delivered_unpaid' (removed; may still be in an old
-  /// backup) read as Complete.
-  static OrderStatus fromDb(String? v) => v == 'paid' ? OrderStatus.paid : OrderStatus.complete;
+  /// Partially Paid or Paid: the payment part of the order form shows.
+  bool get takesPayment => this != OrderStatus.unpaid;
+
+  /// The status for these amounts. A zero-total order counts as Paid only
+  /// if it was saved as paid ([stored]).
+  static OrderStatus of({required int paidAmount, required int total, String? stored}) {
+    if (total > 0 && paidAmount >= total) return OrderStatus.paid;
+    if (paidAmount > 0) return OrderStatus.partiallyPaid;
+    if (total <= 0 && stored == 'paid') return OrderStatus.paid;
+    return OrderStatus.unpaid;
+  }
+
+  /// SQL filter on the `orders` table for this status.
+  String get sqlWhere => switch (this) {
+        OrderStatus.paid => "((total > 0 AND paid_amount >= total) OR (total <= 0 AND status = 'paid'))",
+        OrderStatus.partiallyPaid => '(paid_amount > 0 AND paid_amount < total)',
+        OrderStatus.unpaid => "(paid_amount <= 0 AND NOT (total <= 0 AND status = 'paid'))",
+      };
+}
+
+/// Delivery / pick-up, separate from payment: an order can be Delivered
+/// and still Unpaid, or Paid and still waiting for pick-up. Stored in
+/// `orders.fulfillment` (v12).
+enum FulfillmentStatus {
+  pending('pending', 'Pending'),
+  forPickup('pickup', 'For Pick-up'),
+  delivered('delivered', 'Delivered');
+
+  const FulfillmentStatus(this.dbValue, this.label);
+  final String dbValue;
+  final String label;
+
+  static FulfillmentStatus fromDb(String? v) =>
+      FulfillmentStatus.values.firstWhere((f) => f.dbValue == v, orElse: () => FulfillmentStatus.pending);
 }
 
 class OrderItem {
@@ -408,14 +454,15 @@ class BusinessOrder {
     this.tendered,
     this.changeGiven,
     this.method = PaymentMethod.cash,
-    this.status = OrderStatus.complete,
+    OrderStatus? status,
+    this.fulfillment = FulfillmentStatus.pending,
     this.notes,
     this.budgetTxId,
     this.addedToBudgetAt,
     this.cancelledAt,
     required this.createdAt,
     required this.updatedAt,
-  });
+  }) : _status = status;
 
   final int? id;
   final String buyer;
@@ -433,7 +480,16 @@ class BusinessOrder {
   final int? tendered;
   final int? changeGiven;
   final PaymentMethod method;
-  final OrderStatus status;
+
+  /// What was passed in; [status] is always worked out from the amounts.
+  final OrderStatus? _status;
+
+  /// Unpaid / Partially Paid / Paid, from [paidAmount] and [total].
+  OrderStatus get status =>
+      OrderStatus.of(paidAmount: paidAmount, total: total, stored: _status == OrderStatus.paid ? 'paid' : null);
+
+  /// Pending / For Pick-up / Delivered.
+  final FulfillmentStatus fulfillment;
   final String? notes;
 
   /// The personal income transaction this sale was added to (null = not
@@ -469,6 +525,7 @@ class BusinessOrder {
     int? Function()? changeGiven,
     PaymentMethod? method,
     OrderStatus? status,
+    FulfillmentStatus? fulfillment,
     String? Function()? notes,
     DateTime? updatedAt,
   }) =>
@@ -482,7 +539,8 @@ class BusinessOrder {
         tendered: tendered != null ? tendered() : this.tendered,
         changeGiven: changeGiven != null ? changeGiven() : this.changeGiven,
         method: method ?? this.method,
-        status: status ?? this.status,
+        status: status ?? _status,
+        fulfillment: fulfillment ?? this.fulfillment,
         notes: notes != null ? notes() : this.notes,
         budgetTxId: budgetTxId,
         addedToBudgetAt: addedToBudgetAt,
@@ -502,6 +560,7 @@ class BusinessOrder {
         'change_given': changeGiven,
         'method': method.dbValue,
         'status': status.dbValue,
+        'fulfillment': fulfillment.dbValue,
         'notes': notes,
         'budget_tx_id': budgetTxId,
         'added_to_budget_at': addedToBudgetAt?.millisecondsSinceEpoch,
@@ -520,7 +579,8 @@ class BusinessOrder {
         tendered: m['tendered'] as int?,
         changeGiven: m['change_given'] as int?,
         method: PaymentMethod.fromDb(m['method'] as String?),
-        status: OrderStatus.fromDb(m['status'] as String?),
+        status: m['status'] == 'paid' ? OrderStatus.paid : null,
+        fulfillment: FulfillmentStatus.fromDb(m['fulfillment'] as String?),
         notes: m['notes'] as String?,
         budgetTxId: m['budget_tx_id'] as int?,
         addedToBudgetAt: _date(m['added_to_budget_at']),

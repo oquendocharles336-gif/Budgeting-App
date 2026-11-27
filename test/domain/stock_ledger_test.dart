@@ -67,6 +67,9 @@ class FakeOrders implements OrderRepository {
   Future<void> setStatus(int id, OrderStatus status) async => orders[id] = orders[id]!.copyWith(status: status);
 
   @override
+  Future<void> setFulfillment(int id, FulfillmentStatus f) async => orders[id] = orders[id]!.copyWith(fulfillment: f);
+
+  @override
   Future<void> cancel(int id, {required StockPlanner planStock, String? opKey}) async {
     if (opKey != null && ops.containsKey(opKey)) return;
     final o = orders[id]!;
@@ -123,7 +126,7 @@ void main() {
   StockMovement restock(int item, double qty) =>
       StockMovement(itemId: item, change: qty, reason: StockReason.restock, date: now, createdAt: now);
 
-  BusinessOrder order({int? id, int cakes = 2, int waters = 0, OrderStatus status = OrderStatus.complete}) => BusinessOrder(
+  BusinessOrder order({int? id, int cakes = 2, int waters = 0, OrderStatus status = OrderStatus.unpaid}) => BusinessOrder(
         id: id,
         buyer: 'Ana',
         orderDate: now,
@@ -182,7 +185,8 @@ void main() {
     test('status changes and payments never change stock again', () async {
       final id = await service.saveOrder(order());
       final before = repo.ledger.length;
-      await service.setStatus(id, OrderStatus.complete);
+      await service.setStatus(id, OrderStatus.unpaid);
+      await service.setFulfillment(id, FulfillmentStatus.delivered);
       await service.saveOrder(repo.orders[id]!.copyWith(paidAmount: 100000, status: OrderStatus.paid));
       expect(repo.ledger.length, before);
       expect(repo.stock(eggs), 8);

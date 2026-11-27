@@ -95,9 +95,16 @@ class _DebtCard extends ConsumerWidget {
     String? dueText;
     // Inline, in context: "Due in 2 days" / "Due tomorrow" / "Overdue…".
     String? soonText;
-    if (d.dueDate != null && !status.isSettled) {
-      soonText = DebtReminders.rowLabel(d.dueDate!, now);
-      dueText = soonText ?? 'Due ${DateFormat('MMM d').format(d.dueDate!)}';
+    // Monthly due day: the oldest unpaid month if one passed, otherwise
+    // this (or the next unpaid) month's due date.
+    final missed = status.overdueSince(now);
+    final next = status.nextDue(now);
+    if (missed != null) {
+      soonText = DebtReminders.rowLabel(missed, now);
+      dueText = soonText ?? 'Overdue since ${DateFormat('MMM d').format(missed)}';
+    } else if (next != null) {
+      soonText = DebtReminders.rowLabel(next, now);
+      dueText = soonText ?? 'Next: ${DateFormat('MMM d').format(next)}';
     }
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),

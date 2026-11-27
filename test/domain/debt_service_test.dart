@@ -20,6 +20,7 @@ class FakeDebts implements DebtRepository {
   final debts = <int, Debt>{};
   final expenses = <int, TransactionEntry>{}; // by debt id
   final paid = <int, int>{};
+  final count = <int, int>{};
   var _nextId = 1;
 
   Debt _withId(Debt d, int id) => Debt.fromMap({...d.toMap(), 'id': id});
@@ -49,15 +50,16 @@ class FakeDebts implements DebtRepository {
 
   @override
   Future<List<DebtStatus>> allStatuses() async =>
-      [for (final d in debts.values) DebtStatus(debt: d, paymentsTotal: paid[d.id] ?? 0)];
+      [for (final d in debts.values) DebtStatus(debt: d, paymentsTotal: paid[d.id] ?? 0, paymentsCount: count[d.id] ?? 0)];
 
   @override
   Future<DebtStatus?> statusById(int id) async =>
-      debts[id] == null ? null : DebtStatus(debt: debts[id]!, paymentsTotal: paid[id] ?? 0);
+      debts[id] == null ? null : DebtStatus(debt: debts[id]!, paymentsTotal: paid[id] ?? 0, paymentsCount: count[id] ?? 0);
 
   @override
   Future<int> addPayment(DebtPayment p) async {
     paid[p.debtId] = (paid[p.debtId] ?? 0) + p.amount;
+    count[p.debtId] = (count[p.debtId] ?? 0) + 1;
     return 1;
   }
 
@@ -95,10 +97,10 @@ void main() {
     service = DebtService(repository: repo, categories: FakeCategories(), notifications: reminders, clock: () => now);
   });
 
-  Debt debt({bool isNew = false, DateTime? due}) => Debt(
+  Debt debt({bool isNew = false, int? dueDay}) => Debt(
         creditor: 'Home Credit',
         totalAmount: 1200000,
-        dueDate: due,
+        dueDay: dueDay,
         isNew: isNew,
         createdAt: now,
       );
@@ -148,36 +150,55 @@ void main() {
   });
 
   group('reminders', () {
-    test('scheduled 2 days before the deadline, at 9 AM', () async {
-      final id = await service.save(debt(due: DateTime(2026, 12, 15)), currencySymbol: '₱');
+    test('scheduled 2 days before the monthly due day, at 9 AM', () async {
+      // Added Nov 21 with "every 15th": first due Dec 15.
+      final id = await service.save(debt(dueDay: 15), currencySymbol: '₱');
       final r = reminders.scheduled[id]!;
       expect(r.at, DateTime(2026, 12, 13, 9));
       expect('${r.title}, ${r.body}', 'Debt due in 2 days: Home Credit, ₱12,000.00 due on Dec 15');
     });
 
-    test('rescheduled when the deadline changes', () async {
-      final id = await service.save(debt(due: DateTime(2026, 12, 15)), currencySymbol: '₱');
-      await service.save(repo.debts[id]!.copyWith(dueDate: () => DateTime(2027, 1, 10)), currencySymbol: '₱');
-      expect(reminders.scheduled[id]!.at, DateTime(2027, 1, 8, 9));
+    test('rescheduled when the due day changes', () async {
+      final id = await service.save(debt(dueDay: 15), currencySymbol: '₱');
+      await service.save(repo.debts[id]!.copyWith(dueDay: () => 10), currencySymbol: '₱');
+      expect(reminders.scheduled[id]!.at, DateTime(2026, 12, 8, 9));
+    });
+
+    test('a payment moves the reminder to next month', () async {
+      final id = await service.save(debt(dueDay: 15), currencySymbol: '₱');
+      await service.addPayment(DebtPayment(debtId: id, amount: 200000, date: now), currencySymbol: '₱');
+      final r = reminders.scheduled[id]!;
+      expect(r.at, DateTime(2027, 1, 13, 9));
+      expect(r.body, '₱10,000.00 due on Jan 15');
+    });
+
+    test('with a loan term the reminder shows the monthly amount', () async {
+      final id = await service.save(debt(dueDay: 15).copyWith(termMonths: () => 12), currencySymbol: '₱');
+      expect(reminders.scheduled[id]!.body, '₱1,000.00 due on Dec 15');
+    });
+
+    test('rejects a due day outside 1-31 and a term of zero', () async {
+      expect(() => service.save(debt(dueDay: 32), currencySymbol: '₱'), throwsArgumentError);
+      expect(() => service.save(debt().copyWith(termMonths: () => 0), currencySymbol: '₱'), throwsArgumentError);
     });
 
     test('cancelled when paid, when the deadline is removed, and when deleted', () async {
-      final a = await service.save(debt(due: DateTime(2026, 12, 15)), currencySymbol: '₱');
+      final a = await service.save(debt(dueDay: 15), currencySymbol: '₱');
       await service.setPaid(a, true, currencySymbol: '₱');
       expect(reminders.scheduled.containsKey(a), isFalse);
 
-      final b = await service.save(debt(due: DateTime(2026, 12, 15)), currencySymbol: '₱');
-      await service.save(repo.debts[b]!.copyWith(dueDate: () => null), currencySymbol: '₱');
+      final b = await service.save(debt(dueDay: 15), currencySymbol: '₱');
+      await service.save(repo.debts[b]!.copyWith(dueDay: () => null), currencySymbol: '₱');
       expect(reminders.scheduled.containsKey(b), isFalse);
 
-      final c = await service.save(debt(due: DateTime(2026, 12, 15)), currencySymbol: '₱');
+      final c = await service.save(debt(dueDay: 15), currencySymbol: '₱');
       await service.delete(c);
       expect(reminders.cancelled, contains(c));
       expect(reminders.scheduled.containsKey(c), isFalse);
     });
 
-    test('deadline tomorrow: reminded right away instead of skipped', () async {
-      final id = await service.save(debt(due: DateTime(2026, 11, 22)), currencySymbol: '₱');
+    test('due day tomorrow: reminded right away instead of skipped', () async {
+      final id = await service.save(debt(dueDay: 22), currencySymbol: '₱');
       expect(reminders.scheduled[id]!.at, now);
       expect(reminders.scheduled[id]!.title, 'Debt due tomorrow: Home Credit');
     });

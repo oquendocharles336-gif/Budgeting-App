@@ -257,14 +257,18 @@ class BusinessService {
     return true;
   }
 
-  /// The payment counter. [tendered] is what the buyer handed over. If it
-  /// is less than what's due, [ShortPaymentException] is thrown unless
-  /// [allowPartial]. Each [opKey] is recorded once (a retry can't pay twice).
+  /// The payment counter. [tendered] is what the buyer handed over. The
+  /// amount applied is added to what was paid, so the balance due is
+  /// `total - paidAmount`. Less than the balance (a partial payment) is
+  /// saved as it is and the order becomes Partially Paid, with no extra
+  /// confirmation; pass [allowPartial] false to get a
+  /// [ShortPaymentException] instead. Each [opKey] is recorded once (a
+  /// retry can't pay twice).
   Future<PaymentResult> recordPayment(
     int orderId, {
     required int tendered,
     required PaymentMethod method,
-    bool allowPartial = false,
+    bool allowPartial = true,
     String? opKey,
   }) async {
     final order = await _orders.byId(orderId);
@@ -274,14 +278,14 @@ class BusinessService {
     if (result.applied == 0) throw ArgumentError('Enter the amount received');
     if (result.isShort && !allowPartial) throw ShortPaymentException(result);
     final paid = order.paidAmount + result.applied;
-    final fullyPaid = paid >= order.total;
     await _orders.saveHeader(
       order.copyWith(
         paidAmount: paid,
         method: method,
         tendered: () => method.isCash ? tendered : null,
         changeGiven: () => method.isCash ? result.change : null,
-        status: fullyPaid ? statusAfterFullPayment(order.status) : order.status,
+        // Unpaid / Partially Paid / Paid follows paidAmount.
+        status: statusFor(paidAmount: paid, total: order.total),
         updatedAt: _clock(),
       ),
       opKey: opKey,
@@ -289,12 +293,16 @@ class BusinessService {
     return result;
   }
 
-  /// Once paid in full, an order is Paid.
-  static OrderStatus statusAfterFullPayment(OrderStatus s) => OrderStatus.paid;
+  /// Paid in full -> Paid; something paid -> Partially Paid; else Unpaid.
+  static OrderStatus statusFor({required int paidAmount, required int total}) =>
+      OrderStatus.of(paidAmount: paidAmount, total: total);
 
-  /// Changes the status (never stock). "Paid" on an order with
-  /// a balance needs [recordFullPayment], so the status and money agree.
-  /// Setting the same status twice is harmless, so retries are safe.
+  /// Changes the payment status (never stock). "Paid" on an order with a
+  /// balance needs [recordFullPayment], so the status and money agree.
+  /// Unpaid / Partially Paid come from the amounts, so they can't be set
+  /// by hand on an order whose payments say otherwise (edit the order
+  /// instead). Setting the same status twice is harmless, so retries are
+  /// safe.
   Future<void> setStatus(int orderId, OrderStatus status, {bool recordFullPayment = false, String? opKey}) async {
     final order = await _orders.byId(orderId);
     if (order == null) return;
@@ -303,8 +311,15 @@ class BusinessService {
       await _orders.saveHeader(order.copyWith(paidAmount: order.total, status: status, updatedAt: _clock()), opKey: opKey);
       return;
     }
+    if (status != order.status && !status.claimsPaid) {
+      throw StateError('"${status.label}" follows the payments. Open the order to change what was paid.');
+    }
     await _orders.setStatus(orderId, status);
   }
+
+  /// Delivered / For Pick-up / Pending. Independent of payment: an order
+  /// can be delivered and still unpaid. Never touches money or stock.
+  Future<void> setFulfillment(int orderId, FulfillmentStatus fulfillment) => _orders.setFulfillment(orderId, fulfillment);
 
   /// Cancels the order and returns its ingredients to stock. Not possible
   /// once its sale is in the budget (delete that income first).

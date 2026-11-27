@@ -28,6 +28,7 @@ class Migrations {
     9: _v9RemovePayLaterLoanPaymentMethod,
     10: _v10OrderStatusCompleteOrPaid,
     11: _v11QueryIndexes,
+    12: _v12MonthlyDueUtilitiesFulfillmentAutoTrack,
   };
 
   static int get latestVersion => _steps.keys.reduce((a, b) => a > b ? a : b);
@@ -529,6 +530,51 @@ class Migrations {
     await db.execute('CREATE INDEX IF NOT EXISTS ix_orders_status ON orders(status)');
     // Active accounts by type (Available balance totals).
     await db.execute('CREATE INDEX IF NOT EXISTS ix_cards_archived_type ON cards(archived, card_type)');
+  }
+
+  // ---------------------------------------------------------------------------
+  // v12 (app 1.6.0): monthly due day, utility categories, order fulfillment,
+  // automatic e-wallet tracking
+  // ---------------------------------------------------------------------------
+  static Future<void> _v12MonthlyDueUtilitiesFulfillmentAutoTrack(DatabaseExecutor db) async {
+    // Only new columns, rows and indexes (plus renaming "Bills"): no table
+    // is rebuilt or dropped, so every existing row is kept.
+
+    // 1. Debts: a recurring day of the month instead of a one-time date.
+    //    due_from = when the monthly count starts. The old due_date column
+    //    stays (SQLite 3.9 can't drop columns) but is no longer written.
+    await db.execute('ALTER TABLE debts ADD COLUMN due_day INTEGER');
+    await db.execute('ALTER TABLE debts ADD COLUMN due_from INTEGER');
+    await fillDebtDueDays(db);
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_debts_due_day ON debts(is_paid, due_day)');
+
+    // 2. "Bills" -> Water, Electricity, WiFi, Utilities (Bills is renamed
+    //    to Utilities in place, so its transactions and budgets stay).
+    await DefaultData.ensureUtilityCategories(db);
+
+    // 3. Orders: delivery / pick-up, separate from the payment status.
+    await db.execute("ALTER TABLE orders ADD COLUMN fulfillment TEXT NOT NULL DEFAULT 'pending'");
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_orders_fulfillment ON orders(fulfillment)');
+
+    // 4. Cards / e-wallets: which app's notifications to track (e.g.
+    //    'maya'), and from when (only payments after connecting are
+    //    deducted, so the balance typed earlier isn't charged twice).
+    await db.execute('ALTER TABLE cards ADD COLUMN notify_app TEXT');
+    await db.execute('ALTER TABLE cards ADD COLUMN auto_track_since INTEGER');
+
+    // 5. Patterns for e-wallet app notifications.
+    await DefaultData.ensureNotificationPatterns(db);
+  }
+
+  /// Old one-time due dates become a monthly due day (the same day of the
+  /// month), counted from that date, so a debt that wasn't due yet isn't
+  /// shown as overdue. Also used when restoring a backup from before v12.
+  static Future<void> fillDebtDueDays(DatabaseExecutor db) async {
+    await db.execute('''
+      UPDATE debts
+      SET due_day = CAST(strftime('%d', due_date / 1000, 'unixepoch', 'localtime') AS INTEGER),
+          due_from = due_date - 86400000
+      WHERE due_date IS NOT NULL AND due_day IS NULL''');
   }
 
   static Future<bool> _tableExists(DatabaseExecutor db, String name) async {

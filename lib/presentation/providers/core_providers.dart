@@ -15,10 +15,12 @@ import '../../core/app_update_config.dart';
 import '../../data/sources/photo_store.dart';
 import '../../data/sources/release_feed.dart';
 import '../../data/sources/sms_inbox.dart';
+import '../../data/sources/wallet_notifications.dart';
 import '../../domain/import/transaction_import_service.dart';
 import '../../domain/security/photo_crypto.dart';
 import '../../domain/security/vault.dart';
 import '../../domain/services/app_lock_service.dart';
+import '../../domain/services/auto_track_service.dart';
 import '../../domain/services/backup_bundle_service.dart';
 import '../../domain/services/backup_service.dart';
 import '../../domain/services/budget_alert_service.dart';
@@ -80,6 +82,7 @@ final productRepositoryProvider = Provider((ref) => ProductRepository(ref.watch(
 final orderRepositoryProvider = Provider((ref) => OrderRepository(ref.watch(databaseProvider).db));
 
 final smsInboxProvider = Provider<SmsInbox>((ref) => AndroidSmsInbox());
+final walletNotificationsProvider = Provider<WalletNotificationSource>((ref) => const AndroidWalletNotifications());
 final photoStoreProvider = Provider((ref) => PhotoStore());
 final photoKeyStoreProvider = Provider<PhotoKeyStore>((ref) => SecurePhotoKeyStore());
 final photoCryptoProvider = Provider((ref) => PhotoCrypto(ref.watch(photoKeyStoreProvider)));
@@ -114,6 +117,18 @@ final transactionServiceProvider = Provider(
     importer: ref.watch(importServiceProvider),
     alerts: ref.watch(budgetAlertServiceProvider),
     categories: ref.watch(categoryRepositoryProvider),
+  ),
+);
+
+/// Free automatic tracking (e-wallet app notifications + bank SMS).
+final autoTrackServiceProvider = Provider(
+  (ref) => AutoTrackService(
+    cards: ref.watch(cardRepositoryProvider),
+    patterns: ref.watch(smsPatternRepositoryProvider),
+    importer: ref.watch(importServiceProvider),
+    notifications: ref.watch(walletNotificationsProvider),
+    sms: ref.watch(smsInboxProvider),
+    settings: ref.watch(settingsRepositoryProvider),
   ),
 );
 

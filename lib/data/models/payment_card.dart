@@ -1,4 +1,5 @@
 import '../../core/ewallet_mask.dart';
+import '../../core/wallet_apps.dart';
 
 /// A credit/debit/prepaid card the user tracks.
 ///
@@ -27,6 +28,8 @@ class PaymentCard {
     this.mobileNumber,
     this.balance = 0,
     this.archived = false,
+    this.notifyApp,
+    this.autoTrackSince,
     required this.createdAt,
   });
 
@@ -48,6 +51,21 @@ class PaymentCard {
   final int balance;
   final bool archived;
   final DateTime createdAt;
+
+  /// Free automatic tracking: the app whose payment notifications are
+  /// read for this account ([WalletApp.id], e.g. 'maya'). Null = none.
+  final String? notifyApp;
+
+  /// When automatic tracking was turned on. Only payments after this are
+  /// recorded (and taken from [balance]), so money already in the balance
+  /// typed by the user isn't charged twice. Null = tracking off.
+  final DateTime? autoTrackSince;
+
+  /// Automatic tracking is on (app notifications and, for cards with a
+  /// last-4, bank SMS alerts).
+  bool get tracksAutomatically => autoTrackSince != null && !archived;
+
+  WalletApp? get walletApp => WalletApp.fromId(notifyApp);
 
   bool get isCredit => type == CardType.credit;
 
@@ -77,6 +95,8 @@ class PaymentCard {
     String? Function()? mobileNumber,
     int? balance,
     bool? archived,
+    String? Function()? notifyApp,
+    DateTime? Function()? autoTrackSince,
   }) =>
       PaymentCard(
         id: id ?? this.id,
@@ -87,6 +107,8 @@ class PaymentCard {
         mobileNumber: mobileNumber != null ? mobileNumber() : this.mobileNumber,
         balance: balance ?? this.balance,
         archived: archived ?? this.archived,
+        notifyApp: notifyApp != null ? notifyApp() : this.notifyApp,
+        autoTrackSince: autoTrackSince != null ? autoTrackSince() : this.autoTrackSince,
         createdAt: createdAt,
       );
 
@@ -99,6 +121,8 @@ class PaymentCard {
         'mobile_number': mobileNumber,
         'balance': balance,
         'archived': archived ? 1 : 0,
+        'notify_app': notifyApp,
+        'auto_track_since': autoTrackSince?.millisecondsSinceEpoch,
         'created_at': createdAt.millisecondsSinceEpoch,
       };
 
@@ -111,6 +135,8 @@ class PaymentCard {
         mobileNumber: m['mobile_number'] as String?,
         balance: m['balance'] as int? ?? 0,
         archived: (m['archived'] as int? ?? 0) == 1,
+        notifyApp: m['notify_app'] as String?,
+        autoTrackSince: m['auto_track_since'] == null ? null : DateTime.fromMillisecondsSinceEpoch(m['auto_track_since'] as int),
         createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
       );
 }

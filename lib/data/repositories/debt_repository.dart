@@ -7,20 +7,41 @@ class DebtRepository {
   DebtRepository(this._db);
   final Database _db;
 
-  /// Unpaid first (soonest due first), then paid.
+  /// Open first (overdue, then soonest next monthly due date), then settled.
   Future<List<DebtStatus>> allStatuses() async {
     final rows = await _db.rawQuery('''
-      SELECT d.*, IFNULL(p.total, 0) AS payments_total
+      SELECT d.*, IFNULL(p.total, 0) AS payments_total, IFNULL(p.cnt, 0) AS payments_count
       FROM debts d
       LEFT JOIN (
-        SELECT debt_id, SUM(amount) AS total FROM debt_payments GROUP BY debt_id
+        SELECT debt_id, SUM(amount) AS total, COUNT(*) AS cnt FROM debt_payments GROUP BY debt_id
       ) p ON p.debt_id = d.id
-      ORDER BY d.is_paid, d.due_date IS NULL, d.due_date, d.creditor COLLATE NOCASE
+      ORDER BY d.is_paid, d.creditor COLLATE NOCASE
     ''');
-    return [
+    final list = [
       for (final r in rows)
-        DebtStatus(debt: Debt.fromMap(r), paymentsTotal: (r['payments_total'] as int?) ?? 0),
+        DebtStatus(
+          debt: Debt.fromMap(r),
+          paymentsTotal: (r['payments_total'] as int?) ?? 0,
+          paymentsCount: (r['payments_count'] as int?) ?? 0,
+        ),
     ];
+    return sortStatuses(list, DateTime.now());
+  }
+
+  /// Open before settled; among open ones, the earliest overdue / next due
+  /// date first, then the ones with no due day. Stable for equal keys.
+  static List<DebtStatus> sortStatuses(List<DebtStatus> list, DateTime now) {
+    DateTime? key(DebtStatus s) => s.overdueSince(now) ?? s.nextDue(now);
+    final indexed = list.indexed.toList()
+      ..sort((a, b) {
+        final sa = a.$2.isSettled ? 1 : 0, sb = b.$2.isSettled ? 1 : 0;
+        if (sa != sb) return sa - sb;
+        final ka = key(a.$2), kb = key(b.$2);
+        if (ka != null && kb != null && ka != kb) return ka.compareTo(kb);
+        if ((ka == null) != (kb == null)) return ka == null ? 1 : -1;
+        return a.$1 - b.$1;
+      });
+    return [for (final e in indexed) e.$2];
   }
 
   /// How many debts are still open (not marked paid and something left to

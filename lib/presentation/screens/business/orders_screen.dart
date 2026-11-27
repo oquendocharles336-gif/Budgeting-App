@@ -17,7 +17,14 @@ import 'order_form_screen.dart';
 
 BadgeTone statusTone(OrderStatus s) => switch (s) {
       OrderStatus.paid => BadgeTone.ok,
-      OrderStatus.complete => BadgeTone.accent,
+      OrderStatus.partiallyPaid => BadgeTone.warning,
+      OrderStatus.unpaid => BadgeTone.danger,
+    };
+
+BadgeTone fulfillmentTone(FulfillmentStatus f) => switch (f) {
+      FulfillmentStatus.delivered => BadgeTone.ok,
+      FulfillmentStatus.forPickup => BadgeTone.accent,
+      FulfillmentStatus.pending => BadgeTone.neutral,
     };
 
 class OrdersScreen extends ConsumerStatefulWidget {
@@ -102,6 +109,25 @@ class OrderCard extends ConsumerWidget {
   final BusinessOrder order;
 
   static const _cancel = 'cancel';
+  static const _markPaid = 'paid';
+  static const _fulfillPrefix = 'fulfill:';
+
+  /// Delivered / For Pick-up / Pending, whatever the payment status.
+  void _changeFulfillment(BuildContext context, WidgetRef ref, FulfillmentStatus f) {
+    if (f == order.fulfillment) return;
+    final service = ref.read(businessServiceProvider);
+    final key = newOpKey('order_fulfillment');
+    OptimisticWrite.run(
+      context,
+      savedText: f.label,
+      what: 'the delivery status',
+      show: (c) {
+        final pending = c.read(pendingOrdersProvider.notifier)..put(key, order.copyWith(fulfillment: f));
+        return () => pending.clear(key);
+      },
+      write: () => service.setFulfillment(order.id!, f),
+    );
+  }
 
   Future<void> _changeStatus(BuildContext context, WidgetRef ref, OrderStatus status) async {
     var recordFull = false;
@@ -161,11 +187,17 @@ class OrderCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final saving = isUnsaved(order.id);
-    final payment = order.isFullyPaid
-        ? const StatusBadge(label: 'Paid in full', tone: BadgeTone.ok, icon: Icons.check_circle_rounded)
-        : order.isPartiallyPaid
-            ? StatusBadge(label: '${formatMoney(ref, order.balanceDue)} left', tone: BadgeTone.warning, icon: Icons.timelapse_rounded)
-            : const StatusBadge(label: 'Unpaid', tone: BadgeTone.danger, icon: Icons.error_outline_rounded);
+    final markPaidLabel = 'Mark as Paid (${formatMoney(ref, order.balanceDue)} received)';
+    // Payment status, with the balance still due for a partial payment.
+    final payment = switch (order.status) {
+      OrderStatus.paid => const StatusBadge(label: 'Paid', tone: BadgeTone.ok, icon: Icons.check_circle_rounded),
+      OrderStatus.partiallyPaid => StatusBadge(
+          label: 'Partially Paid · ${formatMoney(ref, order.balanceDue)} left',
+          tone: BadgeTone.warning,
+          icon: Icons.timelapse_rounded,
+        ),
+      OrderStatus.unpaid => const StatusBadge(label: 'Unpaid', tone: BadgeTone.danger, icon: Icons.error_outline_rounded),
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: AppCard(
@@ -202,19 +234,27 @@ class OrderCard extends ConsumerWidget {
                 ),
                 if (!saving && !order.isCancelled)
                   PopupMenuButton<String>(
-                    tooltip: 'Change status of ${order.buyer}\'s order',
+                    tooltip: 'Delivery and payment for ${order.buyer}\'s order',
                     icon: const Icon(Icons.more_vert_rounded),
                     onSelected: (v) {
                       if (v == _cancel) {
                         _cancelOrder(context, ref);
-                      } else {
-                        _changeStatus(context, ref, OrderStatus.fromDb(v));
+                      } else if (v == _markPaid) {
+                        _changeStatus(context, ref, OrderStatus.paid);
+                      } else if (v.startsWith(_fulfillPrefix)) {
+                        _changeFulfillment(context, ref, FulfillmentStatus.fromDb(v.substring(_fulfillPrefix.length)));
                       }
                     },
                     itemBuilder: (_) => [
-                      for (final s in OrderStatus.values)
-                        CheckedPopupMenuItem(value: s.dbValue, checked: s == order.status, child: Text(s.label)),
+                      for (final f in FulfillmentStatus.values)
+                        CheckedPopupMenuItem(
+                          value: '$_fulfillPrefix${f.dbValue}',
+                          checked: f == order.fulfillment,
+                          child: Text(f.label),
+                        ),
                       const PopupMenuDivider(),
+                      if (!order.status.claimsPaid)
+                        PopupMenuItem(value: _markPaid, child: Text(markPaidLabel)),
                       if (!order.addedToBudget) const PopupMenuItem(value: _cancel, child: Text('Cancel order')),
                     ],
                   ),
@@ -231,8 +271,12 @@ class OrderCard extends ConsumerWidget {
                 if (order.isCancelled)
                   const StatusBadge(label: 'Cancelled', tone: BadgeTone.danger, icon: Icons.block_rounded)
                 else ...[
-                  StatusBadge(label: order.status.label, tone: statusTone(order.status)),
                   payment,
+                  StatusBadge(
+                    label: order.fulfillment.label,
+                    tone: fulfillmentTone(order.fulfillment),
+                    icon: fulfillmentIcon(order.fulfillment),
+                  ),
                 ],
                 if (order.addedToBudget) const StatusBadge(label: 'In budget', tone: BadgeTone.accent, icon: Icons.savings_rounded),
               ],

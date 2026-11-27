@@ -53,6 +53,19 @@
             </intent-filter>
         </receiver>
 
+        <!-- Free e-wallet tracking: reads payment notifications from the apps the
+             user connected (Maya, GCash, MariBank, BDO Pay) on the phone only.
+             Off until the user turns on "Notification access" for Pitaka. -->
+        <service
+            android:name=".PaymentNotificationListener"
+            android:label="Pitaka e-wallet tracking"
+            android:exported="true"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- Shares the downloaded update APK with the system installer. -->
         <provider
             android:name=".UpdateFileProvider"

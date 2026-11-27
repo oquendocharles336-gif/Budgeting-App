@@ -8,6 +8,7 @@ import '../../widgets/photo_migration_line.dart';
 import 'capital_screen.dart';
 import 'inventory_screen.dart';
 import 'orders_screen.dart';
+import 'payment_qr.dart';
 import 'products_screen.dart';
 import 'sales_screen.dart';
 
@@ -53,10 +54,18 @@ class _BusinessShellState extends State<BusinessShell> {
   Widget build(BuildContext context) {
     const pages = <Widget>[SalesScreen(), OrdersScreen(), ProductsScreen(), InventoryScreen(), CapitalScreen()];
     final title = Text('Business · ${_sections[_index].title}', overflow: TextOverflow.ellipsis);
+    final actions = [
+      IconButton(
+        tooltip: 'Payment QR codes',
+        icon: const Icon(Icons.qr_code_2_rounded),
+        onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaymentQrScreen())),
+      ),
+    ];
     return Scaffold(
       appBar: widget.asTab
           ? AppBar(
               title: title,
+              actions: actions,
               bottom: PreferredSize(
                 preferredSize: const Size.fromHeight(56),
                 child: _SectionRow(sections: _sections, selected: _index, onSelect: _select),
@@ -80,6 +89,7 @@ class _BusinessShellState extends State<BusinessShell> {
               ),
               titleSpacing: 0,
               title: title,
+              actions: actions,
             ),
       body: Column(
         children: [

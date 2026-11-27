@@ -64,6 +64,15 @@ class SeedData {
       final salaryRow = await txn.query('categories', columns: ['id'], where: "kind = 'income' AND name = 'Salary'", limit: 1);
       final salaryCategory = salaryRow.isEmpty ? DefaultData.other : salaryRow.first['id'] as int;
 
+      Future<int> categoryId(String name) async {
+        final row = await txn.query('categories', columns: ['id'], where: "kind = 'expense' AND name = ?", whereArgs: [name], limit: 1);
+        return row.isEmpty ? DefaultData.utilities : row.first['id'] as int;
+      }
+
+      final electricityId = await categoryId(DefaultData.electricity.name);
+      final wifiId = await categoryId(DefaultData.wifi.name);
+      final waterId = await categoryId(DefaultData.water.name);
+
       final start = DateTime(today.year, today.month - 1, 1);
       for (var day = start; !day.isAfter(today); day = DateTime(day.year, day.month, day.day + 1)) {
         final count = 1 + rnd.nextInt(3);
@@ -74,10 +83,11 @@ class SeedData {
           final date = DateTime(day.year, day.month, day.day, 8 + rnd.nextInt(13), rnd.nextInt(60));
           await txn.insert('transactions', _tx(t.$1, t.$2, t.$5, amount, date, created));
         }
-        // Monthly bills on the 5th.
+        // Monthly utility bills on the 5th.
         if (day.day == 5) {
-          await txn.insert('transactions', _tx('Meralco bill', DefaultData.bills, null, 245000, day, created));
-          await txn.insert('transactions', _tx('PLDT Fibr', DefaultData.bills, bdo, 169900, day, created));
+          await txn.insert('transactions', _tx('Meralco bill', electricityId, null, 245000, day, created));
+          await txn.insert('transactions', _tx('PLDT Fibr', wifiId, bdo, 169900, day, created));
+          await txn.insert('transactions', _tx('Maynilad', waterId, null, 68000, day, created));
         }
         // Salary on the 15th and 30th.
         if (day.day == 15 || day.day == 30) {
@@ -101,7 +111,8 @@ class SeedData {
         lenderType: LenderType.family,
         totalAmount: 1500000,
         initialPaid: 300000,
-        dueDate: today.add(const Duration(days: 10)),
+        termMonths: 6,
+        dueDay: today.add(const Duration(days: 10)).day,
         notes: 'Laptop loan',
         createdAt: today,
       ).toMap());
@@ -118,7 +129,7 @@ class SeedData {
         termMonths: 12,
         totalAmount: 2400000,
         initialPaid: 800000,
-        dueDate: today.add(const Duration(days: 3)),
+        dueDay: today.add(const Duration(days: 3)).day,
         interestRateBp: 299,
         notes: 'Phone installment',
         createdAt: today,

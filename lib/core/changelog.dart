@@ -10,6 +10,22 @@ import '../domain/update/app_update.dart';
 /// the last one the user saw.
 const changelog = <ChangelogEntry>[
   ChangelogEntry(
+    version: '1.6.0',
+    build: 8,
+    date: '2026-11-27',
+    notes: [
+      'Debts: "Loan term (months)" is now required (Gaano katagal babayaran), whole months only.',
+      'Debts: pick the day you pay every month (e.g. every 15th). Reminders and "Overdue" now repeat monthly until the debt is paid. Your old due dates became monthly due days.',
+      'New expense categories: Water, Electricity, WiFi and Utilities replace Bills. Your Bills transactions and budgets are now under Utilities.',
+      'Budget and Home: the Avg / day and Safe / day figures were removed.',
+      'Business Mode now opens only from the Business tab in the bottom bar.',
+      'Free automatic tracking: connect Maya, GCash, MariBank or BDO Pay notifications (and bank SMS alerts) and payments are recorded and taken from that balance. Offline, on your phone only.',
+      'Orders: new Partially Paid status. A payment less than the total is taken off automatically and the balance left is shown.',
+      'Orders: track Pending, For Pick-up or Delivered separately from payment.',
+      'Upload your own Maya, MariBank and BDO QR codes and show them to buyers at checkout.',
+    ],
+  ),
+  ChangelogEntry(
     version: '1.5.0',
     build: 7,
     date: '2026-11-25',

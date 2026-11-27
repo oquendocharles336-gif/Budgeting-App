@@ -14,24 +14,36 @@ enum PhoneAccess {
 
   /// "Install unknown apps", needed to install updates from inside the app.
   installUpdates,
+
+  /// "Notification access": free automatic tracking of e-wallet / bank
+  /// app payments (Maya, GCash, ...). Optional; only asked for when a card
+  /// or e-wallet is connected to its app.
+  walletNotifications,
 }
 
 /// What is allowed right now.
 class PhoneAccessStatus {
-  const PhoneAccessStatus({required this.notifications, required this.sms, required this.installUpdates});
+  const PhoneAccessStatus({
+    required this.notifications,
+    required this.sms,
+    required this.installUpdates,
+    this.walletNotifications = false,
+  });
 
   /// Used where the phone can't be asked (tests, other platforms): nothing
   /// is shown as missing.
-  static const unknown = PhoneAccessStatus(notifications: true, sms: true, installUpdates: true);
+  static const unknown = PhoneAccessStatus(notifications: true, sms: true, installUpdates: true, walletNotifications: true);
 
   final bool notifications;
   final bool sms;
   final bool installUpdates;
+  final bool walletNotifications;
 
   bool allows(PhoneAccess access) => switch (access) {
         PhoneAccess.notifications => notifications,
         PhoneAccess.sms => sms,
         PhoneAccess.installUpdates => installUpdates,
+        PhoneAccess.walletNotifications => walletNotifications,
       };
 
   @override
@@ -39,10 +51,11 @@ class PhoneAccessStatus {
       other is PhoneAccessStatus &&
       other.notifications == notifications &&
       other.sms == sms &&
-      other.installUpdates == installUpdates;
+      other.installUpdates == installUpdates &&
+      other.walletNotifications == walletNotifications;
 
   @override
-  int get hashCode => Object.hash(notifications, sms, installUpdates);
+  int get hashCode => Object.hash(notifications, sms, installUpdates, walletNotifications);
 }
 
 /// Talks to the small "pitaka/permissions" handler in MainActivity.java.
@@ -73,6 +86,7 @@ class PhoneAccessChannel {
     final page = switch (access) {
       PhoneAccess.notifications => 'notifications',
       PhoneAccess.installUpdates => 'install',
+      PhoneAccess.walletNotifications => 'listener',
       PhoneAccess.sms => 'app',
     };
     return _parse(await _channel.invokeMapMethod<String, Object?>('openSettings', {'page': page}));
@@ -84,6 +98,7 @@ class PhoneAccessChannel {
       notifications: m['notifications'] as bool? ?? true,
       sms: m['sms'] as bool? ?? false,
       installUpdates: m['install'] as bool? ?? false,
+      walletNotifications: m['walletNotifications'] as bool? ?? false,
     );
   }
 }

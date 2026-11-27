@@ -1,11 +1,11 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../../../core/money.dart';
 import '../../../data/models/debt.dart';
 import '../../../domain/debt/interest_calculator.dart';
+import '../../../domain/debt/monthly_due.dart';
 import '../../../domain/services/app_lock_service.dart';
 import '../../providers/app_state_providers.dart';
 import '../../providers/core_providers.dart';
@@ -28,7 +28,8 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
   late final TextEditingController _notes;
   late final TextEditingController _lenderDetail;
   late final TextEditingController _term;
-  DateTime? _due;
+  /// Day of the month the payment is due (1-31), every month. Null = none.
+  int? _dueDay;
   late DebtType _type;
   LenderType? _lenderType;
   late InterestType _interestType;
@@ -51,7 +52,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
       text: e?.interestRateBp == null ? '' : (e!.interestRateBp! / 100).toStringAsFixed(2),
     );
     _notes = TextEditingController(text: e?.notes ?? '');
-    _due = e?.dueDate;
+    _dueDay = e?.dueDay;
     _type = e?.type ?? DebtType.loan;
     _lenderType = e?.lenderType;
     _lenderDetail = TextEditingController(text: e?.lenderDetail ?? '');
@@ -64,9 +65,21 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
     }
   }
 
+  /// The loan term: a positive whole number of months, or null.
   int? _termMonths() {
     final n = int.tryParse(_term.text.trim());
     return (n == null || n <= 0) ? null : n;
+  }
+
+  /// Required, whole months only (digits only, so no decimals), 1-600.
+  static String? validateTerm(String? v) {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) return 'Enter how many months (Gaano katagal babayaran)';
+    if (!RegExp(r'^\d+$').hasMatch(t)) return 'Whole months only, e.g. 12';
+    final n = int.tryParse(t);
+    if (n == null || n <= 0) return 'Must be at least 1 month';
+    if (n > 600) return 'Enter 1 to 600 months';
+    return null;
   }
 
   @override
@@ -102,7 +115,12 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
       termMonths: _termMonths(),
       totalAmount: Money.parse(_total.text)!,
       initialPaid: _paid.text.trim().isEmpty ? 0 : Money.parse(_paid.text)!,
-      dueDate: _due,
+      dueDay: _dueDay,
+      // A due day added to an older debt counts from today, so it doesn't
+      // show months of missed payments.
+      dueFrom: e == null
+          ? null
+          : (e.dueDay == null && _dueDay != null ? DateTime.now() : e.dueFrom),
       interestRateBp: _interestBp(),
       notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
       isPaid: e?.isPaid ?? false,
@@ -121,7 +139,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
     // Saved: refresh the list first so the Debts screen updates even if the
     // (optional) notification permission prompt below fails.
     ref.refreshData();
-    if (debt.dueDate != null) await _askForReminders();
+    if (debt.dueDay != null) await _askForReminders();
     if (mounted) Navigator.of(context).pop();
   }
 
@@ -136,7 +154,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
       final yes = await confirm(
         context,
         title: 'Remind you before it\'s due?',
-        message: 'Pitaka can notify you 2 days before a debt\'s deadline. '
+        message: 'Pitaka can notify you 2 days before each monthly payment day. '
             'Reminders are set on this phone; nothing is sent online.',
         confirmLabel: 'Turn on',
         destructive: false,
@@ -279,38 +297,52 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
                 return null;
               },
             ),
-            const SizedBox(height: 16),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.event_rounded),
-              title: const Text('Due date (optional)'),
-              subtitle: Text(_due == null ? 'No due date' : DateFormat('EEEE, MMMM d, yyyy').format(_due!)),
-              trailing: _due == null
-                  ? const Icon(Icons.edit_calendar_rounded)
-                  : IconButton(
-                      tooltip: 'Remove due date',
-                      icon: const Icon(Icons.close_rounded),
-                      onPressed: () => setState(() => _due = null),
-                    ),
-              onTap: () async {
-                final now = DateTime.now();
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _due ?? now.add(const Duration(days: 30)),
-                  firstDate: DateTime(now.year - 5),
-                  lastDate: DateTime(now.year + 30),
-                );
-                if (picked != null) setState(() => _due = picked);
-              },
+            const SizedBox(height: 20),
+            // Loan term: required, whole months.
+            TextFormField(
+              controller: _term,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              textInputAction: TextInputAction.next,
+              style: Theme.of(context).textTheme.titleMedium,
+              decoration: const InputDecoration(
+                labelText: 'Loan term (months) *',
+                hintText: 'e.g. 12',
+                helperText: 'Gaano katagal babayaran (in months)',
+                prefixIcon: Icon(Icons.date_range_rounded),
+                suffixText: 'months',
+              ),
+              validator: validateTerm,
             ),
-            if (_due != null)
+            const SizedBox(height: 16),
+            DropdownButtonFormField<int?>(
+              initialValue: _dueDay,
+              isExpanded: true,
+              menuMaxHeight: 360,
+              decoration: InputDecoration(
+                labelText: 'Payment day every month',
+                prefixIcon: const Icon(Icons.event_repeat_rounded),
+                helperText: _dueDay == null
+                    ? 'Which day of the month you pay (optional)'
+                    : '${MonthlyDue.everyLabel(_dueDay!)} until it\'s paid off',
+              ),
+              items: [
+                const DropdownMenuItem<int?>(value: null, child: Text('No payment day')),
+                for (var d = 1; d <= 31; d++)
+                  DropdownMenuItem<int?>(value: d, child: Text(MonthlyDue.everyLabel(d))),
+              ],
+              onChanged: (v) => setState(() => _dueDay = v),
+            ),
+            if (_dueDay != null)
               Padding(
-                padding: const EdgeInsets.only(left: 40, bottom: 8),
+                padding: const EdgeInsets.only(left: 12, top: 6, bottom: 8),
                 child: Text(
-                  'You\'ll get a reminder the day before and on the due date at 9:00 AM.',
+                  'You\'ll get a reminder 2 days before at 9:00 AM, every month, until the debt is settled.'
+                  '${_dueDay! > 28 ? ' In shorter months it\'s the last day of the month.' : ''}',
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               ),
+            const SizedBox(height: 16),
             const SizedBox(height: 8),
             Text('Interest (optional)', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
@@ -357,23 +389,6 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
                   ? 'Simple: interest is always on the amount you borrowed (common for lending apps and add-on loans).'
                   : 'Compound: interest is on what you still owe, so it goes down as you pay (common for bank loans).',
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _term,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Number of monthly payments (optional)',
-                hintText: 'e.g. 12',
-                helperText: 'Adds the full monthly payment to the estimate',
-              ),
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return null;
-                final n = int.tryParse(v.trim());
-                if (n == null || n <= 0 || n > 600) return 'Enter 1 to 600 months';
-                return null;
-              },
             ),
             _MonthlyEstimate(
               quote: () {
@@ -432,7 +447,7 @@ class _MonthlyEstimate extends StatelessWidget {
             const SizedBox(height: 4),
             Text('Interest: ${m(q.interestThisMonth)} a month'),
             if (q.totalInterest != null) Text('Total interest over the term: ${m(q.totalInterest!)}'),
-            if (q.monthlyPayment == null) const Text('Add the number of payments to include the principal.'),
+            if (q.monthlyPayment == null) const Text('Add the loan term to include the principal.'),
           ],
         ),
       ),

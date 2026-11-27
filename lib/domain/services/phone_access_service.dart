@@ -36,8 +36,12 @@ class PhoneAccessService {
   Future<PhoneAccessStatus> status() => _channel.status();
 
   /// True when the next [allow] for [access] opens the settings page.
+  /// "Install unknown apps" and "Notification access" have no system
+  /// question: they are always switched on in settings.
   bool opensSettings(PhoneAccess access) =>
-      access == PhoneAccess.installUpdates || _askedThisRun.contains(access);
+      access == PhoneAccess.installUpdates ||
+      access == PhoneAccess.walletNotifications ||
+      _askedThisRun.contains(access);
 
   /// Asks for [access]. Returns whether it is allowed afterwards.
   Future<bool> allow(PhoneAccess access) => LockGuard.run(() async {
@@ -47,7 +51,7 @@ class PhoneAccessService {
           final granted = switch (access) {
             PhoneAccess.notifications => await _notifications.requestPermission(),
             PhoneAccess.sms => await _sms.requestPermission(),
-            PhoneAccess.installUpdates => false,
+            PhoneAccess.installUpdates || PhoneAccess.walletNotifications => false,
           };
           final now = await _channel.status();
           if (granted && now.allows(access)) return true;

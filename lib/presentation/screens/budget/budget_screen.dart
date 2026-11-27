@@ -238,8 +238,6 @@ class _OverallCard extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final isCurrent = Dates.monthKey(summary.month) == Dates.monthKey(now);
-    final avg = BudgetCalculator.averageDaily(spent: p.spent, month: summary.month, now: now);
-    final safe = BudgetCalculator.safeDailySpend(budget: p.budget, spent: p.spent, month: summary.month, now: now);
     final projected = BudgetCalculator.projectedMonthEnd(spent: p.spent, month: summary.month, now: now);
 
     if (!p.hasBudget) {
@@ -330,16 +328,18 @@ class _OverallCard extends ConsumerWidget {
               ),
             ),
           ],
-          const SizedBox(height: Space.md),
-          Divider(height: 1, color: t.outline),
-          const SizedBox(height: Space.md),
-          Row(
-            children: [
-              _Stat(label: 'Avg / day', value: formatMoney(ref, avg)),
-              if (isCurrent) _Stat(label: 'Safe / day', value: formatMoney(ref, safe)),
-              if (isCurrent) _Stat(label: 'Projected', value: formatMoney(ref, projected)),
-            ],
-          ),
+          // Only the month-end projection is shown (the per-day figures were
+          // removed in 1.6.0), and only for the current month.
+          if (isCurrent) ...[
+            const SizedBox(height: Space.md),
+            Divider(height: 1, color: t.outline),
+            const SizedBox(height: Space.md),
+            Row(
+              children: [
+                _Stat(label: 'Projected', value: formatMoney(ref, projected)),
+              ],
+            ),
+          ],
         ],
       ),
     );

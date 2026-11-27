@@ -17,8 +17,10 @@ import '../../widgets/common.dart';
 import '../../widgets/photo_widgets.dart';
 import '../../widgets/optimistic.dart';
 import '../../widgets/status_badge.dart';
+import 'payment_qr.dart';
 
-/// New or existing buyer order: items, payment counter, method and status.
+/// New or existing buyer order: items, payment status (Unpaid / Partially
+/// Paid / Paid), payment counter, method, QR and delivery / pick-up.
 class OrderFormScreen extends ConsumerStatefulWidget {
   const OrderFormScreen({super.key, this.existing});
   final BusinessOrder? existing;
@@ -35,11 +37,16 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
   late DateTime _date;
   late List<OrderItem> _lines;
   late PaymentMethod _method;
-  /// Complete (payment hidden) or Paid (payment shown). New orders start Complete.
+
+  /// The payment status chosen. Partially Paid / Paid show the payment
+  /// part of the form. What is saved always follows the money: an amount
+  /// short of the total is saved as Partially Paid.
   late OrderStatus _status;
 
-  /// The payment part of the form shows only for "Paid".
-  bool get _showPayment => _status == OrderStatus.paid;
+  /// Pending / For Pick-up / Delivered (independent of payment).
+  late FulfillmentStatus _fulfillment;
+
+  bool get _showPayment => _status.takesPayment;
   bool _saving = false;
 
   BusinessOrder? get _existing => widget.existing;
@@ -63,7 +70,8 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
     _date = e?.orderDate ?? DateTime.now();
     _lines = [...?e?.items];
     _method = e?.method ?? PaymentMethod.cash;
-    _status = e?.status ?? OrderStatus.complete;
+    _status = e?.status ?? OrderStatus.unpaid;
+    _fulfillment = e?.fulfillment ?? FulfillmentStatus.pending;
   }
 
   @override
@@ -145,31 +153,14 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
     }
     final symbol = ref.read(currencyProvider).symbol;
     String m(int v) => Money.format(v, symbol: symbol);
-    // Complete: whatever was typed in the (hidden) payment field is ignored.
+    // Unpaid: whatever was typed in the (hidden) payment field is ignored.
     final pay = _locked || !_showPayment ? null : _payment;
     final applied = pay?.applied ?? 0;
     final paidAfter = _locked ? _alreadyPaid : (_alreadyPaid + applied).clamp(0, _total).toInt();
+    // The amount received is taken off the total automatically: less than
+    // the total saves as Partially Paid with the balance shown, no dialog.
+    final status = BusinessService.statusFor(paidAmount: paidAfter, total: _total);
     final owesAfter = _total - paidAfter;
-    final status = _status;
-    if (status.claimsPaid && owesAfter > 0) {
-      showSnack(
-        context,
-        '"${status.label}" means paid in full, but ${m(owesAfter)} is still owed. '
-        'Enter the full amount, or choose Complete if the buyer pays later.',
-        error: true,
-      );
-      return;
-    }
-    if (pay != null && pay.isPartial) {
-      final ok = await confirm(
-        context,
-        title: 'Partial payment?',
-        message: 'Received ${m(pay.applied)} of ${m(pay.due)}. ${m(pay.remaining)} will still be owed.',
-        confirmLabel: 'Save partial',
-        destructive: false,
-      );
-      if (!ok || !mounted) return;
-    }
     final e = _existing;
     final service = ref.read(businessServiceProvider);
     // Stock: only checked when the items are new or changed (payments and
@@ -205,6 +196,7 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
       changeGiven: usedCash ? pay.change : e?.changeGiven,
       method: _method,
       status: status,
+      fulfillment: _fulfillment,
       notes: _notes.text.trim().isEmpty ? null : _notes.text.trim(),
       createdAt: e?.createdAt ?? now,
       updatedAt: now,
@@ -218,7 +210,11 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
     // or take ingredients twice.
     OptimisticWrite.run(
       context,
-      savedText: usedCash && pay.change > 0 ? 'Saved · give ${m(pay.change)} change' : 'Saved',
+      savedText: [
+        'Saved',
+        if (status == OrderStatus.partiallyPaid) 'Partially Paid, ${m(owesAfter)} left',
+        if (usedCash && pay.change > 0) 'give ${m(pay.change)} change',
+      ].join(' · '),
       what: '${order.buyer}\'s order',
       show: (c) {
         final pending = c.read(pendingOrdersProvider.notifier)..put(key, preview);
@@ -384,26 +380,41 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                   Text(m(_total), style: Theme.of(context).textTheme.headlineSmall),
                 ],
               ),
-              if (_alreadyPaid > 0)
-                Text(
-                  'Paid so far ${m(_alreadyPaid)} · balance ${m(due)}',
-                  style: TextStyle(color: scheme.onSurfaceVariant),
-                ),
-              const SectionHeader('Status'),
+              if (_alreadyPaid > 0) ...[
+                const SizedBox(height: 4),
+                _BalanceRow(paid: _alreadyPaid, balance: due),
+              ],
+              const SectionHeader('Payment status'),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
                   for (final st in OrderStatus.values)
-                    ChoiceChip(label: Text(st.label), selected: _status == st, onSelected: (_) => setState(() => _status = st)),
+                    ChoiceChip(
+                      label: Text(st.label),
+                      selected: _status == st,
+                      // Money already received can't be "Unpaid" (edit
+                      // the amounts instead); a locked order keeps its status.
+                      onSelected: _locked || (st == OrderStatus.unpaid && _alreadyPaid > 0)
+                          ? null
+                          : (_) => setState(() {
+                                _status = st;
+                                // Paid: start with the exact balance.
+                                if (st == OrderStatus.paid && _received.text.trim().isEmpty && due > 0) {
+                                  _received.text = Money.toInput(due);
+                                }
+                              }),
+                    ),
                 ],
               ),
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  _showPayment
-                      ? 'Enter what the buyer paid below.'
-                      : 'Complete: the order is done. Choose Paid when the buyer pays to enter the payment.',
+                  switch (_status) {
+                    OrderStatus.unpaid => 'Unpaid: the buyer pays later. Choose Partially Paid or Paid to enter a payment.',
+                    OrderStatus.partiallyPaid => 'Enter what the buyer paid now. It\'s taken off the total and the balance stays due.',
+                    OrderStatus.paid => 'Enter what the buyer paid. Less than the total is saved as Partially Paid.',
+                  },
                   style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
                 ),
               ),
@@ -421,9 +432,9 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                       ),
                   ],
                 ),
-                if (_method.qrAsset != null && !_locked) ...[
+                if (_method.usesQr && !_locked) ...[
                   const SizedBox(height: 12),
-                  _QrCard(method: _method),
+                  PaymentQrCard(method: _method),
                 ],
                 if (!_locked && due > 0) ...[
                   const SizedBox(height: 12),
@@ -434,13 +445,19 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                     decoration: InputDecoration(
                       labelText: _method.isCash ? 'Cash received from buyer' : 'Amount received',
                       prefixText: '$symbol ',
-                      helperText: 'Paid means paid in full. Tap Exact for the full amount.',
+                      helperText: 'Less than ${m(due)}? It\'s saved as Partially Paid. Tap Exact for the full amount.',
+                      helperMaxLines: 2,
                       suffixIcon: TextButton(
                         onPressed: () => setState(() => _received.text = Money.toInput(due)),
                         child: const Text('Exact'),
                       ),
                     ),
-                    validator: (v) => (v == null || v.trim().isEmpty) ? null : validateAmount(v, allowZero: true),
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) {
+                        return _status == OrderStatus.partiallyPaid && _alreadyPaid == 0 ? 'Enter the amount received' : null;
+                      }
+                      return validateAmount(v, allowZero: true);
+                    },
                     onChanged: (_) => setState(() {}),
                   ),
                   if (pay != null) ...[
@@ -449,6 +466,27 @@ class _OrderFormScreenState extends ConsumerState<OrderFormScreen> {
                   ],
                 ],
               ],
+              const SectionHeader('Delivery / pick-up'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final f in FulfillmentStatus.values)
+                    ChoiceChip(
+                      avatar: Icon(fulfillmentIcon(f), size: 18),
+                      label: Text(f.label),
+                      selected: _fulfillment == f,
+                      onSelected: (_) => setState(() => _fulfillment = f),
+                    ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Separate from payment: an order can be delivered and still unpaid.',
+                  style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+                ),
+              ),
               const SizedBox(height: 16),
               TextFormField(
                 controller: _notes,
@@ -483,9 +521,9 @@ class _ChangeLine extends ConsumerWidget {
     final Widget child;
     if (result.isShort) {
       child = StatusBadge(
-        label: 'Short by ${formatMoney(ref, result.remaining)} · saved as a partial payment',
+        label: 'Partially Paid · ${formatMoney(ref, result.remaining)} balance left',
         tone: BadgeTone.warning,
-        icon: Icons.warning_amber_rounded,
+        icon: Icons.timelapse_rounded,
       );
     } else if (cash && result.change > 0) {
       child = AppCard(
@@ -513,50 +551,30 @@ class _ChangeLine extends ConsumerWidget {
   }
 }
 
-/// The owner's payment QR (an asset they add later). A missing image
-/// shows where to put it instead of breaking the screen.
-class _QrCard extends StatelessWidget {
-  const _QrCard({required this.method});
-  final PaymentMethod method;
+/// "Paid so far ₱200 · Balance due ₱300" on an order with a payment.
+class _BalanceRow extends ConsumerWidget {
+  const _BalanceRow({required this.paid, required this.balance});
+  final int paid;
+  final int balance;
 
   @override
-  Widget build(BuildContext context) {
-    final t = context.tokens;
-    return AppCard(
-      child: Column(
-        children: [
-          Text('Let the buyer scan to pay with ${method.label.replaceAll(' (QR)', '')}', textAlign: TextAlign.center),
-          const SizedBox(height: 12),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Image.asset(
-              method.qrAsset!,
-              width: 220,
-              height: 220,
-              fit: BoxFit.contain,
-              semanticLabel: '${method.label} payment QR code',
-              errorBuilder: (_, _, _) => Container(
-                width: 220,
-                height: 220,
-                color: t.secondHigh,
-                padding: const EdgeInsets.all(16),
-                alignment: Alignment.center,
-                child: Text(
-                  'QR image not added yet.\nPut it at ${method.qrAsset}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: t.onSecond),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Check the payment in your ${method.label.replaceAll(' (QR)', '')} app before saving.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: t.onSecondMuted, fontSize: 13),
-          ),
-        ],
-      ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final scheme = Theme.of(context).colorScheme;
+    return Row(
+      children: [
+        Expanded(child: Text('Paid so far ${formatMoney(ref, paid)}', style: TextStyle(color: scheme.onSurfaceVariant))),
+        if (balance > 0)
+          StatusBadge(label: 'Balance due ${formatMoney(ref, balance)}', tone: BadgeTone.warning, icon: Icons.timelapse_rounded)
+        else
+          const StatusBadge(label: 'Paid in full', tone: BadgeTone.ok, icon: Icons.check_circle_rounded),
+      ],
     );
   }
 }
+
+/// Icon for a delivery / pick-up status (form chips and order badges).
+IconData fulfillmentIcon(FulfillmentStatus f) => switch (f) {
+      FulfillmentStatus.pending => Icons.schedule_rounded,
+      FulfillmentStatus.forPickup => Icons.storefront_rounded,
+      FulfillmentStatus.delivered => Icons.local_shipping_rounded,
+    };
