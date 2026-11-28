@@ -55,28 +55,12 @@ class PreparedData {
 }
 
 /// The data-prep step that runs before any chart or total.
-///
-/// 1. **Missing values**: a row with no usable amount or date can't be
-///    counted, so it is skipped (never a crash). No / unknown category is
-///    kept as "Uncategorized" (category id null). Empty description becomes
-///    "Unknown".
-/// 2. **Normalize**: amounts to positive integer centavos (from int, double
-///    or text like "₱1,234.50"), dates from epoch ms or ISO text, trimmed
-///    and single-spaced text, unknown kinds as expense.
-/// 3. **Duplicates**: rows with the same kind, amount, day, description
-///    (case-insensitive) and account. Rows typed by hand are ALWAYS kept,
-///    each one counted: two identical coffees (or two identical loans) on
-///    one day are real money. Only an imported copy (CSV / SMS / bank) of a
-///    row that's already there is dropped.
-///
-/// Pure function: no database, easy to unit test.
 class DataPrep {
   DataPrep._();
 
   static const uncategorizedLabel = 'Uncategorized';
 
   /// Cleans raw `transactions` rows (maps straight from SQLite or a file).
-  /// [knownCategoryIds]: when given, ids not in it count as uncategorized.
   static PreparedData clean(
     Iterable<Map<String, Object?>> raw, {
     Set<int>? knownCategoryIds,
@@ -101,7 +85,7 @@ class DataPrep {
         categoryId = null;
       }
       final kind = TransactionKind.fromDb(_text(row['kind']) ?? 'expense');
-      if (categoryId == null && kind != TransactionKind.transfer) uncategorized++;
+      if (categoryId == null && kind != TransactionKind.transfer && kind != TransactionKind.savings) uncategorized++;
       final created = parseDate(row['created_at']) ?? date;
       normalized.add(TransactionEntry(
         id: _asInt(row['id']) ?? syntheticId--,
@@ -125,6 +109,7 @@ class DataPrep {
         loanPaidAt: parseDate(row['loan_paid_at']),
         loanPaidMethod: LoanPayMethod.fromDb(_text(row['loan_paid_method'])),
         loanPaymentOfId: _asInt(row['loan_payment_of_id']),
+        savingsAction: SavingsAction.fromDb(_text(row['savings_action'])),
         createdAt: created,
         updatedAt: parseDate(row['updated_at']) ?? created,
       ));
@@ -145,7 +130,7 @@ class DataPrep {
 
   static int _uncategorizedAmong(List<TransactionEntry> all, List<TransactionEntry> kept) {
     final keptIds = {for (final t in kept) t.id};
-    return all.where((t) => !keptIds.contains(t.id) && t.categoryId == null && !t.isTransfer).length;
+    return all.where((t) => !keptIds.contains(t.id) && t.categoryId == null && !t.isTransfer && !t.isSavings).length;
   }
 
   /// Duplicate key: kind, amount, calendar day, description, accounts.
@@ -172,13 +157,10 @@ class DataPrep {
       if (g.length < 2) continue;
       bool manual(TransactionEntry t) => t.source == TransactionSourceType.manual;
       if (keepManualRepeats) {
-        // Every typed row counts. Imported copies go when the same entry is
-        // already there (typed, or an earlier import).
         final imported = g.where((t) => !manual(t)).toList()..sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
         drop.addAll(g.any(manual) ? imported : imported.skip(1));
         continue;
       }
-      // Keep the oldest saved row (lowest id), drop the rest.
       final sorted = [...g]..sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
       drop.addAll(sorted.skip(1));
     }
@@ -186,12 +168,10 @@ class DataPrep {
     return ([for (final t in rows) if (!drop.contains(t)) t], drop.length);
   }
 
-  /// Positive or negative centavos, or null if missing / unreadable.
   static int? parseAmount(Object? v) => switch (v) {
         null => null,
         int i => i,
-        // Amounts are stored as integer centavos; a REAL is rounded to one.
-        double d => d.isFinite ? d.round() : null,
+        double d when d.isFinite => d.round(),
         String s => Money.parse(s),
         _ => null,
       };
@@ -206,7 +186,6 @@ class DataPrep {
         _ => null,
       };
 
-  /// Trimmed, single-spaced; null when empty.
   static String? normalizeText(String? s) {
     if (s == null) return null;
     final t = s.replaceAll(RegExp(r'\s+'), ' ').trim();

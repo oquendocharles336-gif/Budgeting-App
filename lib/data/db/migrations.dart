@@ -29,6 +29,7 @@ class Migrations {
     10: _v10OrderStatusCompleteOrPaid,
     11: _v11QueryIndexes,
     12: _v12MonthlyDueUtilitiesFulfillmentAutoTrack,
+    13: _v13SavingsAndUnifiedDebts,
   };
 
   static int get latestVersion => _steps.keys.reduce((a, b) => a > b ? a : b);
@@ -564,6 +565,69 @@ class Migrations {
 
     // 5. Patterns for e-wallet app notifications.
     await DefaultData.ensureNotificationPatterns(db);
+  }
+
+  // ---------------------------------------------------------------------------
+  // v13: savings transaction kind, savings_action, unified debts direction
+  // ---------------------------------------------------------------------------
+  static Future<void> _v13SavingsAndUnifiedDebts(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE transactions_v13 (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        amount            INTEGER NOT NULL CHECK (amount > 0),
+        kind              TEXT    NOT NULL DEFAULT 'expense' CHECK (kind IN ('expense', 'income', 'transfer', 'savings')),
+        description       TEXT    NOT NULL,
+        category_id       INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+        custom_category   TEXT,
+        card_id           INTEGER REFERENCES cards(id) ON DELETE RESTRICT,
+        to_card_id        INTEGER REFERENCES cards(id) ON DELETE RESTRICT,
+        date              INTEGER NOT NULL,
+        notes             TEXT,
+        source            TEXT    NOT NULL DEFAULT 'manual'
+                          CHECK (source IN ('manual', 'csv_import', 'sms_parsed', 'bank_sync')),
+        external_id       TEXT,
+        dedup_hash        TEXT,
+        affects_balance   INTEGER NOT NULL DEFAULT 0,
+        debt_id           INTEGER REFERENCES debts(id) ON DELETE SET NULL,
+        fee_of_id         INTEGER,
+        to_capital        INTEGER NOT NULL DEFAULT 0,
+        from_capital      INTEGER NOT NULL DEFAULT 0,
+        loan_paid_at      INTEGER,
+        loan_paid_method  TEXT,
+        loan_payment_of_id INTEGER,
+        savings_action    TEXT CHECK (savings_action IN ('deposit', 'withdraw')),
+        created_at        INTEGER NOT NULL,
+        updated_at        INTEGER NOT NULL
+      )''');
+
+    const cols = 'id, amount, kind, description, category_id, custom_category, card_id, to_card_id, '
+        'date, notes, source, external_id, dedup_hash, affects_balance, debt_id, fee_of_id, '
+        'to_capital, from_capital, loan_paid_at, loan_paid_method, loan_payment_of_id, created_at, updated_at';
+    await db.execute('INSERT INTO transactions_v13 ($cols) SELECT $cols FROM transactions');
+    await db.execute('DROP TABLE transactions');
+    await db.execute('ALTER TABLE transactions_v13 RENAME TO transactions');
+
+    await db.execute('''
+      CREATE UNIQUE INDEX ux_transactions_card_external
+      ON transactions(card_id, external_id) WHERE external_id IS NOT NULL''');
+    await db.execute('CREATE INDEX ix_transactions_date ON transactions(date)');
+    await db.execute('CREATE INDEX ix_transactions_category ON transactions(category_id)');
+    await db.execute('CREATE INDEX ix_transactions_card ON transactions(card_id)');
+    await db.execute('CREATE INDEX ix_transactions_to_card ON transactions(to_card_id)');
+    await db.execute('CREATE INDEX ix_transactions_hash ON transactions(dedup_hash)');
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_transactions_kind_date ON transactions(kind, date)');
+
+    await db.execute("ALTER TABLE debts ADD COLUMN direction TEXT NOT NULL DEFAULT 'borrowed'");
+    await db.execute('CREATE INDEX IF NOT EXISTS ix_debts_direction ON debts(direction)');
+
+    await DefaultData.ensureSavingsCategory(db);
+
+    await db.execute('''
+      INSERT INTO debts (creditor, direction, total_amount, initial_paid, notes, is_paid, origin, created_at, paid_at)
+      SELECT description, 'lent', amount, 0, notes, CASE WHEN loan_paid_at IS NOT NULL THEN 1 ELSE 0 END, 'existing', created_at, loan_paid_at
+      FROM transactions
+      WHERE category_id IN (SELECT id FROM categories WHERE role = 'loan')
+        AND debt_id IS NULL''');
   }
 
   /// Old one-time due dates become a monthly due day (the same day of the

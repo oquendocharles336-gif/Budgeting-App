@@ -16,6 +16,7 @@ class RawTransaction {
     this.customCategory,
     this.notes,
     this.originalText,
+    this.savingsAction,
   });
 
   final DateTime date;
@@ -45,6 +46,9 @@ class RawTransaction {
   /// The CSV row or SMS text, shown in review screens.
   final String? originalText;
 
+  /// Savings deposit vs withdrawal.
+  final SavingsAction? savingsAction;
+
   RawTransaction copyWith({
     DateTime? date,
     String? description,
@@ -52,6 +56,7 @@ class RawTransaction {
     TransactionKind? kind,
     int? Function()? cardId,
     int? Function()? categoryId,
+    SavingsAction? savingsAction,
   }) =>
       RawTransaction(
         date: date ?? this.date,
@@ -66,5 +71,6 @@ class RawTransaction {
         customCategory: customCategory,
         notes: notes,
         originalText: originalText,
+        savingsAction: savingsAction ?? this.savingsAction,
       );
 }

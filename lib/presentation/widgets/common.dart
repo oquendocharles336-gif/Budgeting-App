@@ -452,6 +452,8 @@ class AmountText extends ConsumerWidget {
     } else if (kind == TransactionKind.income) {
       text = '+$text';
       if (colored) color = StatusColors.income(context);
+    } else if (kind == TransactionKind.savings) {
+      if (colored) color = StatusColors.ok(context);
     }
     return Text(text, style: (style ?? const TextStyle()).copyWith(color: color));
   }

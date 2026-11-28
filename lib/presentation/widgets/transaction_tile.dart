@@ -51,6 +51,9 @@ class TransactionTile extends StatelessWidget {
         tx.toCapital ? 'To business' : (tx.fromCapital ? 'From business' : 'Transfer'),
         '${tx.fromCapital ? 'Business capital' : account(tx.cardId, card)} → '
             '${tx.toCapital ? 'Business capital' : account(tx.toCardId, toCard)}',
+      ] else if (tx.isSavings) ...[
+        tx.isSavingsWithdrawal ? 'Withdrawn from savings' : 'Deposited to savings',
+        account(tx.cardId, card),
       ] else ...[
         '${tx.isIncome ? 'Received in' : 'Paid with'} ${account(tx.cardId, card)}',
         categoryName,
@@ -61,6 +64,8 @@ class TransactionTile extends StatelessWidget {
     final Widget leading;
     if (tx.isTransfer) {
       leading = const IconBubble(icon: Icons.swap_horiz_rounded);
+    } else if (tx.isSavings) {
+      leading = IconBubble(icon: Icons.savings_rounded, background: t.successContainer, foreground: t.onSuccessContainer);
     } else if (tx.isLoanPayment) {
       // Money coming back is green; paying back a loan you received is neutral.
       leading = tx.isIncome

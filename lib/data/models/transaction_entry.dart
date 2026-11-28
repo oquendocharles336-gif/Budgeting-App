@@ -1,16 +1,34 @@
-/// Whether money went out (expense), came in (income/refund/payment), or
-/// moved between the user's own accounts (transfer). Transfers are neither
-/// spending nor income, so budgets and analytics ignore them.
+/// Whether money went out (expense), came in (income/refund/payment),
+/// moved between the user's own accounts (transfer), or went into/out of savings.
 enum TransactionKind {
   expense,
   income,
-  transfer;
+  transfer,
+  savings;
 
   static TransactionKind fromDb(String v) => switch (v) {
         'income' => TransactionKind.income,
         'transfer' => TransactionKind.transfer,
+        'savings' => TransactionKind.savings,
         _ => TransactionKind.expense,
       };
+}
+
+/// Savings action: depositing into savings vs withdrawing/releasing from savings.
+enum SavingsAction {
+  deposit('deposit', 'Deposit'),
+  withdraw('withdraw', 'Withdrawal');
+
+  const SavingsAction(this.dbValue, this.label);
+  final String dbValue;
+  final String label;
+
+  static SavingsAction? fromDb(String? v) {
+    for (final a in SavingsAction.values) {
+      if (a.dbValue == v) return a;
+    }
+    return null;
+  }
 }
 
 /// Where a transaction came from. Stored in the `source` column.
@@ -74,6 +92,7 @@ class TransactionEntry {
     this.loanPaidAt,
     this.loanPaidMethod,
     this.loanPaymentOfId,
+    this.savingsAction,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -131,6 +150,10 @@ class TransactionEntry {
   /// id. It counts in the budget like any expense, and is removed when the
   /// loan is marked unpaid or deleted.
   final int? loanPaymentOfId;
+
+  /// Savings transactions: depositing into vs withdrawing from savings.
+  final SavingsAction? savingsAction;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -138,6 +161,9 @@ class TransactionEntry {
   bool get isExpense => kind == TransactionKind.expense;
   bool get isIncome => kind == TransactionKind.income;
   bool get isTransfer => kind == TransactionKind.transfer;
+  bool get isSavings => kind == TransactionKind.savings;
+  bool get isSavingsDeposit => isSavings && (savingsAction == SavingsAction.deposit || savingsAction == null);
+  bool get isSavingsWithdrawal => isSavings && savingsAction == SavingsAction.withdraw;
   bool get isCapitalTransfer => isTransfer && (toCapital || fromCapital);
   bool get isFee => feeOfId != null;
   bool get isLoanPaid => loanPaidAt != null;
@@ -156,6 +182,7 @@ class TransactionEntry {
         TransactionKind.expense => -amount,
         TransactionKind.income => amount,
         TransactionKind.transfer => 0,
+        TransactionKind.savings => isSavingsWithdrawal ? amount : -amount,
       };
 
   TransactionEntry copyWith({
@@ -180,6 +207,7 @@ class TransactionEntry {
     DateTime? Function()? loanPaidAt,
     LoanPayMethod? Function()? loanPaidMethod,
     int? Function()? loanPaymentOfId,
+    SavingsAction? Function()? savingsAction,
     DateTime? updatedAt,
   }) =>
       TransactionEntry(
@@ -204,6 +232,7 @@ class TransactionEntry {
         loanPaidAt: loanPaidAt != null ? loanPaidAt() : this.loanPaidAt,
         loanPaidMethod: loanPaidMethod != null ? loanPaidMethod() : this.loanPaidMethod,
         loanPaymentOfId: loanPaymentOfId != null ? loanPaymentOfId() : this.loanPaymentOfId,
+        savingsAction: savingsAction != null ? savingsAction() : this.savingsAction,
         createdAt: createdAt,
         updatedAt: updatedAt ?? this.updatedAt,
       );
@@ -230,6 +259,7 @@ class TransactionEntry {
         'loan_paid_at': loanPaidAt?.millisecondsSinceEpoch,
         'loan_paid_method': loanPaidMethod?.dbValue,
         'loan_payment_of_id': loanPaymentOfId,
+        'savings_action': savingsAction?.dbValue,
         'created_at': createdAt.millisecondsSinceEpoch,
         'updated_at': updatedAt.millisecondsSinceEpoch,
       };
@@ -256,6 +286,7 @@ class TransactionEntry {
         loanPaidAt: m['loan_paid_at'] == null ? null : DateTime.fromMillisecondsSinceEpoch(m['loan_paid_at'] as int),
         loanPaidMethod: LoanPayMethod.fromDb(m['loan_paid_method'] as String?),
         loanPaymentOfId: m['loan_payment_of_id'] as int?,
+        savingsAction: SavingsAction.fromDb(m['savings_action'] as String?),
         createdAt: DateTime.fromMillisecondsSinceEpoch(m['created_at'] as int),
         updatedAt: DateTime.fromMillisecondsSinceEpoch(m['updated_at'] as int),
       );

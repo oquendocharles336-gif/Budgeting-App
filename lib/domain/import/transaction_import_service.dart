@@ -147,6 +147,7 @@ class TransactionImportService {
       TransactionKind.transfer => null,
       TransactionKind.income => r.categoryId ?? await _categories?.otherIncomeId(),
       TransactionKind.expense => r.categoryId ?? (await _categorizer()).categorize(r.description),
+      TransactionKind.savings => r.categoryId ?? await _categories?.savingsCategoryId(),
     };
     final id = await _transactions.insert(_toEntry(r, categoryId, hashOf(r), _clock()));
     await _alerts?.checkMonth(r.date);
@@ -193,6 +194,7 @@ class TransactionImportService {
         // rows don't: the starting balance the user typed already includes
         // them, so counting them again would take the money out twice.
         affectsBalance: moveBalance || r.source == TransactionSourceType.manual,
+        savingsAction: r.savingsAction,
         createdAt: now,
         updatedAt: now,
       );

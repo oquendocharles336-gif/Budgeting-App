@@ -1,5 +1,17 @@
 import '../../domain/debt/monthly_due.dart';
 
+/// Direction: borrowed (I owe money to someone) vs lent (someone owes money to me / loan given).
+enum DebtDirection {
+  borrowed('borrowed', 'Borrowed (I owe)'),
+  lent('lent', 'Lent (Owed to me)');
+
+  const DebtDirection(this.dbValue, this.label);
+  final String dbValue;
+  final String label;
+
+  static DebtDirection fromDb(String? v) => v == 'lent' ? DebtDirection.lent : DebtDirection.borrowed;
+}
+
 /// What kind of debt this is. Stored in `debts.debt_type`.
 enum DebtType {
   loan('Loan'),
@@ -14,7 +26,7 @@ enum DebtType {
       DebtType.values.firstWhere((t) => t.name == v, orElse: () => DebtType.other);
 }
 
-/// Where the money was borrowed from. Stored in `debts.lender_type`.
+/// Where the money was borrowed from or lent to. Stored in `debts.lender_type`.
 enum LenderType {
   bank('Bank'),
   lendingApp('Lending app'),
@@ -62,6 +74,7 @@ class Debt {
   const Debt({
     this.id,
     required this.creditor,
+    this.direction = DebtDirection.borrowed,
     this.type = DebtType.other,
     this.lenderType,
     this.lenderDetail,
@@ -85,10 +98,11 @@ class Debt {
   /// True: money just received or spent, so it was also added to expenses
   /// (a linked transaction). False: an existing debt, only a reminder.
   final bool isNew;
+  final DebtDirection direction;
   final String creditor;
   final DebtType type;
 
-  /// Where it was borrowed from.
+  /// Where it was borrowed from / lent to.
   final LenderType? lenderType;
 
   /// What the user typed when [lenderType] is "Other".
@@ -100,28 +114,22 @@ class Debt {
   /// Amount already paid when the debt was added (centavos).
   final int initialPaid;
 
-  /// Day of the month the payment is due, 1-31 ("every 15th"). Recurs
-  /// every month until the debt is settled. In a shorter month the last
-  /// day is used (31 -> Feb 28). Null = no due day. Stored in
-  /// `debts.due_day` (v12); the old one-time `due_date` column is no
-  /// longer written.
+  /// Day of the month the payment is due, 1-31.
   final int? dueDay;
 
-  /// When the monthly schedule starts counting (the first due date is the
-  /// first [dueDay] after this). Null = [createdAt]. Set when a due day is
-  /// first added to an existing debt, and by the v12 migration, so older
-  /// debts don't suddenly show months of missed payments.
+  /// When the monthly schedule starts counting.
   final DateTime? dueFrom;
 
-  /// Interest rate in basis points: 350 = 3.50%, per [interestPeriod].
+  /// Interest rate in basis points.
   final int? interestRateBp;
   final InterestType interestType;
   final InterestPeriod interestPeriod;
 
-  /// Loan term: number of monthly payments ("Gaano katagal babayaran").
-  /// Required for new and edited debts since 1.6.0; older debts may have
-  /// none. Used to work out the monthly amount.
+  /// Loan term: number of monthly payments.
   final int? termMonths;
+
+  bool get isBorrowed => direction == DebtDirection.borrowed;
+  bool get isLent => direction == DebtDirection.lent;
 
   /// The monthly schedule, or null without a [dueDay].
   MonthlyDue? get schedule => dueDay == null ? null : MonthlyDue(day: dueDay!, startedAt: dueFrom ?? createdAt);
@@ -140,6 +148,7 @@ class Debt {
 
   Debt copyWith({
     String? creditor,
+    DebtDirection? direction,
     DebtType? type,
     LenderType? Function()? lenderType,
     String? Function()? lenderDetail,
@@ -158,6 +167,7 @@ class Debt {
       Debt(
         id: id,
         creditor: creditor ?? this.creditor,
+        direction: direction ?? this.direction,
         type: type ?? this.type,
         lenderType: lenderType != null ? lenderType() : this.lenderType,
         lenderDetail: lenderDetail != null ? lenderDetail() : this.lenderDetail,
@@ -179,6 +189,7 @@ class Debt {
   Map<String, Object?> toMap() => {
         if (id != null) 'id': id,
         'creditor': creditor,
+        'direction': direction.dbValue,
         'debt_type': type.name,
         'lender_type': lenderType?.name,
         'lender_detail': lenderDetail,
@@ -201,6 +212,7 @@ class Debt {
   factory Debt.fromMap(Map<String, Object?> m) => Debt(
         id: m['id'] as int,
         creditor: m['creditor'] as String,
+        direction: DebtDirection.fromDb(m['direction'] as String?),
         type: DebtType.fromDb(m['debt_type'] as String?),
         lenderType: LenderType.fromDb(m['lender_type'] as String?),
         lenderDetail: m['lender_detail'] as String?,
@@ -222,8 +234,7 @@ class Debt {
       );
 }
 
-/// `due_day` (v12+). A row from before v12 (an old backup being read
-/// before its fix-up, or a test map) falls back to the day of `due_date`.
+/// `due_day` (v12+).
 int? _dueDayOf(Map<String, Object?> m) {
   final day = m['due_day'];
   if (day is int && day >= 1 && day <= 31) return day;

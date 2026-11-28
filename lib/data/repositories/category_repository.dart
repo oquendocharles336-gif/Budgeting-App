@@ -45,6 +45,19 @@ class CategoryRepository {
   /// The "Business / sales" income category for sales added to the budget.
   Future<int> salesCategoryId() => DefaultData.ensureSalesCategory(_db);
 
+  Future<int?> savingsCategoryId() async {
+    final rows = await _db.query(
+      'categories',
+      columns: ['id'],
+      where: "kind = 'savings'",
+      limit: 1,
+    );
+    if (rows.isNotEmpty) return rows.first['id'] as int;
+    await DefaultData.ensureSavingsCategory(_db);
+    final recheck = await _db.query('categories', columns: ['id'], where: "kind = 'savings'", limit: 1);
+    return recheck.isEmpty ? null : recheck.first['id'] as int;
+  }
+
   Future<int?> otherIncomeId() async {
     final rows = await _db.query(
       'categories',

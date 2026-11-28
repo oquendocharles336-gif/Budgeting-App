@@ -611,6 +611,7 @@ class _TransactionFormScreenState extends ConsumerState<TransactionFormScreen> {
               ButtonSegment(value: TransactionKind.expense, label: Text('Expense'), icon: Icon(Icons.arrow_upward_rounded)),
               ButtonSegment(value: TransactionKind.income, label: Text('Income'), icon: Icon(Icons.arrow_downward_rounded)),
               ButtonSegment(value: TransactionKind.transfer, label: Text('Transfer'), icon: Icon(Icons.swap_horiz_rounded)),
+              ButtonSegment(value: TransactionKind.savings, label: Text('Savings'), icon: Icon(Icons.savings_rounded)),
             ],
             selected: {_kind},
             onSelectionChanged: (s) => setState(() {

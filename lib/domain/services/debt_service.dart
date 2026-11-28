@@ -20,21 +20,7 @@ abstract interface class DebtReminderScheduler {
   Future<void> cancelDebtReminders(int debtId);
 }
 
-/// Debt changes, the expense a new debt creates, and monthly due-day
-/// reminders.
-///
-/// * **New debt** (money just received or spent): also saved as an expense
-///   in the "Debt" category with the debt's amount, date and name, linked
-///   by `transactions.debt_id`, so it counts in the monthly budget and
-///   analytics. Editing the debt updates that expense.
-/// * **Existing debt**: only a reminder. It's in the debt list and total,
-///   but creates no expense and doesn't touch budget or analytics.
-/// * **Payments** are recorded against the debt only (remaining balance and
-///   total debt go down). They never create a new expense, so the money
-///   isn't counted twice.
-/// * **Due day** recurs every month ("every 15th") until the debt is
-///   settled. Each recorded payment covers one month, so after a payment
-///   the reminder moves to the next month's due date.
+/// Unified Debt & Loan service: borrowed debts (I owe money) and lent loans (someone owes me).
 class DebtService {
   DebtService({
     required DebtRepository repository,
@@ -49,8 +35,7 @@ class DebtService {
   final DebtReminderScheduler _notifications;
   final DateTime Function() _clock;
 
-  /// The expense a new debt adds. Not paid from an account (it's borrowed
-  /// or bought on credit), so it never moves account balances.
+  /// The transaction a new debt/loan adds.
   static TransactionEntry linkedExpenseFor(
     Debt debt, {
     required int debtId,
@@ -65,19 +50,18 @@ class DebtService {
       description: debt.creditor.trim(),
       categoryId: categoryId,
       date: debt.createdAt,
-      notes: 'Added from a new debt',
+      notes: debt.isBorrowed ? 'Added from a new debt' : 'Added from a new loan given',
       source: TransactionSourceType.manual,
       affectsBalance: false,
       debtId: debtId,
       createdAt: current?.createdAt ?? now,
       updatedAt: now,
     );
-    // Keep a category the user picked for it later.
     return current == null ? base : base.copyWith(categoryId: () => current.categoryId ?? categoryId);
   }
 
   Future<int> save(Debt debt, {required String currencySymbol}) async {
-    if (debt.creditor.trim().isEmpty) throw ArgumentError('Creditor is required');
+    if (debt.creditor.trim().isEmpty) throw ArgumentError('Creditor/borrower is required');
     if (debt.totalAmount <= 0) throw ArgumentError('Total must be more than zero');
     if (debt.initialPaid < 0 || debt.initialPaid > debt.totalAmount) {
       throw ArgumentError('Amount already paid must be between zero and the total');
@@ -90,7 +74,9 @@ class DebtService {
     final int id;
     var deadlineChanged = true;
     if (debt.id == null) {
-      final categoryId = debt.isNew ? await _categories.debtCategoryId() : null;
+      final categoryId = debt.isNew
+          ? (debt.isBorrowed ? await _categories.debtCategoryId() : await _categories.loanCategoryId())
+          : null;
       id = await _repo.insert(
         debt,
         linkedExpense: debt.isNew
@@ -101,7 +87,9 @@ class DebtService {
       id = debt.id!;
       final before = await _repo.statusById(id);
       deadlineChanged = before?.debt.dueDay != debt.dueDay;
-      final categoryId = debt.isNew ? await _categories.debtCategoryId() : null;
+      final categoryId = debt.isNew
+          ? (debt.isBorrowed ? await _categories.debtCategoryId() : await _categories.loanCategoryId())
+          : null;
       await _repo.update(
         debt,
         linkedExpense: debt.isNew
@@ -109,7 +97,6 @@ class DebtService {
             : null,
       );
     }
-    // Notify right away only when the deadline is new or moved, not on every edit.
     await _sync(id, currencySymbol, allowImmediate: deadlineChanged);
     return id;
   }
@@ -127,7 +114,6 @@ class DebtService {
   Future<void> deletePayment(DebtPayment payment, {required String currencySymbol}) async {
     await _repo.deletePayment(payment.id!);
     final status = await _repo.statusById(payment.debtId);
-    // Undo an automatic "paid" if the balance is open again.
     if (status != null && status.debt.isPaid && status.remaining > 0) {
       await _repo.setPaid(payment.debtId, false);
     }
@@ -139,7 +125,6 @@ class DebtService {
     await _sync(debtId, currencySymbol, allowImmediate: false);
   }
 
-  /// Whether deleting should ask about a linked expense.
   Future<bool> hasLinkedExpense(int debtId) async => await _repo.linkedExpense(debtId) != null;
 
   Future<void> delete(int debtId, {bool removeLinkedExpense = false}) async {
@@ -147,9 +132,6 @@ class DebtService {
     await _repo.delete(debtId, removeLinkedExpense: removeLinkedExpense);
   }
 
-  /// Re-creates reminders for every open debt (app start, after a restore).
-  /// Never fires one "right away" here, so opening the app doesn't repeat
-  /// a reminder that was already shown.
   Future<void> rescheduleAll({required String currencySymbol}) async {
     for (final s in await _repo.allStatuses()) {
       await _schedule(s, currencySymbol, allowImmediate: false);
@@ -162,23 +144,18 @@ class DebtService {
     await _schedule(status, symbol, allowImmediate: allowImmediate);
   }
 
-  /// Reminders are a nice-to-have: a scheduling error must not make a save
-  /// that already reached the database look like it failed.
   Future<void> _schedule(DebtStatus status, String symbol, {required bool allowImmediate}) async {
     final debt = status.debt;
     final id = debt.id;
     if (id == null) return;
     try {
       final now = _clock();
-      // This month's (or the next unpaid month's) due date.
       final deadline = status.nextDue(now);
       final at = deadline == null ? null : DebtReminders.scheduleTime(deadline, now, allowImmediate: allowImmediate);
       if (at == null) {
-        // Paid, or no due day: nothing should fire.
         await _notifications.cancelDebtReminders(id);
         return;
       }
-      // The monthly amount when a term is set, otherwise what's left.
       final monthly = InterestCalculator.forStatus(status)?.monthlyPayment;
       final amount = monthly != null && monthly > 0 && monthly < status.remaining ? monthly : status.remaining;
       final text = DebtReminders.message(

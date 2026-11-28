@@ -49,8 +49,11 @@ class FakeDebts implements DebtRepository {
   }
 
   @override
-  Future<List<DebtStatus>> allStatuses() async =>
-      [for (final d in debts.values) DebtStatus(debt: d, paymentsTotal: paid[d.id] ?? 0, paymentsCount: count[d.id] ?? 0)];
+  Future<List<DebtStatus>> allStatuses({DebtDirection? direction}) async {
+    final list = [for (final d in debts.values) DebtStatus(debt: d, paymentsTotal: paid[d.id] ?? 0, paymentsCount: count[d.id] ?? 0)];
+    if (direction == null) return list;
+    return list.where((s) => s.debt.direction == direction).toList();
+  }
 
   @override
   Future<DebtStatus?> statusById(int id) async =>
