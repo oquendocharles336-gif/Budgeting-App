@@ -27,7 +27,7 @@ Future<void> main() async {
 
 enum _Stage { loading, unlocked, error }
 
-/// Bypasses login/password and opens the database directly.
+/// Bypasses login/password and opens the unencrypted database directly.
 class _Bootstrap extends StatefulWidget {
   const _Bootstrap();
 
@@ -56,11 +56,11 @@ class _BootstrapState extends State<_Bootstrap> {
   Future<void> _init() async {
     setState(() => _stage = _Stage.loading);
     try {
-      _vault = Vault(await AppDatabase.directory());
+      final dir = await AppDatabase.directory();
+      _vault = Vault(dir);
       await _notifications.init();
 
-      const defaultPassphrase = 'pitaka_default_passphrase';
-      final db = await AppDatabase.open(passphrase: defaultPassphrase);
+      final db = await AppDatabase.openPlain();
       _db = db;
       _dataKey = Uint8List(32);
 

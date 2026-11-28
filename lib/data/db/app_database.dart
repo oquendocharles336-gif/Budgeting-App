@@ -37,6 +37,20 @@ class AppDatabase {
     return AppDatabase._(db);
   }
 
+  static Future<AppDatabase> openPlain({String? path}) async {
+    final dbPath = path ?? p.join(await directory(), legacyFileName);
+    final db = await openDatabase(
+      dbPath,
+      version: Migrations.latestVersion,
+      onConfigure: (db) async {
+        await db.execute('PRAGMA foreign_keys = ON');
+      },
+      onCreate: (db, version) => Migrations.run(db, 0, version),
+      onUpgrade: (db, oldVersion, newVersion) => Migrations.run(db, oldVersion, newVersion),
+    );
+    return AppDatabase._(db);
+  }
+
   static Future<bool> legacyExists() async => File(p.join(await directory(), legacyFileName)).exists();
 
   static Future<bool> encryptedExists() async => File(p.join(await directory(), fileName)).exists();
