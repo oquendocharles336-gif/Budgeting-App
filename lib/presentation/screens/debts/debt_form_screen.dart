@@ -12,8 +12,9 @@ import '../../providers/core_providers.dart';
 import '../../widgets/common.dart';
 
 class DebtFormScreen extends ConsumerStatefulWidget {
-  const DebtFormScreen({super.key, this.existing});
+  const DebtFormScreen({super.key, this.existing, this.initialDirection});
   final Debt? existing;
+  final DebtDirection? initialDirection;
 
   @override
   ConsumerState<DebtFormScreen> createState() => _DebtFormScreenState();
@@ -30,6 +31,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
   late final TextEditingController _term;
   /// Day of the month the payment is due (1-31), every month. Null = none.
   int? _dueDay;
+  late DebtDirection _direction;
   late DebtType _type;
   LenderType? _lenderType;
   late InterestType _interestType;
@@ -53,25 +55,23 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
     );
     _notes = TextEditingController(text: e?.notes ?? '');
     _dueDay = e?.dueDay;
+    _direction = e?.direction ?? widget.initialDirection ?? DebtDirection.borrowed;
     _type = e?.type ?? DebtType.loan;
     _lenderType = e?.lenderType;
     _lenderDetail = TextEditingController(text: e?.lenderDetail ?? '');
     _interestType = e?.interestType ?? InterestType.simple;
     _interestPeriod = e?.interestPeriod ?? InterestPeriod.month;
     _term = TextEditingController(text: e?.termMonths?.toString() ?? '');
-    // Keep the monthly estimate up to date while typing.
     for (final c in [_total, _paid, _interest, _term]) {
       c.addListener(() => setState(() {}));
     }
   }
 
-  /// The loan term: a positive whole number of months, or null.
   int? _termMonths() {
     final n = int.tryParse(_term.text.trim());
     return (n == null || n <= 0) ? null : n;
   }
 
-  /// Required, whole months only (digits only, so no decimals), 1-600.
   static String? validateTerm(String? v) {
     final t = v?.trim() ?? '';
     if (t.isEmpty) return 'Enter how many months (Gaano katagal babayaran)';
@@ -90,11 +90,10 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
     super.dispose();
   }
 
-  /// "3.5" -> 350 basis points.
   int? _interestBp() {
     final t = _interest.text.trim();
     if (t.isEmpty) return null;
-    final v = Money.parse(t); // same 2-decimal parsing as money
+    final v = Money.parse(t);
     return v;
   }
 
@@ -107,6 +106,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
     final debt = Debt(
       id: e?.id,
       creditor: _creditor.text.trim(),
+      direction: _direction,
       type: _type,
       lenderType: _lenderType,
       lenderDetail: _lenderType == LenderType.other && _lenderDetail.text.trim().isNotEmpty ? _lenderDetail.text.trim() : null,
@@ -116,8 +116,6 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
       totalAmount: Money.parse(_total.text)!,
       initialPaid: _paid.text.trim().isEmpty ? 0 : Money.parse(_paid.text)!,
       dueDay: _dueDay,
-      // A due day added to an older debt counts from today, so it doesn't
-      // show months of missed payments.
       dueFrom: e == null
           ? null
           : (e.dueDay == null && _dueDay != null ? DateTime.now() : e.dueFrom),
@@ -133,18 +131,14 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
     } catch (err) {
       if (!mounted) return;
       setState(() => _saving = false);
-      showSnack(context, 'Could not save debt: $err', error: true);
+      showSnack(context, 'Could not save: $err', error: true);
       return;
     }
-    // Saved: refresh the list first so the Debts screen updates even if the
-    // (optional) notification permission prompt below fails.
     ref.refreshData();
     if (debt.dueDay != null) await _askForReminders();
     if (mounted) Navigator.of(context).pop();
   }
 
-  /// The first time a debt gets a deadline: say what the reminder is for,
-  /// then ask the OS for notification permission.
   Future<void> _askForReminders() async {
     const key = 'debt_reminders_explained';
     final settings = ref.read(settingsRepositoryProvider);
@@ -171,14 +165,24 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
     final symbol = ref.watch(currencyProvider).symbol;
     final moneyFormatter = [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))];
     return Scaffold(
-      appBar: AppBar(title: Text(widget.existing == null ? 'Add debt' : 'Edit debt')),
+      appBar: AppBar(title: Text(widget.existing == null ? 'Add debt or loan' : 'Edit debt or loan')),
       body: Form(
         key: _form,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
+            SegmentedButton<DebtDirection>(
+              showSelectedIcon: false,
+              segments: const [
+                ButtonSegment(value: DebtDirection.borrowed, label: Text('Borrowed (I owe)'), icon: Icon(Icons.arrow_downward_rounded)),
+                ButtonSegment(value: DebtDirection.lent, label: Text('Lent (Owed to me)'), icon: Icon(Icons.arrow_upward_rounded)),
+              ],
+              selected: {_direction},
+              onSelectionChanged: (s) => setState(() => _direction = s.first),
+            ),
+            const SizedBox(height: 20),
             if (widget.existing == null) ...[
-              Text('Is this a new debt?', style: Theme.of(context).textTheme.titleSmall),
+              Text('Is this a new item?', style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 8),
               SegmentedButton<bool>(
                 emptySelectionAllowed: true,
@@ -196,12 +200,9 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
               const SizedBox(height: 6),
               Text(
                 switch (_isNew) {
-                  true => 'Money you just borrowed or spent on credit. It\'s also added to your expenses '
-                      '(category "Debt"), so it counts in this month\'s budget.',
-                  false => 'A debt you already had. Only a reminder: it\'s added to your debts, '
-                      'not to expenses or the budget.',
-                  null => 'New: just borrowed or bought on credit (added to expenses). '
-                      'Existing: you already owed it (reminder only).',
+                  true => 'Money you just borrowed or lent. It\'s also added to your expenses/loans, so it counts in this month\'s budget.',
+                  false => 'A record you already had. Only a reminder: added to your debts/loans, not to expenses or the budget.',
+                  null => 'New: just borrowed or lent (added to expenses). Existing: you already owed/lent it (reminder only).',
                 },
                 style: TextStyle(
                   color: _originMissing ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurfaceVariant,
@@ -217,22 +218,20 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
                   ),
                 ),
               const SizedBox(height: 20),
-            ] else if (widget.existing!.isNew) ...[
-              Text(
-                'New debt: its expense in "Debt" is updated when you save.',
-                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
-              ),
-              const SizedBox(height: 16),
             ],
             TextFormField(
               controller: _creditor,
               textCapitalization: TextCapitalization.words,
               maxLength: 60,
-              decoration: const InputDecoration(labelText: 'Who do you owe?', hintText: 'e.g. Home Credit, Tito Ben', counterText: ''),
+              decoration: InputDecoration(
+                labelText: _direction == DebtDirection.borrowed ? 'Who do you owe?' : 'Who owes you?',
+                hintText: _direction == DebtDirection.borrowed ? 'e.g. Home Credit, Tito Ben' : 'e.g. Juan dela Cruz',
+                counterText: '',
+              ),
               validator: (v) => (v == null || v.trim().isEmpty) ? 'Enter a name' : null,
             ),
             const SizedBox(height: 16),
-            Text('Where did you borrow?', style: Theme.of(context).textTheme.titleSmall),
+            Text('Where did you borrow / lend?', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -252,7 +251,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
                 controller: _lenderDetail,
                 maxLength: 40,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(labelText: 'Type where you borrowed', hintText: 'e.g. Paluwagan, online seller', counterText: ''),
+                decoration: const InputDecoration(labelText: 'Type where', hintText: 'e.g. Paluwagan, online seller', counterText: ''),
               ),
             ],
             const SizedBox(height: 16),
@@ -275,7 +274,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
               controller: _total,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: moneyFormatter,
-              decoration: InputDecoration(labelText: 'Amount borrowed', prefixText: '$symbol '),
+              decoration: InputDecoration(labelText: _direction == DebtDirection.borrowed ? 'Amount borrowed' : 'Amount lent', prefixText: '$symbol '),
               validator: validateAmount,
             ),
             const SizedBox(height: 16),
@@ -298,7 +297,6 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
               },
             ),
             const SizedBox(height: 20),
-            // Loan term: required, whole months.
             TextFormField(
               controller: _term,
               keyboardType: TextInputType.number,
@@ -306,7 +304,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
               textInputAction: TextInputAction.next,
               style: Theme.of(context).textTheme.titleMedium,
               decoration: const InputDecoration(
-                labelText: 'Loan term (months) *',
+                labelText: 'Term (months) *',
                 hintText: 'e.g. 12',
                 helperText: 'Gaano katagal babayaran (in months)',
                 prefixIcon: Icon(Icons.date_range_rounded),
@@ -337,13 +335,12 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
               Padding(
                 padding: const EdgeInsets.only(left: 12, top: 6, bottom: 8),
                 child: Text(
-                  'You\'ll get a reminder 2 days before at 9:00 AM, every month, until the debt is settled.'
+                  'You\'ll get a reminder 2 days before at 9:00 AM, every month, until settled.'
                   '${_dueDay! > 28 ? ' In shorter months it\'s the last day of the month.' : ''}',
                   style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               ),
             const SizedBox(height: 16),
-            const SizedBox(height: 8),
             Text('Interest (optional)', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             Row(
@@ -386,8 +383,8 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
             const SizedBox(height: 6),
             Text(
               _interestType == InterestType.simple
-                  ? 'Simple: interest is always on the amount you borrowed (common for lending apps and add-on loans).'
-                  : 'Compound: interest is on what you still owe, so it goes down as you pay (common for bank loans).',
+                  ? 'Simple: interest is always on the amount.'
+                  : 'Compound: interest is on what still remains.',
               style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
             ),
             _MonthlyEstimate(
@@ -414,7 +411,7 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
               decoration: const InputDecoration(labelText: 'Notes (optional)'),
             ),
             const SizedBox(height: 24),
-            FilledButton(onPressed: _saving ? null : _save, child: const Text('Save debt')),
+            FilledButton(onPressed: _saving ? null : _save, child: const Text('Save')),
           ],
         ),
       ),
@@ -422,7 +419,6 @@ class _DebtFormScreenState extends ConsumerState<DebtFormScreen> {
   }
 }
 
-/// Live "what to prepare each month" preview in the form.
 class _MonthlyEstimate extends StatelessWidget {
   const _MonthlyEstimate({required this.quote, required this.symbol});
   final InterestQuote? quote;

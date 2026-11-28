@@ -18,7 +18,6 @@ import '../../widgets/phone_access_widgets.dart';
 import '../analytics/analytics_screen.dart';
 import '../cards/card_detail_screen.dart';
 import '../debts/debts_screen.dart';
-import '../loans/loans_screen.dart';
 import '../settings/settings_screen.dart';
 import '../transactions/transaction_form_screen.dart';
 

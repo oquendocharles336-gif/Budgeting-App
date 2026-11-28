@@ -31,7 +31,6 @@ import '../cards/cards_screen.dart';
 import '../debts/debts_screen.dart';
 import '../import/import_hub_screen.dart';
 import '../legal/legal_document_screen.dart';
-import '../loans/loans_screen.dart';
 import 'categories_screen.dart';
 import 'backup_screen.dart';
 import 'change_password_screen.dart';

@@ -27,9 +27,9 @@ flutter build apk --release
 
 ## Run
 ```bash
-flutter analyze
-flutter test
 flutter pub upgrade --major-versions
 flutter pub get
+flutter analyze
+flutter test
 flutter run --release
 ```
