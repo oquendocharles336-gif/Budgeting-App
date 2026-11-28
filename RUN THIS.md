@@ -17,15 +17,19 @@ flutter build apk --release
 export PATH="$PATH:/home/chachie/development/flutter/bin"
 flutter clean
 rm -rf android/.gradle
+flutter analyze
 flutter pub outdated
 flutter pub upgrade --major-versions
 flutter pub get
-flutter analyze
 flutter test
 flutter build apk --release
 ```
 
 ## Run
 ```bash
+flutter analyze
+flutter test
+flutter pub upgrade --major-versions
+flutter pub get
 flutter run --release
 ```

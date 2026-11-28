@@ -528,16 +528,24 @@ class PaymentChangeLine extends ConsumerWidget {
     final Widget child;
     if (result.isShort) {
       child = StatusBadge(
-        label: 'Partially Paid · ${formatMoney(ref, result.remaining)} balance left',
-        tone: BadgeTone.warning,
-        icon: Icons.timelapse_rounded,
+        label: 'Shortage / Insufficient · ${formatMoney(ref, result.remaining)} balance left',
+        tone: BadgeTone.danger,
+        icon: Icons.error_outline_rounded,
       );
     } else if (cash && result.change > 0) {
       child = AppCard(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
-            Expanded(child: Text('Change to give', style: TextStyle(color: context.tokens.onSecondMuted))),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Change Due', style: TextStyle(color: context.tokens.onSecondMuted, fontWeight: FontWeight.w600)),
+                  Text('Give back to buyer', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12)),
+                ],
+              ),
+            ),
             Text(
               formatMoney(ref, result.change),
               style: TextStyle(color: context.tokens.accentOnSecond, fontSize: 24, fontWeight: FontWeight.w800),
@@ -547,12 +555,12 @@ class PaymentChangeLine extends ConsumerWidget {
       );
     } else if (!cash && result.change > 0) {
       child = StatusBadge(
-        label: 'More than the balance: ${formatMoney(ref, result.change)} extra is not counted',
+        label: 'More than balance: ${formatMoney(ref, result.change)} extra is not counted',
         tone: BadgeTone.warning,
         icon: Icons.info_outline_rounded,
       );
     } else {
-      child = const StatusBadge(label: 'Exact amount', tone: BadgeTone.ok, icon: Icons.check_circle_rounded);
+      child = const StatusBadge(label: 'Exact Amount', tone: BadgeTone.ok, icon: Icons.check_circle_rounded);
     }
     return Semantics(liveRegion: true, child: child);
   }

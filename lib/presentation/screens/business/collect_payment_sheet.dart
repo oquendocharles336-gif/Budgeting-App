@@ -14,6 +14,37 @@ import '../../widgets/optimistic.dart';
 import 'order_form_screen.dart' show PaymentChangeLine;
 import 'payment_qr.dart';
 
+/// Generates quick amount chips (in centavos) for a given balance due.
+/// Includes the exact amount and standard bill denominations above the balance due.
+List<int> getQuickAmountChips(int due) {
+  if (due <= 0) return const [];
+  final result = <int>[due];
+  const bills = [
+    2000, // ₱20
+    5000, // ₱50
+    10000, // ₱100
+    20000, // ₱200
+    50000, // ₱500
+    100000, // ₱1,000
+  ];
+  for (final bill in bills) {
+    if (bill > due && !result.contains(bill)) {
+      result.add(bill);
+    }
+  }
+  if (due > 100000) {
+    final next500 = ((due / 50000).ceil()) * 50000;
+    if (next500 > due && !result.contains(next500)) {
+      result.add(next500);
+    }
+    final next1000 = ((due / 100000).ceil()) * 100000;
+    if (next1000 > due && !result.contains(next1000)) {
+      result.add(next1000);
+    }
+  }
+  return result;
+}
+
 /// Records money received for an order that still has a balance: the rest
 /// of a deposit, or the whole amount for a pay-on-delivery order. Optionally
 /// marks it Delivered in the same write.
@@ -75,7 +106,7 @@ class _CollectPaymentSheetState extends ConsumerState<_CollectPaymentSheet> {
   void _save() {
     if (!_form.currentState!.validate()) return;
     final r = _result;
-    if (r == null || r.applied == 0) return;
+    if (r == null || r.applied == 0 || r.isShort) return;
     final symbol = ref.read(currencyProvider).symbol;
     String m(int v) => Money.format(v, symbol: symbol);
     final order = _order;
@@ -109,6 +140,9 @@ class _CollectPaymentSheetState extends ConsumerState<_CollectPaymentSheet> {
     final symbol = ref.watch(currencyProvider).symbol;
     String m(int v) => Money.format(v, symbol: symbol);
     final r = _result;
+    final quickChips = getQuickAmountChips(_due);
+    final isInvalidOrShort = r == null || r.applied == 0 || r.isShort;
+
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
       child: SafeArea(
@@ -119,7 +153,11 @@ class _CollectPaymentSheetState extends ConsumerState<_CollectPaymentSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('Collect payment · ${_order.buyer}', style: Theme.of(context).textTheme.titleLarge),
+                Text('Quick Pay · ${_order.buyer}', style: Theme.of(context).textTheme.titleLarge),
+                if (_order.itemsSummary.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(_order.itemsSummary, style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
+                ],
                 const SizedBox(height: 12),
                 _AmountsTable(total: _order.total, paid: _order.paidAmount, due: _due, format: m),
                 const SizedBox(height: 16),
@@ -135,6 +173,31 @@ class _CollectPaymentSheetState extends ConsumerState<_CollectPaymentSheet> {
                   const SizedBox(height: 12),
                   PaymentQrCard(method: _method, size: 180),
                 ],
+                if (quickChips.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('Quick amounts', style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13, fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final chipVal in quickChips) ...[
+                          ActionChip(
+                            label: Text(
+                              chipVal == _due ? 'Exact (${m(chipVal)})' : m(chipVal),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _amount.text = Money.toInput(chipVal);
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 TextFormField(
                   controller: _amount,
@@ -144,7 +207,7 @@ class _CollectPaymentSheetState extends ConsumerState<_CollectPaymentSheet> {
                   decoration: InputDecoration(
                     labelText: _method.isCash ? 'Cash received from buyer' : 'Amount received',
                     prefixText: '$symbol ',
-                    helperText: 'Less than ${m(_due)} keeps the rest as balance due.',
+                    helperText: 'Enter cash received. Balance due is ${m(_due)}.',
                     suffixIcon: TextButton(
                       onPressed: () => setState(() => _amount.text = Money.toInput(_due)),
                       child: const Text('Exact'),
@@ -167,12 +230,12 @@ class _CollectPaymentSheetState extends ConsumerState<_CollectPaymentSheet> {
                   ),
                 const SizedBox(height: 12),
                 FilledButton(
-                  onPressed: r == null || r.applied == 0 ? null : _save,
-                  child: Text(r == null || r.applied == 0
-                      ? 'Record payment'
-                      : r.remaining == 0
-                          ? 'Record ${m(r.applied)} · paid in full'
-                          : 'Record ${m(r.applied)} · ${m(r.remaining)} left'),
+                  onPressed: isInvalidOrShort ? null : _save,
+                  child: Text(isInvalidOrShort
+                      ? (r != null && r.isShort ? 'Shortage · enter at least ${m(_due)}' : 'Enter valid amount')
+                      : r.change > 0 && _method.isCash
+                          ? 'Confirm payment · give ${m(r.change)} change'
+                          : 'Confirm payment · ${m(r.applied)}'),
                 ),
               ],
             ),

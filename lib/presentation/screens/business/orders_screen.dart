@@ -323,6 +323,17 @@ class OrderCard extends ConsumerWidget {
                 if (order.addedToBudget) const StatusBadge(label: 'In budget', tone: BadgeTone.accent, icon: Icons.savings_rounded),
               ],
             ),
+            if (!saving && !order.isCancelled && order.balanceDue > 0) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => showCollectPaymentSheet(context, order),
+                  icon: const Icon(Icons.flash_on_rounded, size: 18),
+                  label: Text('Quick Pay · ${formatMoney(ref, order.balanceDue)} due'),
+                ),
+              ),
+            ],
           ],
         ),
       ),

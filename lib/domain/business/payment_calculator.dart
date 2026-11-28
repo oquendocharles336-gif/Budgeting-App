@@ -27,6 +27,8 @@ class PaymentResult {
 
   /// The buyer handed over less than they owe.
   bool get isShort => tendered < due;
+  bool get isExact => due > 0 && tendered == due;
+  bool get isOver => tendered > due;
   bool get isPartial => applied > 0 && remaining > 0;
   bool get settles => due > 0 && remaining == 0;
 }
